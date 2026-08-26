@@ -8,8 +8,7 @@
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    ./disk-config.nix
-    ./modules/firewalld-policies.nix
+    ../../../firewalld/firewalld-policies.nix
   ];
 
   system.stateVersion = "26.05";
@@ -29,6 +28,7 @@
   };
 
   networking = {
+    hostName = "sauron";
     useDHCP = false;
     interfaces = {
       eth0 = {

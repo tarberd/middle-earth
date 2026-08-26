@@ -1,44 +1,37 @@
 {
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
-  inputs.disko.url = "github:nix-community/disko";
-  inputs.disko.inputs.nixpkgs.follows = "nixpkgs";
-  inputs.nixos-facter-modules.url = "github:numtide/nixos-facter-modules";
-
-  outputs =
-    {
-      nixpkgs,
-      disko,
-      nixos-facter-modules,
-      ...
-    }:
-    {
-      nixosConfigurations.sauron = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          disko.nixosModules.disko
-          ./configuration.nix
-          { networking.hostName = "sauron"; }
-        ];
-      };
-
-      # --generate-hardware-config nixos-generate-config ./hardware-configuration.nix <hostname>
-      nixosConfigurations.bare-metal = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          disko.nixosModules.disko
-          ./configuration.nix
-          ./hardware-configuration.nix
-        ];
-      };
-
-      # --generate-hardware-config nixos-facter facter.json <hostname>
-      nixosConfigurations.bare-metal-nixos-facter = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          disko.nixosModules.disko
-          ./configuration.nix
-          { hardware.facter.reportPath = ./facter.json; }
-        ];
-      };
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixvirt = {
+      url = "https://flakehub.com/f/AshleyYakeley/NixVirt/*.tar.gz";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, disko, nixvirt, ... } @ inputs: {
+    nixosConfigurations.gandalf = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
+      modules = [
+        disko.nixosModules.disko
+        nixvirt.nixosModules.default
+        ./middle-earth/hosts/gandalf/disko-config.nix
+        ./middle-earth/hosts/gandalf/configuration.nix
+        ./middle-earth/hosts/gandalf/hardware-configuration.nix
+      ];
+    };
+
+    nixosConfigurations.sauron = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      specialArgs = { inherit inputs; };
+      modules = [
+        disko.nixosModules.disko
+        ./middle-earth/hosts/sauron/disko-config.nix
+        ./middle-earth/hosts/sauron/configuration.nix
+      ];
+    };
+  };
 }
