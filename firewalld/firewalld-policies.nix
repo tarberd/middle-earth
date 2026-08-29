@@ -1,3 +1,4 @@
+{...}:
 {
   config,
   lib,
@@ -10,10 +11,7 @@ let
   lib' = import ./lib.nix { inherit lib; };
   inherit (lib')
     filterNullAttrs
-    mkPortOption
     mkXmlAttr
-    portProtocolOptions
-    protocolOption
     toXmlAttrs
     ;
 in

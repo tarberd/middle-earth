@@ -1,3 +1,4 @@
+{ firewalld, superModule, ...}:
 {
   modulesPath,
   lib,
@@ -8,7 +9,8 @@
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    ../../../firewalld/firewalld-policies.nix
+    firewalld.firewalld-policies
+    superModule.disko-config
   ];
 
   system.stateVersion = "26.05";

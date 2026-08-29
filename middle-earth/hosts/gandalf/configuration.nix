@@ -1,8 +1,13 @@
-{ inputs, pkgs, lib, config, ... }:
+{ firewalld, nixvirt, superModule, ...} @ inputs:
+{ pkgs, lib, config, ... }:
 {
   imports = [
-    ../../../firewalld/firewalld-policies.nix
+    firewalld.firewalld-policies
+    nixvirt.nixosModules.default
+    superModule.disko-config
+    superModule.hardware-configuration
   ];
+
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelPackages = pkgs.linuxPackages_latest;
