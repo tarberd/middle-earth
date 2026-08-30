@@ -1,0 +1,29 @@
+# make sure this is interactive shell
+[[ $- == *i* ]] || return
+
+# load common shell rc file
+source ${HOME}/dotfiles/sushi/env/user_rc.sh
+
+# Path to your oh-my-zsh installation.
+if [[ -z "${XDG_CONFIG_HOME}" ]]; then
+  ZSH=${HOME}/.config/zsh/oh-my-zsh
+else
+  ZSH=${XDG_CONFIG_HOME}/zsh/oh-my-zsh
+fi
+export ZSH
+
+# download oh-my-zsh if not present
+[ ! -d "$ZSH" ] && \
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended  --keep-zshrc
+
+ZSH_THEME="simple"
+
+plugins=(git vi-mode colorize compleat)
+
+VI_MODE_SET_CURSOR=true
+VI_MODE_RESET_PROMPT_ON_MODE_CHANGE=true
+
+# Do not query the user before executing rm *
+setopt RM_STAR_SILENT
+
+source $ZSH/oh-my-zsh.sh
