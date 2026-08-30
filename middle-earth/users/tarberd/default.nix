@@ -1,8 +1,9 @@
-{ middle-earth, home-manager, ... }:
+{ localModules, middle-earth, home-manager, dotman2nix, ... }:
 { pkgs, lib, config, ... }:
 let
   username = "tarberd";
   home = "/home/${username}";
+  dotmanProfilePath = localModules.dotfiles.sushi;
 in
 {
   imports = [
@@ -32,10 +33,9 @@ in
         code2prompt
       ];
 
-      file = lib.mkIf config.middle-earth.users.linkConfigs {
-        # Example: linking a directory from your dotfiles repo
-        # ".config/waybar".source = inputs.my-dotfiles + "/waybar";
-      };
+      file = lib.mkIf config.middle-earth.users.linkConfigs (
+        dotman2nix.parseDotmanProfile dotmanProfilePath
+      );
     };
   };
 }
