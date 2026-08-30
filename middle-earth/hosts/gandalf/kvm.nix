@@ -11,6 +11,7 @@
   environment.systemPackages = with pkgs; [
     dnsmasq
     virt-manager
+    looking-glass-client
   ];
 
   services.udev.packages = lib.singleton (pkgs.writeTextFile

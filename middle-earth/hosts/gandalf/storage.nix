@@ -61,4 +61,12 @@
       };
     };
   };
+
+  zramSwap.enable = true;
+
+  fileSystems."/data" = {
+    device = "/dev/disk/by-label/stanley-data";
+    fsType = "btrfs";
+    options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
+  };
 }

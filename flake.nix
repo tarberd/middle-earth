@@ -11,6 +11,10 @@
       url = "https://flakehub.com/f/AshleyYakeley/NixVirt/*.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {self, nixpkgs, ...}@inputs: (
@@ -76,15 +80,41 @@
                 unEvaluatedNode
               ;
             in
-              # If a 'default' exists and evaluated to an attribute set, flatten it!
-              if evaluatedChildren ? default && builtins.isAttrs evaluatedChildren.default then
-                # Sibling modules (like 'foo') take precedence in case of naming collisions
+              # If a 'default' exists, flatten it into the current directory level
+              if evaluatedChildren ? default then
+                # Because the base case guarantees 'default' is an attribute set (either pure or a functor),
+                # we can safely and cleanly merge all siblings directly into it.
                 recursiveUpdate evaluatedChildren.default (removeAttrs evaluatedChildren [ "default" ])
               else
                 evaluatedChildren
           else
-            # Base case: we hit a file path, so import it and apply the moduleArgs
-            (import unEvaluatedNode) (args // { selfModule = selfRef; superModule = superRef; });
+            # Base case: we hit a file path, so import it and apply the outer moduleArgs
+            let
+              filePath = toString unEvaluatedNode;
+              # Create a unique key using the absolute path
+              fileKey = builtins.hashString "sha256" filePath;
+
+              # Evaluate the outer wrapper { superModule, ... }:
+              evaluatedOuter = (import unEvaluatedNode) (args // { selfModule = selfRef; superModule = superRef; });
+            in
+              if builtins.isFunction evaluatedOuter then
+                # If the inner result is a NixOS module function ({ pkgs, ... }: { ... })
+                # Wrap it in a functor to inject 'key' and '_file' into its returned attribute set
+                {
+                  __functor = self: moduleArgs: (evaluatedOuter moduleArgs) // {
+                    key = fileKey;
+                    _file = filePath;
+                  };
+                  __functionArgs = builtins.functionArgs evaluatedOuter;
+                }
+              else if builtins.isAttrs evaluatedOuter then
+                # If the inner result is already an attribute set, just inject directly
+                evaluatedOuter // {
+                  key = fileKey;
+                  _file = filePath;
+                }
+              else
+                evaluatedOuter;
 
         moduleArgs = inputs // { inherit localModules; } // evaluatedModules;
         evaluatedModules = evaluateAndFlatten localModules evaluatedModules null moduleArgs;

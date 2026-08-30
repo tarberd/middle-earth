@@ -1,11 +1,13 @@
 { superModule, ...} @ inputs:
 { pkgs, ... }:
 {
+  system.stateVersion = "26.05";
+
   imports = [
-    superModule.disko-config
     superModule.hardware-configuration
-    superModule.kvm
+    superModule.storage
     superModule.network
+    superModule.kvm
   ];
 
   boot.loader.systemd-boot.enable = true;
@@ -29,6 +31,8 @@
     keyMap = "us";
   };
 
+  security.sudo.wheelNeedsPassword = false;
+
   services.printing.enable = true;
 
   services.pipewire = {
@@ -38,27 +42,23 @@
     pulse.enable = true;
   };
 
-  users.users.tarberd = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" "libvirtd" ];
-    packages = with pkgs; [
-      looking-glass-client
-    ];
-    shell = pkgs.zsh;
-  };
-
   programs.firefox.enable = true;
   programs.sway.enable = true;
   programs.zsh.enable = true;
 
   environment.systemPackages = with pkgs; [
+    openssh
+    git
+    ripgrep
+    bat
+    tree
     vim
     neovim
-    git
     wget
+    curl
+    tcpdump
     pciutils
     vulkan-tools
-    openssh
     code2prompt
     wl-clipboard
     swaybg
@@ -66,15 +66,10 @@
     pavucontrol
     python3
     pipx
-    ripgrep
-    nil
     nixd
-    tree
     polkit
     polkit_gnome
   ];
 
   nix.nixPath = [ "nixpkgs=${inputs.nixpkgs}" ];
-
-  system.stateVersion = "26.05";
 }

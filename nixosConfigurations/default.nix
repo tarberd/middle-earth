@@ -7,7 +7,15 @@
     _: host: (
       nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
-        modules = [ host.configuration ];
+        modules = [
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+          }
+          middle-earth.users.root
+          middle-earth.users.tarberd
+          host.configuration
+        ];
       }
     )
   ) (
