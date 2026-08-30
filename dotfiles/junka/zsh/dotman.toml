@@ -1,3 +1,0 @@
-[dotman]
-config_path = "$HOME"
-file_map = [ { file = "zprofile", link = ".zprofile" }, { file = "zshrc", link = ".zshrc" } ]

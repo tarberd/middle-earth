@@ -1,1 +1,0 @@
-tmux -L bernardo new-session -A -s main
