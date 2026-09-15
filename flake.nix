@@ -123,6 +123,12 @@
         moduleArgs = inputs // { inherit localModules; } // evaluatedModules;
         evaluatedModules = evaluateAndFlatten localModules evaluatedModules null moduleArgs;
       in
-        evaluatedModules
+        builtins.mapAttrs (
+          name: value:
+            if builtins.isAttrs value then
+              removeAttrs value [ "key" "_file" ]
+            else
+              value
+        ) evaluatedModules
   );
 }
