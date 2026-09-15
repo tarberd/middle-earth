@@ -8,6 +8,8 @@
   boot.kernelParams = [ "kvmfr.static_size_mb=128" ];
   boot.extraModprobeConfig = "options kvm_amd nested=1";
 
+  middle-earth.roles.virtualization = [ "libvirtd" ];
+
   environment.systemPackages = with pkgs; [
     dnsmasq
     virt-manager

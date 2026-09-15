@@ -34,6 +34,10 @@
     keyMap = "us";
   };
 
+  middle-earth.roles = {
+    admin = [ "wheel" ];
+    desktop = [ "audio" "video" "networkmanager" ];
+  };
   security.sudo.wheelNeedsPassword = false;
 
   services.printing.enable = true;

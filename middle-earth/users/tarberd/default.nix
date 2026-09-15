@@ -21,10 +21,10 @@ in
   ];
 
   config = {
+    middle-earth.userRoles.${username} = [ "admin" "virtualization" "desktop" ];
+
     users.users.${username} = {
       isNormalUser = true;
-      extraGroups = [ "wheel" "libvirtd" ];
-      #extraGroups = middle-earth.users.sudoUserExtraGroups;
       shell = pkgs.zsh;
     };
 

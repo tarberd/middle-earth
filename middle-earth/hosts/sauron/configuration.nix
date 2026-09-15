@@ -136,6 +136,10 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  middle-earth.roles = {
+    admin = [ "wheel" ];
+  };
+
   users.users.root = {
     hashedPassword = "$6$NvAm.r/Vdj43Y4gA$snMm90T2nBGPKRJjeCnAlHpcw/CtngbaIyE1Pc.NCd5JwhZbaudHGhtShPS4dI.ZRiWo30zKjR06rLQFdbhro.";
     openssh.authorizedKeys.keys = [
