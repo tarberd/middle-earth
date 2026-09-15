@@ -37,22 +37,9 @@
             bridge.name = "virbr0";
             forward = { mode = "nat"; };
             ip = {
-              address = "10.100.100.1";
+              address = "10.101.1.1";
               netmask = "255.255.255.0";
-              dhcp.range = { start = "10.100.100.2"; end = "10.100.100.224"; };
-            };
-          };
-          active = true;
-        }
-        {
-          definition = nixvirt.lib.network.writeXML {
-            name = "sandbox";
-            uuid = "703c2b85-da03-4e42-84d7-c57663ea14e7";
-            bridge.name = "sandbox0";
-            ip = {
-              address = "10.67.67.1";
-              netmask = "255.255.255.0";
-              dhcp.range = { start = "10.67.67.2"; end = "10.67.67.254"; };
+              dhcp.range = { start = "10.101.1.2"; end = "10.101.1.254"; };
             };
           };
           active = true;

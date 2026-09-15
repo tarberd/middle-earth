@@ -82,7 +82,7 @@ in
           name = "incusbr0";
           type = "bridge";
           config = {
-            "ipv4.address" = "10.100.101.1/24";
+            "ipv4.address" = "10.101.0.1/24";
             "ipv4.nat" = "true";
             "ipv6.address" = "none";
           };
@@ -97,7 +97,7 @@ in
           };
         }
         {
-          name = "default";
+          name = "servers";
           driver = "btrfs";
           config = {
             source = "/data/virtualization/incus/storage-pools/servers";
