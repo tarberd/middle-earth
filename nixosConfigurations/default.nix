@@ -1,6 +1,7 @@
 {
   nixpkgs,
   middle-earth,
+  antigravity-nix,
   ...
 }:
 let
@@ -25,6 +26,13 @@ lib.listToAttrs (
               middle-earth.users.root
               middle-earth.users.tarberd
               host.configuration
+              {
+                environment.systemPackages = [
+                  antigravity-nix.packages.x86_64-linux.default # Base App
+                  antigravity-nix.packages.x86_64-linux.google-antigravity-ide # IDE
+                  antigravity-nix.packages.x86_64-linux.google-antigravity-cli # CLI
+                ];
+              }
             ];
           }
         );

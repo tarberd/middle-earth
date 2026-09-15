@@ -1,9 +1,18 @@
-{ localModules, middle-earth, home-manager, dotman2nix, ... }:
-{ pkgs, lib, config, ... }:
+{
+  middle-earth,
+  home-manager,
+  dotman2nix,
+  ...
+}: {
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   username = "tarberd";
   home = "/home/${username}";
-  dotmanProfilePath = localModules.dotfiles.sushi;
+  dotmanProfilePath = ../../../dotfiles/sushi;
 in
 {
   imports = [
@@ -15,6 +24,7 @@ in
     users.users.${username} = {
       isNormalUser = true;
       extraGroups = [ "wheel" "libvirtd" ];
+      #extraGroups = middle-earth.users.sudoUserExtraGroups;
       shell = pkgs.zsh;
     };
 
