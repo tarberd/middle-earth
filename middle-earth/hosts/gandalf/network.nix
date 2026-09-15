@@ -1,8 +1,18 @@
-{ firewalld, ... }:
-{ ... }:
+{
+  firewalld,
+  ...
+}:
+{
+  pkgs,
+  ...
+}:
 {
   imports = [
     firewalld.firewalld-policies
+  ];
+
+  environment.systemPackages = with pkgs; [
+    wireguard-tools
   ];
 
   boot.kernelParams = [ "net.ifnames=0" ];
@@ -13,11 +23,76 @@
 
   networking = {
     hostName = "gandalf";
-    networkmanager.enable = true;
+    networkmanager = {
+      enable = true;
+      unmanaged = [ "br-public-hosts" "wg0" "incusbr0" "interface-name:incus*" ];
+    };
 
     firewall.enable = false;
     nftables.enable = true;
     nftables.flushRuleset = true;
+  };
+
+  systemd.network.enable = true;
+
+  systemd.network.netdevs."10-br-public-hosts" = {
+    netdevConfig = {
+      Name = "br-public-hosts";
+      Kind = "bridge";
+      MTUBytes = 1420;
+    };
+  };
+
+  systemd.network.networks."10-br-public-hosts" = {
+    matchConfig.Name = "br-public-hosts";
+    address = [
+      "10.100.2.1/24"
+      "2a0f:9400:738f:2::1/64"
+    ];
+    networkConfig = {
+      IPv4Forwarding = "yes";
+      IPv6Forwarding = "yes";
+      ConfigureWithoutCarrier = true;
+    };
+    linkConfig = {
+      RequiredForOnline = false;
+      MTUBytes = 1420;
+    };
+  };
+
+  systemd.network.netdevs."10-wg0" = {
+    netdevConfig = {
+      Name = "wg0";
+      Kind = "wireguard";
+    };
+    wireguardConfig = {
+      PrivateKeyFile = "/etc/wireguard/wg0-private-key";
+    };
+    wireguardPeers = [
+      {
+        PublicKey = "avUBAFdY8UIrBI2+FewyfKUH9n5v/fevKBLpOTLmuAU=";
+        Endpoint = "[2a0f:9400:fa0:44::1]:51820";
+        AllowedIPs = [ "0.0.0.0/0" "::/0" ];
+        PersistentKeepalive = 25;
+        RouteTable = "100";
+      }
+    ];
+  };
+
+  systemd.network.networks."10-wg0" = {
+    matchConfig.Name = "wg0";
+    address = [
+      "10.100.1.2/24"
+      "2a0f:9400:738f:1::2/64"
+    ];
+    routingPolicyRules = [
+      # Keep local subnet traffic in the main routing table
+      { To = "10.100.2.0/24";        Table = 254; Priority = 990; }
+      { To = "2a0f:9400:738f:2::/64"; Table = 254; Priority = 990; }
+      # Route traffic originating from public IP block through table 100
+      { From = "10.100.0.0/16";        Table = 100; Priority = 999; }
+      { From = "2a0f:9400:738f::/48";  Table = 100; Priority = 999; }
+    ];
   };
 
   services.firewalld = {
@@ -31,7 +106,7 @@
         masquerade = true;
       };
       trusted = {
-        interfaces = [ "virbr0" ];
+        interfaces = [ "virbr0" "wg0" "br-public-hosts" "incusbr0" ];
       };
     };
 

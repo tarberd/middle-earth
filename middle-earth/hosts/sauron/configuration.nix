@@ -147,6 +147,7 @@
     ];
   };
 
+  programs.zsh.enable = true;
   environment.systemPackages = map lib.lowPrio [
     pkgs.neovim
     pkgs.curl
