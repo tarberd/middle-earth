@@ -1,6 +1,6 @@
 { ... }:
 {
-  palworld = {
+  palworld-arnh = {
     image = "images:archlinux/cloud";
     ip4 = "10.100.2.100";
     ip6 = "2a0f:9400:738f:2::100";
@@ -9,7 +9,7 @@
     autostart = true;
   };
 
-  factorio = {
+  factorio-trutas = {
     image = "images:archlinux/cloud";
     ip4 = "10.100.2.101";
     ip6 = "2a0f:9400:738f:2::101";
