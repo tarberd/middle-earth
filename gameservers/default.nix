@@ -27,7 +27,7 @@ let
         mkdir -p "$STATE_DIR"
         ln -sf "${terraformConfiguration}" "$STATE_DIR/config.tf.json"
         cd "$STATE_DIR"
-        tofu init
+        tofu init -upgrade
         tofu ${op} "$@"
       '';
     };
