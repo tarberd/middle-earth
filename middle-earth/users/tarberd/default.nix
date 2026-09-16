@@ -2,50 +2,54 @@
   middle-earth,
   home-manager,
   dotman2nix,
-  ...
-}: {
-  pkgs,
-  lib,
-  config,
+  declareNixosModule,
   ...
 }:
-let
-  username = "tarberd";
-  home = "/home/${username}";
-  dotmanProfilePath = ../../../dotfiles/sushi;
-in
-{
-  imports = [
-    home-manager.nixosModules.home-manager
-    middle-earth.users
-  ];
+declareNixosModule (
+  {
+    pkgs,
+    lib,
+    config,
+    ...
+  }:
+  let
+    username = "tarberd";
+    home = "/home/${username}";
+    dotmanProfilePath = ../../../dotfiles/sushi;
+  in
+  {
+    imports = [
+      home-manager.nixosModules.home-manager
+      middle-earth.users
+    ];
 
-  config = {
-    middle-earth.userRoles.${username} = [ "admin" "virtualization" "desktop" ];
+    config = {
+      middle-earth.userRoles.${username} = [ "admin" "virtualization" "desktop" ];
 
-    users.users.${username} = {
-      isNormalUser = true;
-      shell = pkgs.zsh;
+      users.users.${username} = {
+        isNormalUser = true;
+        shell = pkgs.zsh;
+      };
+
+      home-manager.users.${username}.home = {
+        stateVersion = "26.05";
+
+        username = username;
+        homeDirectory = home;
+
+        packages = with pkgs; [
+          git
+          neovim
+          tmux
+          ripgrep
+          bat
+          code2prompt
+        ];
+
+        file = lib.mkIf config.middle-earth.users.linkConfigs (
+          dotman2nix.parseDotmanProfile dotmanProfilePath
+        );
+      };
     };
-
-    home-manager.users.${username}.home = {
-      stateVersion = "26.05";
-
-      username = username;
-      homeDirectory = home;
-
-      packages = with pkgs; [
-        git
-        neovim
-        tmux
-        ripgrep
-        bat
-        code2prompt
-      ];
-
-      file = lib.mkIf config.middle-earth.users.linkConfigs (
-        dotman2nix.parseDotmanProfile dotmanProfilePath
-      );
-    };
-  };
-}
+  }
+)

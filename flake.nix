@@ -19,6 +19,10 @@
       url = "github:jacopone/antigravity-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    terranix = {
+      url = "github:terranix/terranix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {self, nixpkgs, ...}@inputs: (
@@ -98,37 +102,39 @@
               # Create a unique key using the absolute path
               fileKey = builtins.hashString "sha256" filePath;
 
-              # Evaluate the outer wrapper { superModule, ... }:
-              evaluatedOuter = (import unEvaluatedNode) (args // { selfModule = selfRef; superModule = superRef; });
-            in
-              if builtins.isFunction evaluatedOuter then
-                # If the inner result is a NixOS module function ({ pkgs, ... }: { ... })
-                # Wrap it in a functor to inject 'key' and '_file' into its returned attribute set
-                {
-                  __functor = self: moduleArgs: (evaluatedOuter moduleArgs) // {
+              declareNixosModule =
+                module:
+                if builtins.isFunction module then
+                  {
+                    __functor = self: moduleArgs: (module moduleArgs) // {
+                      key = fileKey;
+                      _file = filePath;
+                    };
+                    __functionArgs = builtins.functionArgs module;
+                  }
+                else if builtins.isAttrs module then
+                  module // {
                     key = fileKey;
                     _file = filePath;
-                  };
-                  __functionArgs = builtins.functionArgs evaluatedOuter;
+                  }
+                else
+                  module;
+
+              # Evaluate the outer wrapper { superModule, declareNixosModule, ... }:
+              evaluatedOuter = (import unEvaluatedNode) (
+                args
+                // {
+                  selfModule = selfRef;
+                  superModule = superRef;
+                  inherit declareNixosModule;
                 }
-              else if builtins.isAttrs evaluatedOuter then
-                # If the inner result is already an attribute set, just inject directly
-                evaluatedOuter // {
-                  key = fileKey;
-                  _file = filePath;
-                }
-              else
-                evaluatedOuter;
+              );
+            in
+              evaluatedOuter;
 
         moduleArgs = inputs // { inherit localModules; } // evaluatedModules;
         evaluatedModules = evaluateAndFlatten localModules evaluatedModules null moduleArgs;
       in
-        builtins.mapAttrs (
-          name: value:
-            if builtins.isAttrs value then
-              removeAttrs value [ "key" "_file" ]
-            else
-              value
-        ) evaluatedModules
+        evaluatedModules
   );
 }

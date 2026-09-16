@@ -1,68 +1,75 @@
-{ disko, ... }:
-{ lib, ... }:
 {
-  imports = [ disko.nixosModules.disko ];
+  disko,
+  declareNixosModule,
+  ...
+}:
+declareNixosModule (
+  {
+    lib, ... }:
+  {
+    imports = [ disko.nixosModules.disko ];
 
-  disko.devices = {
-    disk.disk1 = {
-      device = lib.mkDefault "/dev/sda";
-      type = "disk";
-      imageSize = "3G";
-      content = {
-        type = "gpt";
-        partitions = {
-          boot = {
-            name = "boot";
-            size = "1M";
-            type = "EF02";
-          };
-          esp = {
-            name = "ESP";
-            size = "500M";
-            type = "EF00";
-            content = {
-              type = "filesystem";
-              format = "vfat";
-              mountpoint = "/boot";
+    disko.devices = {
+      disk.disk1 = {
+        device = lib.mkDefault "/dev/sda";
+        type = "disk";
+        imageSize = "3G";
+        content = {
+          type = "gpt";
+          partitions = {
+            boot = {
+              name = "boot";
+              size = "1M";
+              type = "EF02";
             };
-          };
-          root = {
-            name = "root";
-            size = "100%";
-            content = {
-              type = "btrfs";
-              extraArgs = [ "-f" "-O block-group-tree" ];
-              subvolumes = {
-                "@root" = {
-                  mountpoint = "/";
-                  mountOptions = [ "compress=zstd" ];
-                };
-                "@nix" = {
-                  mountpoint = "/nix";
-                  mountOptions = [ "compress=zstd" "noatime"];
-                };
-                "@home" = {
-                  mountpoint = "/home";
-                  mountOptions = [ "compress=zstd" ];
-                };
-                "@snapshots" = {
-                  mountpoint = "/snapshots";
-                  mountOptions = [ "compress=zstd" ];
-                };
+            esp = {
+              name = "ESP";
+              size = "500M";
+              type = "EF00";
+              content = {
+                type = "filesystem";
+                format = "vfat";
+                mountpoint = "/boot";
               };
-              mountpoint = "/partition-root";
+            };
+            root = {
+              name = "root";
+              size = "100%";
+              content = {
+                type = "btrfs";
+                extraArgs = [ "-f" "-O block-group-tree" ];
+                subvolumes = {
+                  "@root" = {
+                    mountpoint = "/";
+                    mountOptions = [ "compress=zstd" ];
+                  };
+                  "@nix" = {
+                    mountpoint = "/nix";
+                    mountOptions = [ "compress=zstd" "noatime"];
+                  };
+                  "@home" = {
+                    mountpoint = "/home";
+                    mountOptions = [ "compress=zstd" ];
+                  };
+                  "@snapshots" = {
+                    mountpoint = "/snapshots";
+                    mountOptions = [ "compress=zstd" ];
+                  };
+                };
+                mountpoint = "/partition-root";
+              };
             };
           };
         };
       };
     };
-  };
 
-  zramSwap.enable = true;
+    zramSwap.enable = true;
 
-  fileSystems."/data" = {
-    device = "/dev/disk/by-label/stanley-data";
-    fsType = "btrfs";
-    options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
-  };
-}
+    fileSystems."/data" = {
+      device = "/dev/disk/by-label/stanley-data";
+      fsType = "btrfs";
+      options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
+    };
+  }
+)

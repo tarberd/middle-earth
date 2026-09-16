@@ -1,80 +1,91 @@
-{ nixvirt, ... }:
-{ pkgs, lib, config, ... }:
 {
-  imports = [ nixvirt.nixosModules.default ];
+  nixvirt,
+  declareNixosModule,
+  ...
+}:
+declareNixosModule (
+  {
+    pkgs,
+    lib,
+    config,
+    ...
+  }:
+  {
+    imports = [ nixvirt.nixosModules.default ];
 
-  boot.extraModulePackages = [ config.boot.kernelPackages.kvmfr ];
-  boot.initrd.kernelModules = [ "kvmfr" ];
-  boot.kernelParams = [ "kvmfr.static_size_mb=128" ];
-  boot.extraModprobeConfig = "options kvm_amd nested=1";
+    boot.extraModulePackages = [ config.boot.kernelPackages.kvmfr ];
+    boot.initrd.kernelModules = [ "kvmfr" ];
+    boot.kernelParams = [ "kvmfr.static_size_mb=128" ];
+    boot.extraModprobeConfig = "options kvm_amd nested=1";
 
-  middle-earth.roles.virtualization = [ "libvirtd" ];
+    middle-earth.roles.virtualization = [ "libvirtd" ];
 
-  environment.systemPackages = with pkgs; [
-    dnsmasq
-    virt-manager
-    looking-glass-client
-  ];
+    environment.systemPackages = with pkgs; [
+      dnsmasq
+      virt-manager
+      looking-glass-client
+    ];
 
-  services.udev.packages = lib.singleton (pkgs.writeTextFile
-    {
-      name = "kvmfr";
-      text = ''
-        SUBSYSTEM=="kvmfr", GROUP="kvm", MODE="0660", TAG+="uaccess"
-      '';
-      destination = "/etc/udev/rules.d/70-kvmfr.rules";
-    }
-  );
+    services.udev.packages = lib.singleton (pkgs.writeTextFile
+      {
+        name = "kvmfr";
+        text = ''
+          SUBSYSTEM=="kvmfr", GROUP="kvm", MODE="0660", TAG+="uaccess"
+        '';
+        destination = "/etc/udev/rules.d/70-kvmfr.rules";
+      }
+    );
 
-  virtualisation.libvirt = {
-    enable = true;
-    connections."qemu:///system" = {
-      networks = [
-        {
-          definition = nixvirt.lib.network.writeXML {
-            name = "default";
-            uuid = "cda3b7dd-71fd-44e3-8093-340f47a88c83";
-            bridge.name = "virbr0";
-            forward = { mode = "nat"; };
-            ip = {
-              address = "10.101.1.1";
-              netmask = "255.255.255.0";
-              dhcp.range = { start = "10.101.1.2"; end = "10.101.1.254"; };
+    virtualisation.libvirt = {
+      enable = true;
+      connections."qemu:///system" = {
+        networks = [
+          {
+            definition = nixvirt.lib.network.writeXML {
+              name = "default";
+              uuid = "cda3b7dd-71fd-44e3-8093-340f47a88c83";
+              bridge.name = "virbr0";
+              forward = { mode = "nat"; };
+              ip = {
+                address = "10.101.1.1";
+                netmask = "255.255.255.0";
+                dhcp.range = { start = "10.101.1.2"; end = "10.101.1.254"; };
+              };
             };
-          };
-          active = true;
-        }
-      ];
-      pools = [
-        {
-          definition = nixvirt.lib.pool.writeXML {
-            name = "default";
-            uuid = "8d1a7ca5-cd4a-4103-b488-c5f210552d33";
-            type = "dir";
-            target = { path = "/data/kvm/libvirt/images"; };
-          };
-          active = true;
-        }
-      ];
+            active = true;
+          }
+        ];
+        pools = [
+          {
+            definition = nixvirt.lib.pool.writeXML {
+              name = "default";
+              uuid = "8d1a7ca5-cd4a-4103-b488-c5f210552d33";
+              type = "dir";
+              target = { path = "/data/kvm/libvirt/images"; };
+            };
+            active = true;
+          }
+        ];
+      };
     };
-  };
 
-  virtualisation.libvirtd = {
-    enable = true;
-    qemu = {
-      package = pkgs.qemu_kvm;
-      runAsRoot = true;
-      swtpm.enable = true;
-      verbatimConfig = ''
-        namespaces = []
-        cgroup_device_acl = [
-          "/dev/null", "/dev/full", "/dev/zero",
-          "/dev/random", "/dev/urandom",
-          "/dev/ptmx", "/dev/kvm", "/dev/kqemu",
-          "/dev/rtc","/dev/hpet", "/dev/vfio/vfio",
-          "/dev/kvmfr0"
-        ]
-      '';
+    virtualisation.libvirtd = {
+      enable = true;
+      qemu = {
+        package = pkgs.qemu_kvm;
+        runAsRoot = true;
+        swtpm.enable = true;
+        verbatimConfig = ''
+          namespaces = []
+          cgroup_device_acl = [
+            "/dev/null", "/dev/full", "/dev/zero",
+            "/dev/random", "/dev/urandom",
+            "/dev/ptmx", "/dev/kvm", "/dev/kqemu",
+            "/dev/rtc","/dev/hpet", "/dev/vfio/vfio",
+            "/dev/kvmfr0"
+          ]
+        '';
+      };
     };
-  };
-}
+  }
+)

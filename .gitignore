@@ -1,0 +1,12 @@
+# OpenTofu / Terraform state and caches
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+.tofu/
+config.tf.json
+gameservers/config.tf.json
+gameservers/.terraform/
+gameservers/.terraform.lock.hcl
+gameservers/.tofu/
