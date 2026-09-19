@@ -9,6 +9,7 @@ declareNixosModule (
     modulesPath,
     lib,
     pkgs,
+    config,
     ...
   }:
   {
@@ -55,7 +56,7 @@ declareNixosModule (
             "2a0f:9400:738f:1::1/64"
           ];
           listenPort = 51820;
-          privateKeyFile = "/root/wireguard-keys/private";
+          privateKeyFile = config.artifacts.store.wireguard.files.private_key.path;
           peers = [
             { # stanley
               publicKey = "VNpR6K59HlEE9CRAiDxTkbFyZ0e5HCG8a+x7uyAdTmg=";
@@ -89,6 +90,32 @@ declareNixosModule (
     };
 
     services.openssh.enable = true;
+
+    artifacts.default.backend = "agenix";
+    artifacts.config.agenix = {
+      flakeStoreDir = ../../../secrets;
+      publicHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILiN7Z1VJC3Um+mtU3k61bdKyJKZYCi7HPkmivD4DZa3";
+      publicUserKeys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6a46GEO27tNA42ehDQkZClA4oNWypBDiOyc86OkNWO bernardo.mferrari@gmail.com"
+      ];
+    };
+
+    artifacts.store.wireguard = {
+      prompts.private_key.description = "Enter WireGuard private key for Sauron (or press Enter to generate new)";
+      generator = pkgs.writeShellScript "gen-wg-key" ''
+        KEY="$(tr -d '[:space:]' < "$prompts/private_key")"
+        if [ -n "$KEY" ]; then
+          echo "$KEY" > "$out/private_key"
+        else
+          ${pkgs.wireguard-tools}/bin/wg genkey > "$out/private_key"
+        fi
+      '';
+      files.private_key = {
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
+    };
 
     services.firewalld = {
       enable = true;
@@ -145,9 +172,9 @@ declareNixosModule (
     middle-earth.roles = {
       admin = [ "wheel" ];
     };
+    security.sudo.wheelNeedsPassword = false;
 
     users.users.root = {
-      hashedPassword = "$6$NvAm.r/Vdj43Y4gA$snMm90T2nBGPKRJjeCnAlHpcw/CtngbaIyE1Pc.NCd5JwhZbaudHGhtShPS4dI.ZRiWo30zKjR06rLQFdbhro.";
       openssh.authorizedKeys.keys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6a46GEO27tNA42ehDQkZClA4oNWypBDiOyc86OkNWO bernardo.mferrari@gmail.com"
       ];

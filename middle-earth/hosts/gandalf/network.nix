@@ -6,6 +6,7 @@
 declareNixosModule (
   {
     pkgs,
+    config,
     ...
   }:
   {
@@ -62,13 +63,30 @@ declareNixosModule (
       };
     };
 
+    artifacts.store.wireguard = {
+      prompts.private_key.description = "Enter WireGuard private key for Gandalf (or press Enter to generate new)";
+      generator = pkgs.writeShellScript "gen-wg-key" ''
+        KEY="$(tr -d '[:space:]' < "$prompts/private_key")"
+        if [ -n "$KEY" ]; then
+          echo "$KEY" > "$out/private_key"
+        else
+          ${pkgs.wireguard-tools}/bin/wg genkey > "$out/private_key"
+        fi
+      '';
+      files.private_key = {
+        owner = "root";
+        group = "systemd-network";
+        mode = "0440";
+      };
+    };
+
     systemd.network.netdevs."10-wg0" = {
       netdevConfig = {
         Name = "wg0";
         Kind = "wireguard";
       };
       wireguardConfig = {
-        PrivateKeyFile = "/etc/wireguard/wg0-private-key";
+        PrivateKeyFile = config.artifacts.store.wireguard.files.private_key.path;
       };
       wireguardPeers = [
         {

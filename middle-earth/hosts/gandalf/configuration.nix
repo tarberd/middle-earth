@@ -18,6 +18,7 @@ declareNixosModule (
       superModule.network
       superModule.virtualization.kvm
       superModule.virtualization.container
+      superModule.backup
     ];
 
     boot.loader.systemd-boot.enable = true;
@@ -49,6 +50,31 @@ declareNixosModule (
 
     services.printing.enable = true;
 
+    services.openssh = {
+      enable = true;
+      settings = {
+        PasswordAuthentication = false;
+        KbdInteractiveAuthentication = false;
+        PermitRootLogin = "prohibit-password";
+      };
+    };
+
+    users.users.root.openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6a46GEO27tNA42ehDQkZClA4oNWypBDiOyc86OkNWO bernardo.mferrari@gmail.com"
+    ];
+    users.users.tarberd.openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6a46GEO27tNA42ehDQkZClA4oNWypBDiOyc86OkNWO bernardo.mferrari@gmail.com"
+    ];
+
+    artifacts.default.backend = "agenix";
+    artifacts.config.agenix = {
+      flakeStoreDir = ../../../secrets;
+      publicHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDWEK3UDyNqU4vK8d/C8HQzclf7AGkjEW533k5RpV9cJ root@gandalf";
+      publicUserKeys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6a46GEO27tNA42ehDQkZClA4oNWypBDiOyc86OkNWO bernardo.mferrari@gmail.com"
+      ];
+    };
+
     services.pipewire = {
       enable = true;
       alsa.enable = true;
@@ -65,6 +91,7 @@ declareNixosModule (
       openssh
       git
       ripgrep
+      jq
       bat
       tree
       vim

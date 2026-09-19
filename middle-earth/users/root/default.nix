@@ -23,8 +23,21 @@ declareNixosModule (
     ];
 
     config = {
+      artifacts.store.user-root = {
+        prompts.password.description = "Password for user root";
+        generator = pkgs.writeShellScript "gen-root-hash" ''
+          ${pkgs.mkpasswd}/bin/mkpasswd -m sha-512 -s < "$prompts/password" > "$out/hashed_password"
+        '';
+        files.hashed_password = {
+          owner = "root";
+          group = "root";
+          mode = "0400";
+        };
+      };
+
       users.users.${username} = {
         shell = pkgs.zsh;
+        hashedPasswordFile = config.artifacts.store.user-root.files.hashed_password.path;
       };
 
       home-manager.users.${username}.home = {

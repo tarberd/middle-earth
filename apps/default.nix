@@ -1,9 +1,14 @@
 {
   gameservers,
+  nixos-artifacts-agenix,
   ...
 }:
 {
   x86_64-linux = {
+    artifacts = {
+      type = "app";
+      program = "${nixos-artifacts-agenix.packages.x86_64-linux.default}/bin/artifacts";
+    };
     plan = {
       type = "app";
       program = "${gameservers.plan}/bin/plan";
