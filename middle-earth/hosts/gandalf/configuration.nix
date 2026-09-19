@@ -16,8 +16,8 @@ declareNixosModule (
       superModule.hardware-configuration
       superModule.storage
       superModule.network
-      superModule.kvm
-      superModule.incus
+      superModule.virtualization.kvm
+      superModule.virtualization.container
     ];
 
     boot.loader.systemd-boot.enable = true;
@@ -61,6 +61,7 @@ declareNixosModule (
     programs.zsh.enable = true;
 
     environment.systemPackages = with pkgs; [
+      rclone
       openssh
       git
       ripgrep

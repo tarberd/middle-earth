@@ -1,6 +1,8 @@
 {
   nixpkgs,
   middle-earth,
+  nixos-artifacts,
+  nixos-artifacts-agenix,
   ...
 }:
 let
@@ -15,6 +17,8 @@ lib.listToAttrs (
           lib.nixosSystem {
             system = "x86_64-linux";
             modules = [
+              nixos-artifacts.nixosModules.default
+              nixos-artifacts-agenix.nixosModules.default
               {
                 home-manager.useGlobalPkgs = true;
                 home-manager.useUserPackages = true;

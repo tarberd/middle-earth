@@ -2,9 +2,19 @@
   description = "tarberd's configuration flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs = {
+      url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    };
     disko = {
       url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-artifacts = {
+      url = "github:mrVanDalo/nixos-artifacts";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-artifacts-agenix = {
+      url = "github:mrVanDalo/nixos-artifacts-agenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixvirt = {

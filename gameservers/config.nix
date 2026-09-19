@@ -67,6 +67,15 @@ in
           parent = cfg.parentBridge or "br-public-hosts";
         };
       }
+      {
+        name = "saves";
+        type = "disk";
+        properties = {
+          source = "/data/depot/games/saves/${name}";
+          path = cfg.savesPath or "/data";
+          shift = "true";
+        };
+      }
     ] ++ (cfg.extraDevices or [ ]);
   }) instances;
 }

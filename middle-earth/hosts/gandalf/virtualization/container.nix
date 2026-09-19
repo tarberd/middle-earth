@@ -8,11 +8,6 @@ declareNixosModule (
     ...
   }:
   {
-    systemd.tmpfiles.rules = [
-      "d /data/virtualization/incus/storage-pools/default 0700 root root -"
-      "d /data/virtualization/incus/storage-pools/servers 0700 root root -"
-    ];
-
     virtualisation.incus = {
       enable = true;
 
@@ -40,14 +35,14 @@ declareNixosModule (
             name = "default";
             driver = "btrfs";
             config = {
-              source = "/data/virtualization/incus/storage-pools/default";
+              source = "/var/lib/incus/storage-pools/default";
             };
           }
           {
             name = "servers";
             driver = "btrfs";
             config = {
-              source = "/data/virtualization/incus/storage-pools/servers";
+              source = "/var/lib/incus/storage-pools/servers";
             };
           }
         ];
