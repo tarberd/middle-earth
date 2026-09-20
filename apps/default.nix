@@ -21,6 +21,10 @@
       type = "app";
       program = "${gameservers.destroy}/bin/destroy";
     };
+    build-palworld-image = {
+      type = "app";
+      program = "${gameservers.buildPalworldImage}/bin/build-palworld-image";
+    };
     default = {
       type = "app";
       program = "${gameservers.apply}/bin/apply";

@@ -1,7 +1,7 @@
 { ... }:
 {
   palworld-arnh = {
-    image = "images:archlinux/cloud";
+    image = "palworld/v1";
     ip4 = "10.100.2.100";
     ip6 = "2a0f:9400:738f:2::100";
     cpu = 4;

@@ -39,4 +39,5 @@ in
   plan = makeRunner "plan" "plan";
   apply = makeRunner "apply" "apply";
   destroy = makeRunner "destroy" "destroy";
+  buildPalworldImage = selfModule.images.palworld.buildApp;
 }
