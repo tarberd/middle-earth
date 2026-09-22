@@ -1,5 +1,6 @@
 {
   gameservers,
+  middle-earth,
   nixos-artifacts-agenix,
   ...
 }:
@@ -24,6 +25,18 @@
     build-palworld-image = {
       type = "app";
       program = "${gameservers.buildPalworldImage}/bin/build-palworld-image";
+    };
+    build-windows-image = {
+      type = "app";
+      program = "${middle-earth.hosts.gandalf.virtualization.images.windows.buildApp}/bin/build-windows-image";
+    };
+    provision-windows-vm = {
+      type = "app";
+      program = "${middle-earth.hosts.gandalf.virtualization.images.windows.provisionApp}/bin/provision-windows-vm";
+    };
+    backup-windows-vm = {
+      type = "app";
+      program = "${middle-earth.hosts.gandalf.virtualization.images.windows.backupApp}/bin/backup-windows-vm";
     };
     default = {
       type = "app";
