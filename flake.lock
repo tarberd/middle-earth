@@ -90,11 +90,11 @@
     },
     "flake-modules": {
       "locked": {
-        "lastModified": 1790199102,
-        "narHash": "sha256-y91yHqZ4TfN6oWAJ8z0LQLsHu3FSYaKfbTHcZJiOKsA=",
+        "lastModified": 1790201194,
+        "narHash": "sha256-lOwke/V4Jt96aTKYZhxQP4vcDIUUy7tY4UfzzLDiejQ=",
         "owner": "tarberd",
         "repo": "flake-modules",
-        "rev": "f2c9bb7d7f53993f982e86a7da86283c52201238",
+        "rev": "14961c55326acfc0394c398473b427a29c8ce273",
         "type": "github"
       },
       "original": {

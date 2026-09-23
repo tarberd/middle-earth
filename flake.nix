@@ -38,22 +38,6 @@
     };
   };
 
-  outputs = { self, flake-modules, nixpkgs, ... }@inputs:
-    flake-modules.lib.mkFlake {
-      inherit inputs;
-      rootDir = ./.;
-      root = { mod, pubMod, createFlakeModule }:
-        # Internal project namespaces
-        mod "middle-earth"
-        mod "gameservers"
-        mod "firewalld"
-        mod "dotman2nix"
-
-        # Public flake outputs
-        pubMod "apps"
-        pubMod "packages"
-        pubMod "nixosConfigurations"
-
-        createFlakeModule {};
-    };
+  outputs = inputs@{ flake-modules, ... }:
+    flake-modules.lib.evalFlake ./. inputs;
 }
