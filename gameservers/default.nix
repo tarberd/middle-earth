@@ -1,5 +1,7 @@
 {
-  selfModule,
+  createFlakeModule,
+  mod,
+  self,
   terranix,
   nixpkgs,
   ...
@@ -14,10 +16,10 @@ let
 
   terraformConfiguration = terranix.lib.terranixConfiguration {
     inherit system;
-    modules = [ selfModule.config ];
+    modules = [ self.config ];
   };
 
-  saveDirs = map (name: "/data/depot/games/saves/${name}") (builtins.attrNames selfModule.instances);
+  saveDirs = map (name: "/data/depot/games/saves/${name}") (builtins.attrNames self.instances);
 
   makeRunner =
     name: op:
@@ -34,10 +36,13 @@ let
       '';
     };
 in
-{
+mod "config"
+mod "instances"
+mod "images"
+createFlakeModule {
   inherit terraformConfiguration;
   plan = makeRunner "plan" "plan";
   apply = makeRunner "apply" "apply";
   destroy = makeRunner "destroy" "destroy";
-  buildPalworldImage = selfModule.images.palworld.buildApp;
+  buildPalworldImage = self.images.palworld.buildApp;
 }

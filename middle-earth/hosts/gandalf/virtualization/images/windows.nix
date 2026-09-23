@@ -1,7 +1,8 @@
 {
+  createFlakeModule,
+  flake,
   nixpkgs,
-  middle-earth,
-  superModule,
+  super,
   ...
 }:
 let
@@ -9,8 +10,8 @@ let
   pkgs = nixpkgs.legacyPackages.${system};
   lib = pkgs.lib;
 
-  windowsVersions = superModule."windows-versions";
-  instances = middle-earth.hosts.gandalf.virtualization.instances;
+  windowsVersions = super."windows-versions";
+  instances = flake.middle-earth.hosts.gandalf.virtualization.instances;
 
   normalizeLang =
     lang:
@@ -22,10 +23,32 @@ let
     else
       lang;
 
+  instanceForVersion =
+    verKey:
+    lib.findFirst (
+      name:
+      let
+        cfg = instances.${name};
+        parts = lib.splitString "/" cfg.image;
+      in
+      (builtins.length parts >= 2) && (builtins.elemAt parts 1 == verKey)
+    ) null (builtins.attrNames instances);
+
+  hostnameForVersion =
+    verKey:
+    let
+      inst = instanceForVersion verKey;
+    in
+    if inst != null then
+      instances.${inst}.hostname or inst
+    else
+      "WIN11-VM";
+
   mkAutounattendXml =
     {
       edition ? "professional",
       language ? "en-us",
+      computerName ? "WIN11-VM",
     }:
     let
       cleanEdition = lib.toLower edition;
@@ -36,7 +59,7 @@ let
           throw "Unsupported Windows edition: '${edition}'. Only 'professional' is currently supported.";
       langTag = normalizeLang language;
     in
-    pkgs.writeText "autounattend-${cleanEdition}-${langTag}.xml" ''
+    pkgs.writeText "autounattend-${cleanEdition}-${langTag}-${computerName}.xml" ''
       <?xml version="1.0" encoding="utf-8"?>
       <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
         <settings pass="windowsPE">
@@ -167,7 +190,7 @@ let
             <UserLocale>${langTag}</UserLocale>
           </component>
           <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-            <ComputerName>WIN11-GOLDEN</ComputerName>
+            <ComputerName>${computerName}</ComputerName>
             <TimeZone>W. Europe Standard Time</TimeZone>
           </component>
         </settings>
@@ -226,6 +249,62 @@ let
     '';
 
   autounattendXml = mkAutounattendXml { };
+
+  mkSysprepXml =
+    {
+      language ? "en-us",
+      computerName ? "WIN11-VM",
+    }:
+    let
+      langTag = normalizeLang language;
+    in
+    pkgs.writeText "sysprep-${langTag}-${computerName}.xml" ''
+      <?xml version="1.0" encoding="utf-8"?>
+      <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+        <settings pass="specialize">
+          <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <InputLocale>${langTag}</InputLocale>
+            <SystemLocale>${langTag}</SystemLocale>
+            <UILanguage>${langTag}</UILanguage>
+            <UserLocale>${langTag}</UserLocale>
+          </component>
+          <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <ComputerName>${computerName}</ComputerName>
+            <TimeZone>W. Europe Standard Time</TimeZone>
+          </component>
+        </settings>
+        <settings pass="oobeSystem">
+          <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <InputLocale>${langTag}</InputLocale>
+            <SystemLocale>${langTag}</SystemLocale>
+            <UILanguage>${langTag}</UILanguage>
+            <UserLocale>${langTag}</UserLocale>
+          </component>
+          <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+            <OOBE>
+              <HideEULAPage>true</HideEULAPage>
+              <HideLocalAccountScreen>true</HideLocalAccountScreen>
+              <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+              <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+              <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+              <NetworkLocation>Home</NetworkLocation>
+              <ProtectYourPC>3</ProtectYourPC>
+              <SkipUserOOBE>true</SkipUserOOBE>
+              <SkipMachineOOBE>true</SkipMachineOOBE>
+            </OOBE>
+            <AutoLogon>
+              <Enabled>true</Enabled>
+              <LogonCount>1</LogonCount>
+              <Username>Admin</Username>
+              <Password>
+                <Value></Value>
+                <PlainText>true</PlainText>
+              </Password>
+            </AutoLogon>
+          </component>
+        </settings>
+      </unattend>
+    '';
 
   errorHandlerCmd = pkgs.writeText "ErrorHandler.cmd" ''
     @echo off
@@ -294,6 +373,14 @@ let
     Set-Service -Name wuauserv -StartupType Disabled -ErrorAction SilentlyContinue
 
     Log "==> [4/4] Generalizing golden image with Sysprep..."
+    if ($scriptVol) {
+        $sysprepXml = $scriptVol.DriveLetter + ':\sysprep.xml'
+        if (Test-Path $sysprepXml) {
+            $sysprepDst = "$env:SystemRoot\System32\Sysprep\unattend.xml"
+            Log "--> Installing unattended answer file to $sysprepDst for post-sysprep OOBE automation..."
+            Copy-Item -Path $sysprepXml -Destination $sysprepDst -Force
+        }
+    }
     Start-Sleep -Seconds 5
     Start-Process -FilePath "$env:SystemRoot\System32\Sysprep\sysprep.exe" -ArgumentList "/generalize", "/oobe", "/shutdown", "/quiet" -Wait
   '';
@@ -324,12 +411,17 @@ let
 
   versionLookupScript = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (
-      verKey: verData: ''
+      verKey: verData:
+      let
+        compName = hostnameForVersion verKey;
+      in
+      ''
         "${verKey}")
           UUP_ID="${verData.uupId}"
           WIN_EDITION="${verData.edition}"
           WIN_LANG="${verData.language}"
-          AUTOUNATTEND_XML="${mkAutounattendXml { inherit (verData) edition language; }}"
+          AUTOUNATTEND_XML="${mkAutounattendXml { inherit (verData) edition language; computerName = compName; }}"
+          SYSPREP_XML="${mkSysprepXml { inherit (verData) language; computerName = compName; }}"
           ;;
       ''
     ) windowsVersions.versions
@@ -344,18 +436,29 @@ let
       pkgs.curl
       pkgs.jq
       pkgs.coreutils
+      pkgs.gnused
       pkgs.util-linux
       pkgs.unzip
       pkgs.socat
       uupEnv
     ];
     text = ''
-      IMAGE_TAG="''${1:-win11/26100.9457/looking-glass/v1}"
-      if [[ "$IMAGE_TAG" != *"/"* ]]; then
-        IMAGE_TAG="win11/26100.9457/looking-glass/$IMAGE_TAG"
+      if [ -z "''${1:-}" ]; then
+        echo "ERROR: Missing required IMAGE_TAG argument."
+        echo "Usage: build-windows-image <os>/<version>/<profile>/<revision> [hostname]"
+        echo "Supported versions: ${builtins.concatStringsSep ", " (builtins.attrNames windowsVersions.versions)}"
+        exit 1
       fi
 
+      IMAGE_TAG="$1"
+      VM_HOSTNAME="''${2:-}"
       IFS='/' read -r OS WIN_VERSION PROFILE REVISION <<< "$IMAGE_TAG"
+
+      if [ -z "$OS" ] || [ -z "$WIN_VERSION" ] || [ -z "$PROFILE" ] || [ -z "$REVISION" ]; then
+        echo "ERROR: Malformed IMAGE_TAG '$IMAGE_TAG'. Must follow format: <os>/<version>/<profile>/<revision> [hostname]"
+        echo "Example: win11/26300.9457.pro.en-us/looking-glass/v2"
+        exit 1
+      fi
 
       case "$WIN_VERSION" in
         ${versionLookupScript}
@@ -457,6 +560,11 @@ let
       trap cleanup EXIT
 
       cp "$AUTOUNATTEND_XML" "$UNATTEND_DIR/autounattend.xml"
+      cp "$SYSPREP_XML" "$UNATTEND_DIR/sysprep.xml"
+      if [ -n "$VM_HOSTNAME" ]; then
+        echo "--> Applying instance hostname '$VM_HOSTNAME' to unattended answer files..."
+        sed -i "s|<ComputerName>.*</ComputerName>|<ComputerName>$VM_HOSTNAME</ComputerName>|g" "$UNATTEND_DIR/sysprep.xml" "$UNATTEND_DIR/autounattend.xml"
+      fi
       cp "${provisionPs1}" "$UNATTEND_DIR/provision.ps1"
       cp "${errorHandlerCmd}" "$UNATTEND_DIR/ErrorHandler.cmd"
 
@@ -836,13 +944,11 @@ let
         echo "    Disk Path:    $DISK_PATH"
         echo "============================================================"
 
-        mkdir -p "/var/lib/libvirt/images" "/var/lib/libvirt/qemu/nvram"
-
         # 1. Check if depot master exists (JIT build if missing)
         if [ ! -f "$DEPOT_MASTER" ]; then
           echo "--> Golden master not found in depot store ($DEPOT_MASTER)."
           echo "--> Initiating just-in-time build via build-windows-image..."
-          "${buildApp}/bin/build-windows-image" "$IMAGE_TAG"
+          "${buildApp}/bin/build-windows-image" "$IMAGE_TAG" "$VM_NAME"
           if [ ! -f "$DEPOT_MASTER" ]; then
             echo "ERROR: build-windows-image completed but $DEPOT_MASTER was not created."
             exit 1
@@ -1017,10 +1123,11 @@ let
   };
 
 in
-{
+createFlakeModule {
   inherit
     mkAutounattendXml
     autounattendXml
+    mkSysprepXml
     provisionPs1
     errorHandlerCmd
     buildApp

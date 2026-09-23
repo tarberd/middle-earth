@@ -1,8 +1,12 @@
-{ nixpkgs, ... }:
+{
+  createFlakeModule,
+  nixpkgs,
+  ...
+}:
 let
   inherit (nixpkgs) lib;
 in
-{
+createFlakeModule {
   parseDotmanProfile = profilePath:
     let
       entries = builtins.readDir profilePath;

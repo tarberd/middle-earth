@@ -1,14 +1,19 @@
 {
+  createFlakeModule,
+  pubMod,
   declareNixosModule,
   ...
 }:
-declareNixosModule (
-  {
-    lib,
-    config,
-    ...
-  }:
-  {
+pubMod "root"
+pubMod "tarberd"
+createFlakeModule (
+  declareNixosModule (
+    {
+      lib,
+      config,
+      ...
+    }:
+    {
     options = {
       middle-earth.users.linkConfigs = lib.mkEnableOption "declarative dotfile linking via Home Manager";
 
@@ -32,4 +37,5 @@ declareNixosModule (
       extraGroups = lib.concatMap (role: config.middle-earth.roles.${role} or []) roles;
     }) config.middle-earth.userRoles;
   }
+  )
 )

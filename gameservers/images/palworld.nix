@@ -1,4 +1,5 @@
 {
+  createFlakeModule,
   nixpkgs,
   ...
 }:
@@ -231,6 +232,6 @@ EOF
     '';
   };
 in
-{
+createFlakeModule {
   inherit serviceFile initScript runScript provisionScript buildApp;
 }

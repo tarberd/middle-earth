@@ -1,4 +1,7 @@
-{ ... }:
+{
+  createFlakeModule,
+  ...
+}:
 let
   versions = {
     "26300.9457.pro.en-us" = {
@@ -23,6 +26,6 @@ let
     else
       throw "Unknown Windows version key: '${versionKey}'. Supported versions: ${builtins.concatStringsSep ", " (builtins.attrNames versions)}";
 in
-{
+createFlakeModule {
   inherit versions resolveVersion;
 }

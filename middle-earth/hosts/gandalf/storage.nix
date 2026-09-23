@@ -1,11 +1,13 @@
 {
-  disko,
+  createFlakeModule,
   declareNixosModule,
+  disko,
   ...
 }:
-declareNixosModule (
-  { ... }:
-  {
+createFlakeModule (
+  declareNixosModule (
+    { ... }:
+    {
     imports = [ disko.nixosModules.disko ];
 
     disko.devices = {
@@ -75,4 +77,5 @@ declareNixosModule (
       options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
     };
   }
+  )
 )

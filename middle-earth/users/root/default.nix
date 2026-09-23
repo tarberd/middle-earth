@@ -1,17 +1,18 @@
 {
-  middle-earth,
-  home-manager,
-  dotman2nix,
+  createFlakeModule,
   declareNixosModule,
+  flake,
+  home-manager,
   ...
 }:
-declareNixosModule (
-  {
-    pkgs,
-    lib,
-    config,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      pkgs,
+      lib,
+      config,
+      ...
+    }:
   let
     username = "root";
     dotmanProfilePath = ../../../dotfiles/sushi;
@@ -19,7 +20,7 @@ declareNixosModule (
   {
     imports = [
       home-manager.nixosModules.home-manager
-      middle-earth.users
+      flake.middle-earth.users
     ];
 
     config = {
@@ -53,9 +54,10 @@ declareNixosModule (
         ];
 
         file = lib.mkIf config.middle-earth.users.linkConfigs (
-          dotman2nix.parseDotmanProfile dotmanProfilePath
+          flake.dotman2nix.parseDotmanProfile dotmanProfilePath
         );
       };
     };
   }
+  )
 )

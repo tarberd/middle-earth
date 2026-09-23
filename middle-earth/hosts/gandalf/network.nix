@@ -1,17 +1,19 @@
 {
-  firewalld,
+  createFlakeModule,
   declareNixosModule,
+  flake,
   ...
 }:
-declareNixosModule (
-  {
-    pkgs,
-    config,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      pkgs,
+      config,
+      ...
+    }:
   {
     imports = [
-      firewalld.firewalld-policies
+      flake.firewalld.firewalld-policies
     ];
 
     environment.systemPackages = with pkgs; [
@@ -146,4 +148,5 @@ declareNixosModule (
     };
 
   }
+  )
 )

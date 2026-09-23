@@ -1,13 +1,15 @@
 {
+  createFlakeModule,
   declareNixosModule,
   ...
 }:
-declareNixosModule (
-  {
-    pkgs,
-    config,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      pkgs,
+      config,
+      ...
+    }:
   {
     artifacts.store.rclone-backup = {
       prompts = {
@@ -72,4 +74,5 @@ declareNixosModule (
 
     systemd.services.restic-backups-depot.path = [ pkgs.rclone ];
   }
+  )
 )

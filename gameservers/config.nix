@@ -1,13 +1,15 @@
 {
-  superModule,
+  createFlakeModule,
+  super,
   ...
 }:
+createFlakeModule (
 {
   lib,
   ...
 }:
 let
-  instances = superModule.instances;
+  instances = super.instances;
 in
 {
   terraform.required_providers.incus = {
@@ -78,4 +80,4 @@ in
       }
     ] ++ (cfg.extraDevices or [ ]);
   }) instances;
-}
+})

@@ -1,16 +1,18 @@
 {
-  nixvirt,
+  createFlakeModule,
   declareNixosModule,
-  middle-earth,
+  nixvirt,
+  flake,
   ...
 }:
-declareNixosModule (
-  {
-    pkgs,
-    lib,
-    config,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      pkgs,
+      lib,
+      config,
+      ...
+    }:
   let
     intelGpuSriov = pkgs.writeShellApplication {
       name = "intel-gpu-sriov";
@@ -179,7 +181,7 @@ declareNixosModule (
       serviceConfig = {
         Type = "oneshot";
         User = "root";
-        ExecStart = "${middle-earth.hosts.gandalf.virtualization.images.windows.backupApp}/bin/backup-windows-vm all";
+        ExecStart = "${flake.middle-earth.hosts.gandalf.virtualization.images.windows.backupApp}/bin/backup-windows-vm all";
       };
     };
 
@@ -192,4 +194,5 @@ declareNixosModule (
       };
     };
   }
+  )
 )

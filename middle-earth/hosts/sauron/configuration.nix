@@ -1,23 +1,25 @@
 {
-  firewalld,
-  superModule,
+  createFlakeModule,
   declareNixosModule,
+  flake,
+  super,
   ...
 }:
-declareNixosModule (
-  {
-    modulesPath,
-    lib,
-    pkgs,
-    config,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      modulesPath,
+      lib,
+      pkgs,
+      config,
+      ...
+    }:
   {
     imports = [
       (modulesPath + "/installer/scan/not-detected.nix")
       (modulesPath + "/profiles/qemu-guest.nix")
-      firewalld.firewalld-policies
-      superModule.disko-config
+      flake.firewalld.firewalld-policies
+      super.disko-config
     ];
 
     system.stateVersion = "26.05";
@@ -188,4 +190,5 @@ declareNixosModule (
       pkgs.wireguard-tools
     ];
   }
+  )
 )

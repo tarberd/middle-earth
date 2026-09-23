@@ -1,14 +1,16 @@
 {
+  createFlakeModule,
   declareNixosModule,
   ...
 }:
-declareNixosModule (
-  {
-    config,
-    lib,
-    pkgs,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
   let
     cfg = config.services.firewalld;
     format = pkgs.formats.xml { };
@@ -81,4 +83,5 @@ declareNixosModule (
       ) cfg.policies;
     };
   }
+  )
 )

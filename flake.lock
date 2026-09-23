@@ -88,6 +88,21 @@
         "type": "github"
       }
     },
+    "flake-modules": {
+      "locked": {
+        "lastModified": 1790199102,
+        "narHash": "sha256-y91yHqZ4TfN6oWAJ8z0LQLsHu3FSYaKfbTHcZJiOKsA=",
+        "owner": "tarberd",
+        "repo": "flake-modules",
+        "rev": "f2c9bb7d7f53993f982e86a7da86283c52201238",
+        "type": "github"
+      },
+      "original": {
+        "owner": "tarberd",
+        "repo": "flake-modules",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib"
@@ -388,6 +403,7 @@
       "inputs": {
         "antigravity-nix": "antigravity-nix",
         "disko": "disko",
+        "flake-modules": "flake-modules",
         "home-manager": "home-manager",
         "nixos-artifacts": "nixos-artifacts",
         "nixos-artifacts-agenix": "nixos-artifacts-agenix",

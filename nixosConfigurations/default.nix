@@ -1,6 +1,7 @@
 {
+  createFlakeModule,
+  flake,
   nixpkgs,
-  middle-earth,
   nixos-artifacts,
   nixos-artifacts-agenix,
   ...
@@ -8,7 +9,7 @@
 let
   inherit (nixpkgs) lib;
 in
-builtins.mapAttrs (
+createFlakeModule (builtins.mapAttrs (
   hostName: host:
     lib.nixosSystem {
       system = "x86_64-linux";
@@ -24,9 +25,9 @@ builtins.mapAttrs (
             middle-earth.users.linkConfigs = lib.mkForce true;
           };
         }
-        middle-earth.users.root
-        middle-earth.users.tarberd
+        flake.middle-earth.users.root
+        flake.middle-earth.users.tarberd
         host.configuration
       ];
     }
-) middle-earth.hosts
+) flake.middle-earth.hosts)

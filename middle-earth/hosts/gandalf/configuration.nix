@@ -1,24 +1,26 @@
 {
-  superModule,
-  antigravity-nix,
+  createFlakeModule,
   declareNixosModule,
+  super,
+  antigravity-nix,
   ...
 } @ inputs:
-declareNixosModule (
-  {
-    pkgs,
-    ...
-  }:
+createFlakeModule (
+  declareNixosModule (
+    {
+      pkgs,
+      ...
+    }:
   {
     system.stateVersion = "26.05";
 
     imports = [
-      superModule.hardware-configuration
-      superModule.storage
-      superModule.network
-      superModule.virtualization.kvm
-      superModule.virtualization.container
-      superModule.backup
+      super.hardware-configuration
+      super.storage
+      super.network
+      super.virtualization.kvm
+      super.virtualization.container
+      super.backup
     ];
 
     boot.loader.systemd-boot.enable = true;
@@ -118,4 +120,5 @@ declareNixosModule (
 
     nix.nixPath = [ "nixpkgs=${inputs.nixpkgs}" ];
   }
+  )
 )
