@@ -1,7 +1,9 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   ...
 }:
-pubMod "palworld"
+pub mod "palworld"
+
 createFlakeModule {}

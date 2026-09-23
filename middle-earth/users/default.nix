@@ -1,11 +1,12 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   declareNixosModule,
   ...
 }:
-pubMod "root"
-pubMod "tarberd"
+pub mod "root"
+pub mod "tarberd"
 createFlakeModule (
   declareNixosModule (
     {

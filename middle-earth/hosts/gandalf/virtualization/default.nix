@@ -1,10 +1,12 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   ...
 }:
-pubMod "kvm"
-pubMod "container"
-pubMod "instances"
-pubMod "images"
+pub mod "kvm"
+pub mod "container"
+pub mod "instances"
+pub mod "images"
+
 createFlakeModule {}

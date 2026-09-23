@@ -1,8 +1,10 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   ...
 }:
-pubMod "hosts"
-pubMod "users"
+pub mod "hosts"
+pub mod "users"
+
 createFlakeModule {}

@@ -1,13 +1,15 @@
 {
   createFlakeModule,
+  pub,
   mod,
-  pubMod,
   ...
 }:
 mod "hardware-configuration"
 mod "storage"
 mod "network"
 mod "backup"
-pubMod "configuration"
-pubMod "virtualization"
+
+pub mod "configuration"
+pub mod "virtualization"
+
 createFlakeModule {}

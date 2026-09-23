@@ -1,7 +1,9 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   ...
 }:
-pubMod "firewalld-policies"
+pub mod "firewalld-policies"
+
 createFlakeModule {}

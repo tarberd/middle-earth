@@ -1,9 +1,10 @@
 {
   createFlakeModule,
+  pub,
   mod,
-  pubMod,
   ...
 }:
 mod "disko-config"
-pubMod "configuration"
+pub mod "configuration"
+
 createFlakeModule {}

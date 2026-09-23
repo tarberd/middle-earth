@@ -1,6 +1,6 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
   mod,
   ...
 }:
@@ -11,8 +11,8 @@ mod "firewalld"
 mod "dotman2nix"
 
 # Public flake outputs
-pubMod "apps"
-pubMod "packages"
-pubMod "nixosConfigurations"
+pub mod "apps"
+pub mod "packages"
+pub mod "nixosConfigurations"
 
 createFlakeModule {}

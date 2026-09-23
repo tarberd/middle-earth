@@ -1,8 +1,10 @@
 {
   createFlakeModule,
-  pubMod,
+  pub,
+  mod,
   ...
 }:
-pubMod "gandalf"
-pubMod "sauron"
+pub mod "gandalf"
+pub mod "sauron"
+
 createFlakeModule {}

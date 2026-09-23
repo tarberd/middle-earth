@@ -1,9 +1,10 @@
 {
   createFlakeModule,
+  pub,
   mod,
-  pubMod,
   ...
 }:
 mod "windows-versions"
-pubMod "windows"
+pub mod "windows"
+
 createFlakeModule {}
