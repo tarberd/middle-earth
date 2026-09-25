@@ -207,7 +207,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -216,27 +216,27 @@ impl Hypervisor for MockHypervisor {
             });
 
         if let Some(error_details) = locked_state.injected_domain_errors.get(domain_name) {
-            return Err(HypervisorError::CommandExecutionFailed {
+            Err(HypervisorError::CommandExecutionFailed {
                 command: format!("virsh dominfo {domain_name}"),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
-        }
-
-        locked_state
-            .domains
-            .get(domain_name)
-            .cloned()
-            .ok_or_else(|| HypervisorError::DomainNotFound {
-                domain_name: domain_name.to_string(),
             })
+        } else {
+            locked_state
+                .domains
+                .get(domain_name)
+                .cloned()
+                .ok_or_else(|| HypervisorError::DomainNotFound {
+                    domain_name: domain_name.to_string(),
+                })
+        }
     }
 
     fn dump_xml(&self, domain_name: &str, inactive: bool) -> Result<String, HypervisorError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -246,27 +246,27 @@ impl Hypervisor for MockHypervisor {
             });
 
         if let Some(error_details) = locked_state.injected_domain_errors.get(domain_name) {
-            return Err(HypervisorError::CommandExecutionFailed {
+            Err(HypervisorError::CommandExecutionFailed {
                 command: format!("virsh dumpxml {domain_name}"),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
-        }
-
-        locked_state
-            .domain_xmls
-            .get(domain_name)
-            .cloned()
-            .ok_or_else(|| HypervisorError::DomainNotFound {
-                domain_name: domain_name.to_string(),
             })
+        } else {
+            locked_state
+                .domain_xmls
+                .get(domain_name)
+                .cloned()
+                .ok_or_else(|| HypervisorError::DomainNotFound {
+                    domain_name: domain_name.to_string(),
+                })
+        }
     }
 
     fn define_domain(&self, domain_xml: &str) -> Result<(), HypervisorError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -274,9 +274,9 @@ impl Hypervisor for MockHypervisor {
                 domain_xml: domain_xml.to_string(),
             });
 
-        let parsed_root = DomainXmlElement::parse(domain_xml).map_err(|parse_err| {
+        let parsed_root = DomainXmlElement::parse(domain_xml).map_err(|parse_error| {
             HypervisorError::OutputParseError {
-                details: format!("Failed to parse domain XML during mock define: {parse_err}"),
+                details: format!("Failed to parse domain XML during mock define: {parse_error}"),
             }
         })?;
 
@@ -321,7 +321,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -345,7 +345,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -368,7 +368,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -391,7 +391,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -417,7 +417,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -425,11 +425,13 @@ impl Hypervisor for MockHypervisor {
                 domain_name: domain_name.to_string(),
             });
 
-        if !locked_state.domains.contains_key(domain_name) {
-            return Err(HypervisorError::DomainNotFound {
+        locked_state
+            .domains
+            .contains_key(domain_name)
+            .then_some(())
+            .ok_or_else(|| HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            });
-        }
+            })?;
 
         Ok(locked_state
             .block_devices
@@ -448,7 +450,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -459,11 +461,13 @@ impl Hypervisor for MockHypervisor {
                 quiesce,
             });
 
-        if !locked_state.domains.contains_key(domain_name) {
-            return Err(HypervisorError::DomainNotFound {
+        locked_state
+            .domains
+            .contains_key(domain_name)
+            .then_some(())
+            .ok_or_else(|| HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            });
-        }
+            })?;
 
         Ok(())
     }
@@ -480,7 +484,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -493,11 +497,13 @@ impl Hypervisor for MockHypervisor {
                 pivot,
             });
 
-        if !locked_state.domains.contains_key(domain_name) {
-            return Err(HypervisorError::DomainNotFound {
+        locked_state
+            .domains
+            .contains_key(domain_name)
+            .then_some(())
+            .ok_or_else(|| HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            });
-        }
+            })?;
 
         Ok(())
     }
@@ -506,7 +512,7 @@ impl Hypervisor for MockHypervisor {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -515,27 +521,27 @@ impl Hypervisor for MockHypervisor {
             });
 
         if let Some(error_details) = locked_state.injected_pool_errors.get(pool_name) {
-            return Err(HypervisorError::CommandExecutionFailed {
+            Err(HypervisorError::CommandExecutionFailed {
                 command: format!("virsh pool-dumpxml {pool_name}"),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
-        }
-
-        locked_state
-            .pool_xmls
-            .get(pool_name)
-            .cloned()
-            .ok_or_else(|| HypervisorError::StoragePoolNotFound {
-                pool_name: pool_name.to_string(),
             })
+        } else {
+            locked_state
+                .pool_xmls
+                .get(pool_name)
+                .cloned()
+                .ok_or_else(|| HypervisorError::StoragePoolNotFound {
+                    pool_name: pool_name.to_string(),
+                })
+        }
     }
 
     fn pool_refresh(&self, pool_name: &str) -> Result<(), HypervisorError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -544,28 +550,26 @@ impl Hypervisor for MockHypervisor {
             });
 
         if let Some(error_details) = locked_state.injected_pool_errors.get(pool_name) {
-            return Err(HypervisorError::CommandExecutionFailed {
+            Err(HypervisorError::CommandExecutionFailed {
                 command: format!("virsh pool-refresh {pool_name}"),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
-        }
-
-        if !locked_state.pool_xmls.contains_key(pool_name) {
-            return Err(HypervisorError::StoragePoolNotFound {
+            })
+        } else if !locked_state.pool_xmls.contains_key(pool_name) {
+            Err(HypervisorError::StoragePoolNotFound {
                 pool_name: pool_name.to_string(),
-            });
+            })
+        } else {
+            locked_state.refreshed_pools.push(pool_name.to_string());
+            Ok(())
         }
-
-        locked_state.refreshed_pools.push(pool_name.to_string());
-        Ok(())
     }
 
     fn set_autostart(&self, domain_name: &str, autostart: bool) -> Result<(), HypervisorError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -589,7 +593,7 @@ impl Hypervisor for MockHypervisor {
         let locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
         Ok(locked_state.pool_xmls.keys().cloned().collect())
     }
 }

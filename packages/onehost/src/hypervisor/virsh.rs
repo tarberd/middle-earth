@@ -64,24 +64,30 @@ impl VirshHypervisor {
             let command_line = format!("{} {}", self.virsh_executable_path.display(), arguments.join(" "));
 
             if stderr_text.contains("failed to get domain") || stderr_text.contains("Domain not found") {
-                let domain_name = arguments.iter().copied().find(|arg| !arg.starts_with('-')).unwrap_or("unknown");
-                return Err(HypervisorError::DomainNotFound {
+                let domain_name = arguments
+                    .iter()
+                    .copied()
+                    .find(|argument| !argument.starts_with('-'))
+                    .unwrap_or("unknown");
+                Err(HypervisorError::DomainNotFound {
                     domain_name: domain_name.to_string(),
-                });
-            }
-
-            if stderr_text.contains("failed to get pool") || stderr_text.contains("Storage pool not found") {
-                let pool_name = arguments.iter().copied().find(|arg| !arg.starts_with('-')).unwrap_or("unknown");
-                return Err(HypervisorError::StoragePoolNotFound {
+                })
+            } else if stderr_text.contains("failed to get pool") || stderr_text.contains("Storage pool not found") {
+                let pool_name = arguments
+                    .iter()
+                    .copied()
+                    .find(|argument| !argument.starts_with('-'))
+                    .unwrap_or("unknown");
+                Err(HypervisorError::StoragePoolNotFound {
                     pool_name: pool_name.to_string(),
-                });
+                })
+            } else {
+                Err(HypervisorError::CommandExecutionFailed {
+                    command: command_line,
+                    exit_code: output.status.code(),
+                    stderr: stderr_text,
+                })
             }
-
-            Err(HypervisorError::CommandExecutionFailed {
-                command: command_line,
-                exit_code: output.status.code(),
-                stderr: stderr_text,
-            })
         }
     }
 }
@@ -91,50 +97,51 @@ pub fn parse_dominfo_output(
     raw_output: &str,
     domain_name: &str,
 ) -> Result<DomainInfo, HypervisorError> {
-    let mut resolved_state = DomainState::Unknown;
-    let mut resolved_vcpu: Option<u32> = None;
-    let mut resolved_memory: Option<u64> = None;
-    let mut resolved_autostart = false;
+    let initial_domain_info = DomainInfo {
+        name: domain_name.to_string(),
+        state: DomainState::Unknown,
+        vcpu_count: None,
+        memory_kib: None,
+        autostart: false,
+    };
 
-    raw_output
+    let parsed_info = raw_output
         .lines()
         .filter_map(|line| line.split_once(':'))
-        .for_each(|(raw_key, raw_value)| {
+        .fold(initial_domain_info, |accumulator, (raw_key, raw_value)| {
             let key = raw_key.trim();
             let value = raw_value.trim();
 
             match key {
-                "State" => {
-                    resolved_state = DomainState::from_virsh_state(value);
-                }
-                "CPU(s)" => {
-                    resolved_vcpu = value.parse::<u32>().ok();
-                }
-                "Max memory" => {
-                    resolved_memory = value
+                "State" => DomainInfo {
+                    state: DomainState::from_virsh_state(value),
+                    ..accumulator
+                },
+                "CPU(s)" => DomainInfo {
+                    vcpu_count: value.parse::<u32>().ok(),
+                    ..accumulator
+                },
+                "Max memory" => DomainInfo {
+                    memory_kib: value
                         .split_whitespace()
                         .next()
-                        .and_then(|numeric_part| numeric_part.parse::<u64>().ok());
-                }
-                "Autostart" => {
-                    resolved_autostart = value.eq_ignore_ascii_case("enable");
-                }
-                _ => {}
+                        .and_then(|numeric_part| numeric_part.parse::<u64>().ok()),
+                    ..accumulator
+                },
+                "Autostart" => DomainInfo {
+                    autostart: value.eq_ignore_ascii_case("enable"),
+                    ..accumulator
+                },
+                _ => accumulator,
             }
         });
 
-    Ok(DomainInfo {
-        name: domain_name.to_string(),
-        state: resolved_state,
-        vcpu_count: resolved_vcpu,
-        memory_kib: resolved_memory,
-        autostart: resolved_autostart,
-    })
+    Ok(parsed_info)
 }
 
 /// Pure parser: parses `virsh domblklist <domain> --details` stdout into BlockDeviceInfo entries.
 pub fn parse_domblklist_output(raw_output: &str) -> Result<Vec<BlockDeviceInfo>, HypervisorError> {
-    let devices: Vec<BlockDeviceInfo> = raw_output
+    Ok(raw_output
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with("Type") && !line.starts_with("----"))
@@ -143,11 +150,8 @@ pub fn parse_domblklist_output(raw_output: &str) -> Result<Vec<BlockDeviceInfo>,
             if columns.len() >= 3 {
                 let device_type = columns[1].to_string();
                 let target_device = columns[2].to_string();
-                let source_file = if columns.len() >= 4 && columns[3] != "-" {
-                    Some(PathBuf::from(columns[3]))
-                } else {
-                    None
-                };
+                let source_file = (columns.len() >= 4 && columns[3] != "-")
+                    .then(|| PathBuf::from(columns[3]));
 
                 Some(BlockDeviceInfo {
                     target_device,
@@ -158,9 +162,7 @@ pub fn parse_domblklist_output(raw_output: &str) -> Result<Vec<BlockDeviceInfo>,
                 None
             }
         })
-        .collect();
-
-    Ok(devices)
+        .collect())
 }
 
 impl Hypervisor for VirshHypervisor {
@@ -170,11 +172,13 @@ impl Hypervisor for VirshHypervisor {
     }
 
     fn dump_xml(&self, domain_name: &str, inactive: bool) -> Result<String, HypervisorError> {
-        if inactive {
-            self.execute_command(&["dumpxml", "--inactive", domain_name])
-        } else {
-            self.execute_command(&["dumpxml", domain_name])
-        }
+        let inactive_flag = inactive.then_some("--inactive");
+        let arguments: Vec<&str> = ["dumpxml"]
+            .into_iter()
+            .chain(inactive_flag)
+            .chain([domain_name])
+            .collect();
+        self.execute_command(&arguments)
     }
 
     fn define_domain(&self, domain_xml: &str) -> Result<(), HypervisorError> {
@@ -197,11 +201,12 @@ impl Hypervisor for VirshHypervisor {
         domain_name: &str,
         cleanup_nvram: bool,
     ) -> Result<(), HypervisorError> {
-        if cleanup_nvram {
-            self.execute_command(&["undefine", domain_name, "--nvram"])?;
-        } else {
-            self.execute_command(&["undefine", domain_name])?;
-        }
+        let nvram_flag = cleanup_nvram.then_some("--nvram");
+        let arguments: Vec<&str> = ["undefine", domain_name]
+            .into_iter()
+            .chain(nvram_flag)
+            .collect();
+        self.execute_command(&arguments)?;
         Ok(())
     }
 
@@ -235,13 +240,13 @@ impl Hypervisor for VirshHypervisor {
         disk_specifications: &[DiskSnapshotSpecification],
         quiesce: bool,
     ) -> Result<(), HypervisorError> {
-        let diskspec_args: Vec<String> = disk_specifications
+        let formatted_disk_specifications: Vec<String> = disk_specifications
             .iter()
-            .map(|spec| {
+            .map(|specification| {
                 format!(
                     "{},file={}",
-                    spec.target_device,
-                    spec.snapshot_file_path.display()
+                    specification.target_device,
+                    specification.snapshot_file_path.display()
                 )
             })
             .collect();
@@ -257,7 +262,7 @@ impl Hypervisor for VirshHypervisor {
             "--no-metadata",
         ];
 
-        let diskspec_flags: Vec<&str> = diskspec_args
+        let diskspec_flag_arguments: Vec<&str> = formatted_disk_specifications
             .iter()
             .flat_map(|diskspec| ["--diskspec", diskspec.as_str()])
             .collect();
@@ -266,7 +271,7 @@ impl Hypervisor for VirshHypervisor {
 
         let arguments: Vec<&str> = base_arguments
             .into_iter()
-            .chain(diskspec_flags)
+            .chain(diskspec_flag_arguments)
             .chain(quiesce_flag)
             .collect();
 
@@ -283,13 +288,13 @@ impl Hypervisor for VirshHypervisor {
         active: bool,
         pivot: bool,
     ) -> Result<(), HypervisorError> {
-        let base_argument_string = base_path.map(|path| path.display().to_string());
-        let top_argument_string = top_path.map(|path| path.display().to_string());
+        let rendered_base_path = base_path.map(|path| path.display().to_string());
+        let rendered_top_path = top_path.map(|path| path.display().to_string());
 
-        let base_flag: Option<[&str; 2]> = base_argument_string
+        let base_flag: Option<[&str; 2]> = rendered_base_path
             .as_deref()
             .map(|base| ["--base", base]);
-        let top_flag: Option<[&str; 2]> = top_argument_string
+        let top_flag: Option<[&str; 2]> = rendered_top_path
             .as_deref()
             .map(|top| ["--top", top]);
         let active_flag: Option<&str> = active.then_some("--active");
@@ -317,11 +322,11 @@ impl Hypervisor for VirshHypervisor {
     }
 
     fn set_autostart(&self, domain_name: &str, autostart: bool) -> Result<(), HypervisorError> {
-        let arguments = if autostart {
-            vec!["autostart", domain_name]
-        } else {
-            vec!["autostart", domain_name, "--disable"]
-        };
+        let disable_flag = (!autostart).then_some("--disable");
+        let arguments: Vec<&str> = ["autostart", domain_name]
+            .into_iter()
+            .chain(disable_flag)
+            .collect();
         self.execute_command(&arguments)?;
         Ok(())
     }

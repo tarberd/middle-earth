@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 12c.3 (`src/hypervisor/`, `src/storage/`).
+Await user signal to begin Phase 12c.4 (`src/lifecycle/`, `tests/pipeline_integration_tests.rs`, `tests/storage_toolchain_tests.rs`).
 
 ## Current Phase
-Phase 12c.3: Trait Abstractions & Infrastructure Adapters Audit (Pending User Authorization)
+Phase 12c.4: Lifecycle Reconciliation & Integration Pipelines Audit (Pending User Authorization)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -350,22 +350,22 @@ Phase 12c.3: Trait Abstractions & Infrastructure Adapters Audit (Pending User Au
 - **Status:** complete
 
 #### Phase 12c.3: Trait Abstractions & Infrastructure Adapters Audit (`src/hypervisor/`, `src/storage/`)
-- [ ] Fresh read of planning files (`task_plan.md`, `findings.md`, `progress.md`)
-- [ ] Audit & refactor `src/hypervisor/` (`mod.rs`, `virsh.rs`, `mock.rs`):
+- [x] Fresh read of planning files (`task_plan.md`, `findings.md`, `progress.md`)
+- [x] Audit & refactor `src/hypervisor/` (`mod.rs`, `virsh.rs`, `mock.rs`):
   - Verify Trait Boundary Contract: `Hypervisor` trait defines clean hardware interface
   - Audit `virsh.rs`: pure command building, streaming error capture, `try_for_each` for multi-step operations, parameter borrowing (`&str`, `&Path`)
   - Audit `mock.rs`: verify in-memory mock isolation without host leaks
   - Enforce zero `.unwrap()` / `.expect()` across production code
   - Enforce zero single-letter variables and zero type suffixes (`_str`, `_vec`)
-- [ ] Audit & refactor `src/storage/` (`mod.rs`, `qemu_img.rs`, `mock.rs`):
+- [x] Audit & refactor `src/storage/` (`mod.rs`, `qemu_img.rs`, `mock.rs`):
   - Verify Trait Boundary Contract: `StorageManager` encapsulates all QEMU image and filesystem mutations
   - Audit `qemu_img.rs`: verify `qemu-img` command executions, robust JSON info parsing, atomic promotion semantics, `EXDEV` cross-device fallback
   - Ensure `StorageManager::delete_image` encapsulates disk cleanup (zero raw `fs::remove_file` in callers)
   - Audit `mock.rs`: verify pure in-memory tracking of images, overlays, backing chains, and pool discovery
   - Enforce zero `.unwrap()` / `.expect()` across production code
-- [ ] Run test suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, hermetic Nix flake package build
-- [ ] Conduct Stage-Gated Senior Code Review for Phase 12c.3
-- **Status:** pending
+- [x] Run test suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, hermetic Nix flake package build
+- [x] Conduct Stage-Gated Senior Code Review for Phase 12c.3
+- **Status:** complete
 
 #### Phase 12c.4: Lifecycle Reconciliation & Integration Pipelines Audit (`src/lifecycle/`, `tests/pipeline_integration_tests.rs`, `tests/storage_toolchain_tests.rs`)
 - [ ] Fresh read of planning files (`task_plan.md`, `findings.md`, `progress.md`)

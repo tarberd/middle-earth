@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -49,11 +49,12 @@ pub fn execute_cross_device_streaming_move(
     source_path: &Path,
     destination_path: &Path,
 ) -> Result<(), StorageError> {
-    if !source_path.exists() {
-        return Err(StorageError::SourceFileNotFound {
+    source_path
+        .exists()
+        .then_some(())
+        .ok_or_else(|| StorageError::SourceFileNotFound {
             path: source_path.to_path_buf(),
-        });
-    }
+        })?;
 
     let destination_parent = destination_path.parent().ok_or_else(|| {
         StorageError::DestinationDirectoryNotFound {
@@ -61,11 +62,12 @@ pub fn execute_cross_device_streaming_move(
         }
     })?;
 
-    if !destination_parent.exists() {
-        return Err(StorageError::DestinationDirectoryNotFound {
+    destination_parent
+        .exists()
+        .then_some(())
+        .ok_or_else(|| StorageError::DestinationDirectoryNotFound {
             path: destination_parent.to_path_buf(),
-        });
-    }
+        })?;
 
     let file_name = destination_path
         .file_name()
@@ -78,14 +80,7 @@ pub fn execute_cross_device_streaming_move(
     let mut source_file = File::open(source_path)?;
     let mut staging_file = File::create(&temporary_staging_path)?;
 
-    let mut buffer = [0u8; 64 * 1024]; // 64 KiB buffer
-    loop {
-        let bytes_read = source_file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        staging_file.write_all(&buffer[..bytes_read])?;
-    }
+    io::copy(&mut source_file, &mut staging_file)?;
 
     // Ensure all bytes and metadata hit physical storage
     staging_file.sync_all()?;
@@ -139,11 +134,12 @@ pub trait StorageManager: Send + Sync {
         source_path: &Path,
         destination_path: &Path,
     ) -> Result<(), StorageError> {
-        if !source_path.exists() {
-            return Err(StorageError::SourceFileNotFound {
+        source_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| StorageError::SourceFileNotFound {
                 path: source_path.to_path_buf(),
-            });
-        }
+            })?;
 
         match fs::rename(source_path, destination_path) {
             Ok(()) => Ok(()),

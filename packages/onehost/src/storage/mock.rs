@@ -135,7 +135,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -145,23 +145,23 @@ impl StorageManager for MockStorageManager {
             });
 
         if let Some(error_details) = locked_state.injected_errors.get(overlay_path) {
-            return Err(StorageError::CommandExecutionFailed {
+            Err(StorageError::CommandExecutionFailed {
                 command: format!("qemu-img create -f qcow2 {}", overlay_path.display()),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
+            })
+        } else {
+            let record = MockImageRecord {
+                format: "qcow2".to_string(),
+                virtual_size_bytes: 68_719_476_736,
+                actual_size_bytes: 196_608,
+                backing_file: Some(backing_file_path.to_path_buf()),
+                is_corrupted: false,
+            };
+
+            locked_state.images.insert(overlay_path.to_path_buf(), record);
+            Ok(())
         }
-
-        let record = MockImageRecord {
-            format: "qcow2".to_string(),
-            virtual_size_bytes: 68_719_476_736,
-            actual_size_bytes: 196_608,
-            backing_file: Some(backing_file_path.to_path_buf()),
-            is_corrupted: false,
-        };
-
-        locked_state.images.insert(overlay_path.to_path_buf(), record);
-        Ok(())
     }
 
     fn rebase_overlay(
@@ -173,7 +173,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -184,29 +184,29 @@ impl StorageManager for MockStorageManager {
             });
 
         if let Some(error_details) = locked_state.injected_errors.get(overlay_path) {
-            return Err(StorageError::CommandExecutionFailed {
+            Err(StorageError::CommandExecutionFailed {
                 command: format!("qemu-img rebase {}", overlay_path.display()),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
+            })
+        } else {
+            let image_record = locked_state
+                .images
+                .get_mut(overlay_path)
+                .ok_or_else(|| StorageError::SourceFileNotFound {
+                    path: overlay_path.to_path_buf(),
+                })?;
+
+            image_record.backing_file = Some(new_backing_file_path.to_path_buf());
+            Ok(())
         }
-
-        let image_record = locked_state
-            .images
-            .get_mut(overlay_path)
-            .ok_or_else(|| StorageError::SourceFileNotFound {
-                path: overlay_path.to_path_buf(),
-            })?;
-
-        image_record.backing_file = Some(new_backing_file_path.to_path_buf());
-        Ok(())
     }
 
     fn inspect_image(&self, image_path: &Path) -> Result<ImageInspectionInfo, StorageError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -215,31 +215,31 @@ impl StorageManager for MockStorageManager {
             });
 
         if let Some(error_details) = locked_state.injected_errors.get(image_path) {
-            return Err(StorageError::InspectionParseError {
+            Err(StorageError::InspectionParseError {
                 details: error_details.clone(),
-            });
+            })
+        } else {
+            let image_record = locked_state
+                .images
+                .get(image_path)
+                .ok_or_else(|| StorageError::SourceFileNotFound {
+                    path: image_path.to_path_buf(),
+                })?;
+
+            Ok(ImageInspectionInfo {
+                format: image_record.format.clone(),
+                virtual_size_bytes: image_record.virtual_size_bytes,
+                actual_size_bytes: image_record.actual_size_bytes,
+                backing_file: image_record.backing_file.clone(),
+            })
         }
-
-        let image_record = locked_state
-            .images
-            .get(image_path)
-            .ok_or_else(|| StorageError::SourceFileNotFound {
-                path: image_path.to_path_buf(),
-            })?;
-
-        Ok(ImageInspectionInfo {
-            format: image_record.format.clone(),
-            virtual_size_bytes: image_record.virtual_size_bytes,
-            actual_size_bytes: image_record.actual_size_bytes,
-            backing_file: image_record.backing_file.clone(),
-        })
     }
 
     fn check_image(&self, image_path: &Path) -> Result<(), StorageError> {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -272,7 +272,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -316,7 +316,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -343,7 +343,7 @@ impl StorageManager for MockStorageManager {
                 if is_cross_device {
                     execute_cross_device_streaming_move(source_path, destination_path)?;
                 } else {
-                    return Err(StorageError::IoError { source: error });
+                    Err(StorageError::IoError { source: error })?;
                 }
             }
         }
@@ -375,7 +375,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions
@@ -404,7 +404,7 @@ impl StorageManager for MockStorageManager {
         let mut locked_state = self
             .state
             .lock()
-            .map_err(|poison_err| std::io::Error::other(poison_err.to_string()))?;
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
 
         locked_state
             .recorded_actions

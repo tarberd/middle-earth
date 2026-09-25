@@ -3,7 +3,7 @@
 ## Session: 2026-09-24
 
 ### Current Status
-- **Phase:** Phase 12c.2: Domain XML AST, Synthesis & Normalization Audit (Completed - Awaiting user signal to begin Phase 12c.3)
+- **Phase:** Phase 12c.3: Trait Abstractions & Infrastructure Adapters Audit (Completed - Awaiting user signal to begin Phase 12c.4)
 - **Started:** 2026-09-24
 
 ### Actions Taken
@@ -158,10 +158,18 @@
       - In `src/domain/template.rs`: Updated `DomainTemplateSynthesisError::XmlParseError` to wrap `#[from] DomainXmlParseError`. Replaced manual early `return Err(...)` with monadic `.then_some(()).ok_or(...)?:` pipelines. Replaced anti-pattern identifier `nvram_path_str` with `rendered_nvram_path`.
       - In `src/domain/diff.rs`: Updated `DomainXmlDiffError` to wrap `DomainXmlParseError`. Replaced early `return Err(...)` in `compare_domain_xmls` with monadic `.then_some(()).ok_or(...)?:`. Eradicated truncated identifiers (`synth_dev` -> `synthesized_device`, `live_dev` -> `live_device`, `dev_child` -> `device_child`, `ctrl_type` -> `controller_type`, `exp_val` -> `expected_value`, `act_val` -> `actual_value`, `sub_diffs` -> `child_sub_differences`, `diffs` -> `accumulated_differences`).
       - Ran full 4-tier verification: 99/99 tests pass cleanly, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
-      - Conducted Stage-Gated Senior Code Review for Phase 12c.2. Awaiting user signal before initiating Phase 12c.3.
+      - Conducted Stage-Gated Senior Code Review for Phase 12c.2.
     - Codified Rule III.4 (Continuous Upstream Synchronization & Atomic Commits) into Triad of Foundations:
       - Documented rule in `task_plan.md` and `findings.md` mandating that local changes must never accumulate across phases.
       - Upon passing verification tiers and receiving stage-gate approval, all code and planning files must be committed atomically and pushed to upstream remote.
+    - Executed Phase 12c.3 (Trait Abstractions & Infrastructure Adapters Audit):
+      - In `src/hypervisor/virsh.rs`: Refactored `execute_command` to return pure expressions, eliminating early `return Err(...)` statements and renaming truncated `|arg|` to `|argument|`. Refactored `parse_dominfo_output` from mutable variables and `.for_each()` to pure `.fold()` pipeline with struct update syntax. Refactored `parse_domblklist_output` to a pure expression. Refactored `dump_xml`, `undefine_domain`, `set_autostart`, `create_snapshot`, and `blockcommit` to declarative iterator argument pipelines and eliminated Hungarian suffixes (`diskspec_args`, `base_argument_string`).
+      - In `src/hypervisor/mock.rs`: Renamed `poison_err` -> `poison_error` and `parse_err` -> `parse_error`. Refactored early returns in `domain_info`, `dump_xml`, `pool_dump_xml`, `pool_refresh`, and converted existence checks in `list_block_devices`, `create_snapshot`, `blockcommit` to monadic `.then_some(()).ok_or_else(...)?:` chains.
+      - In `src/storage/traits.rs`: Replaced imperative buffer `loop { ... }` in `execute_cross_device_streaming_move` with standard `std::io::copy(&mut source_file, &mut staging_file)?;`, achieving 100% loop-free production code. Converted early returns in `execute_cross_device_streaming_move` and `move_file_safely` to monadic `.then_some(()).ok_or_else(...)?:` pipelines. Cleaned unused `Read` and `Write` imports.
+      - In `src/storage/qemu_img.rs`: Renamed `json_err` -> `json_error` and Hungarian suffixes (`backing_file_str`, `overlay_str`, etc. -> `rendered_*`). Replaced imperative argument pushes with functional chained iterator pipelines in `rebase_overlay` and `convert_thin_backup`. Refactored early returns in all methods to monadic `.then_some(()).ok_or_else(...)?:` pipelines. Monadized `check_image`.
+      - In `src/storage/mock.rs`: Renamed `poison_err` -> `poison_error`. Refactored early returns in `create_cow_overlay`, `rebase_overlay`, `inspect_image`, and `move_file_safely` to expressions and monadic `?`.
+      - Verified 4-tier verification protocol: 99/99 tests passed, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
+      - Conducted Stage-Gated Senior Code Review for Phase 12c.3. Awaiting user signal before initiating Phase 12c.4.
 
 
 ### Test Results
@@ -216,6 +224,9 @@
 | Phase 12c.2 Full Test Suite (cargo test) | 99 unit/integration tests pass cleanly | 99 passed, 0 failed, 0 warnings | PASS |
 | Phase 12c.2 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 12c.2 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Phase 12c.3 Full Test Suite (cargo test) | 99 unit/integration tests pass cleanly | 99 passed, 0 failed, 0 warnings | PASS |
+| Phase 12c.3 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
+| Phase 12c.3 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 
 ### Errors
 | Error | Resolution |
