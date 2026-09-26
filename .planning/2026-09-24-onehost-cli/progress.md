@@ -265,6 +265,28 @@
           - 116/116 unit and integration tests passing (`cargo test --all-targets`).
           - 0 warnings in Clippy static audit (`cargo clippy --all-targets -- -D warnings`).
           - Hermetic Nix flake derivation build and checkPhase passing (`nix build .#packages.x86_64-linux.onehost --no-link`).
+    - **Phase 13b: Full Disaster Recovery & Backup Integration Suite** (2026-09-26):
+        - Implemented `tests/disaster_recovery_integration_tests.rs`: 8 exhaustive end-to-end integration tests:
+          1. `test_end_to_end_disaster_recovery_round_trip_offline`: Validates complete offline round-trip lifecycle invariant (provision -> backup -> destroy -> restore -> NoOp with 0 drift).
+          2. `test_end_to_end_disaster_recovery_round_trip_online`: Validates live VSS-quiesced atomic snapshot, blockcommit pivot, temporary `.snap` cleanup, destroy, restore, and NoOp plan.
+          3. `test_end_to_end_disaster_recovery_with_real_qemu_img_toolchain`: Hybrid `QemuImgStorage` + `MockHypervisor` test validating real QCOW2 overlay creation, compressed thin delta conversion, restore, and zero cluster corruption via `qemu-img check`.
+          4. `test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation`: Simulates total storage pool wipe; validates automatic repopulation of golden master from depot store with `0444` read-only permissions and successful overlay attachment.
+          5. `test_end_to_end_disaster_recovery_multi_disk`: Multi-disk VM (`sda` OS disk + `sdb` data disk) round-trip disaster recovery verifying multi-disk archiving, destruction, and restoration.
+          6. `test_real_toolchain_thin_backup_and_restore_compression`: Direct real `qemu-img` toolchain test validating thin compression ratio (< 1MB archive from 25MB virtual disk) and round-trip restore integrity.
+          7. `test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite`: Verifies `RestoreError::DomainAlreadyExists` guardrail abort and `--allow-overwrite` override.
+          8. `test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot`: Verifies fail-fast `RestoreError::BaseImageNotFound` when golden master is absent from both pool and depot store.
+        - Fixed `QemuImgStorage` production implementor: Added automatic parent directory creation (`std::fs::create_dir_all`) in `create_cow_overlay`, `convert_thin_backup`, and `restore_thin_backup`, preserving the Shell Trait Boundary Invariant (0 `std::fs` calls in imperative shells).
+        - Verified full static invariant suite across `src/` and `tests/`:
+          - 0 imperative loops (`for`, `while`, `loop`).
+          - 0 unwraps or expects in `src/`.
+          - 0 explicit `return` statements across `src/` and `tests/`.
+          - 0 `let _ =` silent swallowing across `src/` and `tests/`.
+          - 0 single-letter closures across `src/` and `tests/`.
+          - 0 Hungarian notation or banned suffixes across `src/` and `tests/`.
+        - Executed full 4-tier verification protocol:
+          - 124/124 unit and integration tests passing (`cargo test --all-targets`).
+          - 0 warnings in Clippy static audit (`cargo clippy --all-targets -- -D warnings`).
+          - Hermetic Nix flake derivation build and checkPhase passing (`nix build .#packages.x86_64-linux.onehost --no-link`).
 
 
 ### Test Results
@@ -344,6 +366,10 @@
 | Phase 13 Full Test Suite (cargo test --all-targets) | 116 unit/integration tests pass cleanly | 116 passed, 0 failed, 0 warnings | PASS |
 | Phase 13 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 13 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Disaster Recovery Tests (tests/disaster_recovery_integration_tests.rs) | 8 end-to-end integration tests pass | 8 passed, 0 failed, 0 warnings | PASS |
+| Phase 13b Full Test Suite (cargo test --all-targets) | 124 unit/integration tests pass cleanly | 124 passed, 0 failed, 0 warnings | PASS |
+| Phase 13b Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
+| Phase 13b Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 
 ### Errors
 | Error | Resolution |
@@ -357,6 +383,8 @@
 | Hungarian notation suffixes in `src/` and `tests/` | Renamed `xml_string`, `transform_os_element`, `transform_devices_element`, `base_element`, `element_acc`, `current_element`, `parse_start_element`, `parse_empty_element`, `valid_uuid_string`, `os_element` to clean domain names |
 | Explicit `return` in `backup/engine.rs` | Refactored `match domain_info.state` into pure value-producing expression with trailing `?` |
 | Accumulator variables `children_acc`/`text_acc` in `element.rs` | Renamed to `accumulated_children` and `accumulated_text` to eliminate Hungarian `_acc` suffix |
+| Destination parent directory missing during real `qemu-img convert` thin backup | Added `std::fs::create_dir_all` for destination parents in `QemuImgStorage` (`create_cow_overlay`, `convert_thin_backup`, `restore_thin_backup`) |
+
 
 
 

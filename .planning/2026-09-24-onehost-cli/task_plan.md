@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 13b (Full Disaster Recovery & Backup Integration Suite) or Phase 14 (Image Builder Pipeline & CLI Wiring).
+Await user signal to begin Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring.
 
 ## Current Phase
-Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Complete)
+Phase 13b: Full Disaster Recovery & Backup Integration Suite (Complete)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -495,11 +495,17 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Complete)
 - **Status:** complete
 
 ### Phase 13b: Full Disaster Recovery & Backup Integration Suite
-- [ ] Write full disaster recovery integration tests in `tests/disaster_recovery_integration_tests.rs`:
+- [x] Write full disaster recovery integration tests in `tests/disaster_recovery_integration_tests.rs`:
   - Full round-trip loop: Provision via `apply` -> Backup (online/offline) -> Destroy (`--delete-disk`) -> Restore (`onehost restore`) -> Plan verification (asserts NoOp / zero drift)
   - Real `qemu-img convert -c` compression against base image
-- [ ] Verify `cargo test` passes
-- **Status:** pending
+  - Automatic repopulation of missing local pool base cache from depot store
+  - Multi-disk disaster recovery round-trip (`sda` OS disk + `sdb` data disk)
+  - Guardrail validations (rejection of existing domain without `--allow-overwrite`, error on missing base image)
+- [x] Verify `cargo test --all-targets` passes (124 tests total)
+- [x] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings
+- [x] Verify `nix build .#packages.x86_64-linux.onehost --no-link` passes
+- [x] Conduct senior-level code review of Phase 13b
+- **Status:** complete
 
 ### Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring
 - [ ] Write unit tests in `tests/builder_tests.rs`:

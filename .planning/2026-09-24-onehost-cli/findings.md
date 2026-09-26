@@ -871,5 +871,33 @@ pub enum LifecycleError {
 - Production `QemuImgStorage` delegates to `std::fs`.
 - `MockStorageManager` tracks virtual files in `files: HashMap<PathBuf, String>`, achieving 100% in-memory hermeticity with zero host disk operations.
 
+---
+
+### Phase 13b: Full Disaster Recovery & Backup Integration Suite
+
+#### 1. End-to-End Declarative Round-Trip Lifecycle
+- **The Lifecycle Invariant**:
+  `plan(restore(backup(apply(plan(declared_state))))) == InstancePlanAction::NoOp`
+  Applying a declarative manifest creates the concrete hypervisor domain and thin CoW storage overlays. Backing up the instance captures domain XML, NVRAM, thin compressed deltas, and metadata manifest. Simulating disaster by completely destroying the instance (`--delete-disk`) and undefining it from Libvirt leaves the hypervisor in a state requiring `Create`. Restoring from the backup directory reconstructs overlays reattached to the golden master backing file, restores NVRAM, defines the domain, and refreshes Libvirt storage pools. Calling `DomainLifecyclePlanner::plan` against the restored instance produces `InstancePlanAction::NoOp` with zero drift (`diff.has_drift == false`).
+
+#### 2. Automatic Local Base Image Cache Repopulation
+- In a disaster scenario where the local storage pool is wiped clean (loss of filesystem or node migration), the local pool cache of the golden master (`${os}-${version}-${flavor}-${hash}.qcow2`) is destroyed along with instance overlays.
+- `RestoreEngine::restore_instance` checks if the base image is present in the target pool directory. If missing, it automatically resolves `depot_store_dir` from the options or root manifest, copies the golden master from the depot into the local pool cache with `0444` read-only permissions via `storage.copy_base_image`, and attaches the restored thin overlay to this newly repopulated pool cache.
+
+#### 3. Multi-Disk Disaster Recovery Invariance
+- Multi-disk VM architectures (`sda` OS disk + `sdb` secondary data disk):
+  - `DomainTemplateEngine` designates exactly one OS disk (`onehost:role='os-disk'`), synthesizing its source overlay path to `<pool>/<instance>.qcow2`.
+  - Secondary disks declared in the template `<devices>` block are preserved with their explicit target devices and source paths (e.g. `<pool>/<instance>-sdb.qcow2`).
+  - `BackupEngine` queries `hypervisor.list_block_devices`, capturing thin backup entries for both `sda` and `sdb` in `manifest.json`.
+  - `RestoreEngine` reconstructs overlays for every disk in `manifest.disks` (`sda` mapped to `<instance>.qcow2`, secondary disks mapped to `<instance>-<target_device>.qcow2`), restoring NVRAM, defining the multi-disk domain, and achieving zero drift upon subsequent planning.
+
+#### 4. Real CLI Toolchain Verification (`qemu-img convert -c`)
+- Real `QemuImgStorage` executing real `qemu-img` binary under temporary isolation validates that:
+  - `convert_thin_backup` with `compress: true` creates thin zlib-compressed QCOW2 deltas substantially smaller than virtual disk capacity.
+  - `restore_thin_backup` reconstructs the QCOW2 overlay with proper backing file headers.
+  - `check_image` validates 0 internal cluster corruption.
+  - All destination parent directories are automatically created (`std::fs::create_dir_all`) preserving the Shell Trait Boundary Invariant (0 `std::fs` calls in imperative shells).
+
+
 
 
