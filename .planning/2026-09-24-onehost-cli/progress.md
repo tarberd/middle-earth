@@ -170,6 +170,9 @@
       - In `src/storage/mock.rs`: Renamed `poison_err` -> `poison_error`. Refactored early returns in `create_cow_overlay`, `rebase_overlay`, `inspect_image`, and `move_file_safely` to expressions and monadic `?`.
       - Verified 4-tier verification protocol: 99/99 tests passed, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
       - Conducted Stage-Gated Senior Code Review for Phase 12c.3. Awaiting user signal before initiating Phase 12c.4.
+    - Codified the **Fresh Read Protocol** into Pillar III.3 in `task_plan.md` and `findings.md`:
+      - Formally specified that every phase and context resumption must begin with a complete, contiguous read of the entire `## Mandatory Design Guidelines & Engineering Standards` section as a whole together (North Star, Pillar I, Pillar II, Pillar III), with zero skipping.
+      - Mandated bundling the standards read with the target phase context: the phase tasks and acceptance criteria in `task_plan.md`, current execution progress and history in `progress.md`, and active domain contracts and invariants in `findings.md`.
 
 
 ### Test Results

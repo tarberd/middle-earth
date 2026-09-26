@@ -91,7 +91,13 @@
      - Clippy: `nix shell nixpkgs#cargo nixpkgs#clippy --command cargo clippy --all-targets -- -D warnings`
      - Package Build: `git add packages/onehost && nix build .#packages.x86_64-linux.onehost --no-link`
 3. **Engineering Alignment & Quality Gates**:
-   - **Context Integrity**: Always read planning files in full before starting work on a new phase.
+   - **Context Integrity & The Fresh Read Protocol**:
+     - *Mandatory Full Standards Ingestion*: At the beginning of every phase or sub-phase (and whenever context is refreshed or resumed after compaction), the agent MUST perform a fresh read of the entire `## Mandatory Design Guidelines & Engineering Standards` section in whole together (the North Star Architectural Vision, Pillar I, Pillar II, and Pillar III). Skipping, skimming, or relying on partial truncated memory of these engineering standards is strictly prohibited; the entire section must be ingested in full.
+     - *Phase Context Bundle*: Simultaneously with the full standards section, the fresh read MUST be accompanied by all other information needed for the active phase:
+       1. *Target Phase Blueprint (`task_plan.md`)*: The exact phase definition, task checklist, scope, acceptance criteria, and specific constraints.
+       2. *Recent Execution History & State (`progress.md`)*: Current status, recent milestones achieved, key architectural decisions, and error resolutions.
+       3. *Domain Contracts & Invariants (`findings.md`)*: Applicable data schemas, domain XML template specifications, state machine transitions, trait interfaces, and verification invariants.
+     - *Compaction Defense*: The Fresh Read Protocol guarantees that no architectural boundary, functional coding standard, or domain invariant degrades due to context compaction, ensuring that every phase executes with total fidelity to the Triad of Foundations.
    - **Zero Unspecified Assumptions**: Never guess or assume unspecified behavior; conduct an interactive interview whenever implementation semantics are ambiguous.
    - **Stage-Gated Senior Code Review**: Perform a thorough senior-level code review upon completion of each phase before advancing.
    - **Have Fun**: Maintain high engineering standards and enjoy the craft.
