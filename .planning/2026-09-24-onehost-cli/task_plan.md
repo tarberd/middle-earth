@@ -25,25 +25,33 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
    - **The Trait Boundary (Contracts & Hardware Abstraction)**:
      - *Scope*: Abstract interfaces (`Hypervisor`, `StorageManager`, `ProcessRunner`).
      - *Contract*: Strictly decouples external infrastructure interactions. Production implementations wrap live CLI/system tools (`VirshHypervisor`, `QemuImgStorage`); test implementations provide hermetic in-memory mocks (`MockHypervisor`, `MockStorageManager`).
+     - *Trait Purity Rule*: Traits must NOT embed default implementations with real host filesystem side-effects (e.g. raw `std::fs` calls). All I/O must be explicit in production implementors.
    - **The Imperative Shell (Reconciliation, Planning & Orchestration)**:
      - *Query Shell (`DomainLifecyclePlanner`)*: Queries traits to snapshot live hypervisor and storage state, delegating drift comparison and action generation to the pure Core engines, emitting an immutable `OnehostPlan`.
      - *Execution Shell (`DomainLifecycleApplier`, `DomainLifecycleDestroyer`, `BackupEngine`, `RestoreEngine`)*: Thin, linear orchestration sequentially executing the plan's actions via traits.
+     - *Shell Trait Boundary Invariant*: The imperative shell must NEVER invoke `std::fs` or run external processes directly. All external mutations (including NVRAM directory creation and file copying) must be routed through trait methods (e.g. `StorageManager::initialize_nvram`).
      - *CLI Dispatch (`main.rs`, `cli.rs`)*: Parses command arguments and configures output streams.
-2. **Declarative Purity & Zero Hidden State**:
+2. **Mock Hermeticity (100% In-Memory Isolation)**:
+   - Test mocks (`MockHypervisor`, `MockStorageManager`) must remain completely hermetic and isolated from the host environment.
+   - Calling `std::fs::copy`, `std::fs::rename`, `std::fs::remove_file`, `std::fs::create_dir_all`, `std::fs::set_permissions`, or checking host disk existence via `Path::exists()` inside mocks is strictly prohibited.
+   - Mocks must record actions in structured algebraic records (e.g. `RecordedStorageAction`, `RecordedHypervisorAction`) and track virtual state purely in-memory.
+3. **Declarative Purity & Zero Hidden State**:
    - **Zero Implicit Defaults**: Every configuration value, hardware device, storage pool, path, and version must be explicitly declared or strictly derived. Missing or ambiguous fields fail fast during deserialization/validation.
    - **NO Backwards Compatibility**: The tool represents a modern, clean-slate standard. Legacy shims, deprecated tag structures, or historical migration paths are strictly prohibited.
-3. **Reconciliation & Safety Invariants**:
+4. **Reconciliation & Safety Invariants**:
    - **Total Idempotency**: Applying a plan to an already reconciled system produces a `NoOp` plan and performs zero mutations: `plan(apply(plan(state))) == NoOp`.
    - **Non-Destructive by Default (Guardrails)**: Destructive actions (recreating an instance overlay on base image drift, or deprovisioning an instance) are prohibited unless explicitly enabled in the manifest (`on_image_change: recreate`) or via CLI override flags (`--allow-recreate`, `--allow-destroy-protected`).
    - **Atomicity & RAII Resource Cleanup**: Any multi-step operation with transient external state (e.g. live thin snapshots, golden master promotion) must use RAII cleanup guards (e.g. pivoting blockcommits, staging to `.tmp` files) guaranteeing that cancellations, panics, or I/O errors cannot leave orphan `.snap` files or corrupted images.
-4. **Structured Error & Diagnostics Philosophy**:
+5. **Structured Error & Diagnostics Philosophy**:
    - Strongly typed hierarchy defined via `thiserror` without dynamic string errors.
    - Categorized into:
      1. *Domain & Validation Errors*: Syntactic/semantic errors in user manifests or templates.
      2. *Infrastructure & I/O Errors*: Hypervisor command exits, `qemu-img` failures, or filesystem I/O errors.
      3. *Policy & Guardrail Violations*: Intentional aborts protecting data integrity.
+   - **Zero Stringly-Typed Errors**: Do not emit dynamic strings in catch-all error variants (e.g. avoid `ConfigurationError { details: String }` when a typed variant like `InstanceNotDeclared` or `FlavorResolutionError::UnknownFlavor` can be used).
+   - **Zero Silent Error Swallowing**: Never discard fallible external operations with `let _ =`. When operations have expected idempotent conditions (such as undefining a domain that may already not exist), explicitly match and handle the expected variant (e.g., `HypervisorError::DomainNotFound => Ok(())`) while bubbling up true infrastructure errors.
    - Actionable diagnostics: Error messages must provide precise diagnostic context (naming the specific instance, device, path, expected vs. actual state, and required override flags).
-5. **CLI Stream Discipline & Structured Tracing**:
+6. **CLI Stream Discipline & Structured Tracing**:
    - `stdout` is reserved exclusively for structured user/machine data (execution plans, diff summaries, JSON status exports).
    - `stderr` is reserved exclusively for diagnostic logging and telemetry via `tracing` (`tracing::info!`, `warn!`, `error!`, `debug!`).
    - Raw `println!` is strictly prohibited in library modules; all operational and progress events must flow through structured `tracing` spans and events.
@@ -53,7 +61,7 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
    - **Algebraic Data Records**: Data models, AST nodes, diff results, and plan actions are transparent algebraic records with public fields (`pub field: Type`).
      - *Target Idiom*: Direct field access, destructuring by move (`let Foo { bar, baz } = foo;`), pattern matching, and struct update syntax (`Foo { bar: new_bar, ..self }`).
      - *Anti-Pattern*: Boilerplate OOP-style getter/setter functions (`fn field(&self) -> &Field`).
-   - **Born-Valid Types (Parse, Don't Validate)**: Types enforce their structural invariants during construction (`new()`, `from_str()`). Once instantiated, a type is guaranteed valid; intermediate unvalidated states are prohibited.
+   - **Born-Valid Types (Parse, Don't Validate)**: Types enforce their structural invariants during construction (`new()`, `parse()`, `from_str()`). Once instantiated, a type is guaranteed valid; intermediate unvalidated states are prohibited (exemplified by `InstanceUuid` enforcing RFC-4122).
 2. **Move Semantics & Pure Value Builders**:
    - **Strict `fn(self, ...) -> Self` Pattern**: Builders and value-transforming methods consume `self` by value, update fields in-place using struct update syntax (`..self`), and return the owned value.
      - *Target Idiom*: Ownership-driven functional transformations; if a borrower holding a reference needs a transformed value, the `.clone()` must be explicit at the call site.
@@ -100,7 +108,7 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
        1. *Target Phase Blueprint (`task_plan.md`)*: The exact phase definition, task checklist, scope, acceptance criteria, and specific constraints.
        2. *Recent Execution History & State (`progress.md`)*: Current status, recent milestones achieved, key architectural decisions, and error resolutions.
        3. *Domain Contracts & Invariants (`findings.md`)*: Applicable data schemas, domain XML template specifications, state machine transitions, trait interfaces, and verification invariants.
-     - *Compaction Defense*: The Fresh Read Protocol guarantees that no architectural boundary, functional coding standard, or domain invariant degrades due to context compaction, ensuring that every phase executes with total fidelity to the Triad of Foundations.
+     - *Compaction Defense via AGENTS.md*: `AGENTS.md` at the project root is automatically discovered and loaded into the active system context on every turn by Antigravity. Because workspace rules are part of the active system context, they survive context compaction unconditionally, providing an unalterable defense that enforces the Fresh Read Protocol and Universal Code Equivalence across all future sessions.
    - **Universal Code Equivalence (Zero Second-Class Code)**:
      - *The Absolute Equality Invariant*: NEVER assume code to be less critical or important to any task. Every single line of code—whether pure domain models, imperative I/O shells, low-level streaming parsers, mock implementations, CLI drivers, or test suites—must be held to the exact same high quality standards during any task without exception.
      - *Anti-Rationalization Guardrail*: It is strictly forbidden to bypass, dilute, or excuse engineering standards (such as imperative loops, mutable accumulators, panics via `unwrap`/`expect`, truncated single-letter names, unhandled error cases, or incomplete reporting) by rationalizing code as "just boilerplate", "just low-level reader logic", "just a test mock", "just an internal helper", or "less critical". If code exists in the repository, it demands production-grade excellence.

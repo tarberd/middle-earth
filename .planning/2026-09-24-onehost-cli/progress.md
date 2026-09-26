@@ -206,7 +206,20 @@
         - Completed Tracks 1–6 architectural analysis across module coupling, domain types, trait boundaries, mock fidelity, error hierarchy, and Phase 13 forward compatibility.
         - Identified 6 concrete architectural oversights: leaky NVRAM I/O in `applier.rs`, host filesystem mutations in `MockStorageManager`, primitive obsession (`InstanceConfiguration.uuid`), verbose XML AST traversals in `DomainXmlElement`, stringly-typed `ConfigurationError` and silent error swallowing in `destroyer.rs`, and missing `restore_thin_backup` in `StorageManager`.
         - Formulated detailed Refactoring Execution Matrix (Tracks 7.1 through 7.4) and technical specifications in `task_plan.md` and `findings.md`.
-        - Proceeding with Track 7.1 implementation.
+        - Implemented all 4 tracks:
+          - Track 7.1: Born-valid `InstanceUuid` enforcing RFC-4122; pure higher-order AST combinators in `DomainXmlElement`.
+          - Track 7.2: Trait boundary encapsulation via `StorageManager::initialize_nvram`; eradicated raw `fs` from `applier.rs`.
+          - Track 7.3: Hermetic `MockStorageManager` (100% in-memory virtual state); added `restore_thin_backup` to `StorageManager` for Phase 13 disaster recovery.
+          - Track 7.4: Harmonized error variants (`InstanceNotDeclared`, `ManifestValidationError`); eradicated silent `let _ =` swallowing in `destroyer.rs`.
+        - Verified 4-tier verification protocol: 105/105 tests passed, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
+        - Committed and pushed upstream (`258bf96`).
+      - Established `AGENTS.md` and Updated Mandatory Design Guidelines:
+        - Created `/home/tarberd/middle-earth/AGENTS.md` at workspace root as the primary Compaction Defense mechanism, binding all agent turns to the Fresh Read Protocol and Universal Code Equivalence.
+        - Synchronized all 4 key lessons learned from Phase 12c.6 into `task_plan.md`, `findings.md`, and `AGENTS.md`:
+          1. Trait Purity Rule: No real host filesystem I/O in trait default implementations.
+          2. Shell Trait Boundary Invariant: Zero raw `std::fs` operations in the imperative shell.
+          3. Mock Hermeticity: 100% in-memory virtual isolation in test mocks.
+          4. Structured Errors & Zero Silent Swallowing: Typed domain error variants and explicit pattern matching for idempotent errors.
 
 
 ### Test Results
