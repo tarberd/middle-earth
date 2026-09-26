@@ -48,6 +48,13 @@ pub enum RecordedStorageAction {
     DeleteImage {
         image_path: PathBuf,
     },
+    WriteFile {
+        destination_path: PathBuf,
+        content: String,
+    },
+    ReadFile {
+        source_path: PathBuf,
+    },
 }
 
 /// In-memory representation of an image tracked by MockStorageManager.
@@ -81,6 +88,7 @@ pub struct MockStorageManagerState {
     pub copied_base_images: Vec<(PathBuf, PathBuf)>,
     pub initialized_nvrams: Vec<(PathBuf, PathBuf)>,
     pub injected_errors: HashMap<PathBuf, String>,
+    pub files: HashMap<PathBuf, String>,
 }
 
 /// In-memory mock implementing the StorageManager trait for hermetic testing.
@@ -93,6 +101,14 @@ impl MockStorageManager {
     /// Creates an empty MockStorageManager.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Functional builder: registers a virtual file with content at path.
+    pub fn with_file(self, path: impl Into<PathBuf>, content: impl Into<String>) -> Self {
+        if let Ok(mut locked_state) = self.state.lock() {
+            locked_state.files.insert(path.into(), content.into());
+        }
+        self
     }
 
     /// Functional builder: registers an image record at path.
@@ -358,18 +374,26 @@ impl StorageManager for MockStorageManager {
                 compress,
             });
 
-        let archive_record = MockImageRecord {
-            format: "qcow2".to_string(),
-            virtual_size_bytes: 68_719_476_736,
-            actual_size_bytes: 50_000,
-            backing_file: backing_file_path.map(Path::to_path_buf),
-            is_corrupted: false,
-        };
+        if let Some(error_details) = locked_state.injected_errors.get(source_disk_path) {
+            Err(StorageError::CommandExecutionFailed {
+                command: format!("qemu-img convert {}", source_disk_path.display()),
+                exit_code: Some(1),
+                stderr: error_details.clone(),
+            })
+        } else {
+            let archive_record = MockImageRecord {
+                format: "qcow2".to_string(),
+                virtual_size_bytes: 68_719_476_736,
+                actual_size_bytes: 50_000,
+                backing_file: backing_file_path.map(Path::to_path_buf),
+                is_corrupted: false,
+            };
 
-        locked_state
-            .images
-            .insert(destination_archive_path.to_path_buf(), archive_record);
-        Ok(())
+            locked_state
+                .images
+                .insert(destination_archive_path.to_path_buf(), archive_record);
+            Ok(())
+        }
     }
 
     fn restore_thin_backup(
@@ -444,4 +468,45 @@ impl StorageManager for MockStorageManager {
         locked_state.images.remove(image_path);
         Ok(())
     }
+
+    fn write_file(&self, destination_path: &Path, content: &str) -> Result<(), StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::WriteFile {
+                destination_path: destination_path.to_path_buf(),
+                content: content.to_string(),
+            });
+
+        locked_state
+            .files
+            .insert(destination_path.to_path_buf(), content.to_string());
+        Ok(())
+    }
+
+    fn read_file(&self, source_path: &Path) -> Result<String, StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::ReadFile {
+                source_path: source_path.to_path_buf(),
+            });
+
+        locked_state
+            .files
+            .get(source_path)
+            .cloned()
+            .ok_or_else(|| StorageError::SourceFileNotFound {
+                path: source_path.to_path_buf(),
+            })
+    }
 }
+

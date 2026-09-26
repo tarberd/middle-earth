@@ -824,5 +824,52 @@ pub enum LifecycleError {
 - **Lesson**: Storing domain identifiers as raw `String` permits unvalidated instantiation, violating the parse-don't-validate principle.
 - **Standard**: Wrap identifiers in dedicated newtypes (`InstanceUuid`) enforcing strict syntactic invariants (e.g. RFC-4122) upon construction.
 
+---
+
+### Phase 13: Stage 8 - Thin Backup & Restore Engine Architecture
+
+#### 1. System Contracts & Module Architecture
+- **`src/backup/model.rs`**:
+  - `BackupConsistencyLevel`: `VssQuiesced`, `CrashConsistent`, `Offline`.
+  - `DiskBackupEntry`: `target_device`, `archive_filename`, `virtual_size_bytes`, `archive_size_bytes`, `backing_file`.
+  - `BackupManifest`: `instance_name`, `instance_uuid`, `timestamp`, `consistency_level`, `storage_pool`, `base_image_tag`, `base_image_hash`, `golden_master_filename`, `disks`, `domain_xml_filename`, `nvram_filename`.
+  - `BackupOptions`: `quiesce: bool` (default true), `compress: bool` (default true), `timestamp: Option<String>`.
+  - `RestoreOptions`: `target_pool: Option<String>`, `depot_store_dir: Option<PathBuf>`, `nvram_dir: Option<PathBuf>`, `allow_overwrite: bool`.
+- **`src/backup/guard.rs`**:
+  - `ActiveSnapshotInfo`: `target_device: String`, `base_path: PathBuf`, `snapshot_path: PathBuf`.
+  - `SnapshotCleanupGuard<'a, H: Hypervisor>`: RAII scope guard tracking active `.snap` files. On drop while armed, invokes `hypervisor.blockcommit(..., active: true, pivot: true)` to guarantee zero dangling snapshots on failure, cancellation, or panic.
+- **`src/backup/engine.rs`**:
+  - `BackupEngine<'a, H: Hypervisor, S: StorageManager>`: Orchestrates online/offline thin backup pipelines.
+- **`src/backup/restore.rs`**:
+  - `RestoreEngine<'a, H: Hypervisor, S: StorageManager>`: Executes single-command disaster recovery.
+- **`src/backup/mod.rs`**:
+  - Strongly typed `BackupError` and `RestoreError` hierarchies (0 stringly-typed errors).
+
+#### 2. Online Live Backup & RAII Rollback Guarantee
+1. Domain state checked via `hypervisor.domain_info`.
+2. All attached disks resolved via `hypervisor.list_block_devices`.
+3. Multi-disk atomic snapshot requested with `DiskSnapshotSpecification` for each disk simultaneously.
+4. Opportunistic quiescing: tries `quiesce: true` (VSS); if hypervisor returns error indicating guest agent failure or unresponsive VSS, catches error, logs warning, and retries with `quiesce: false` (crash-consistent).
+5. Arm `SnapshotCleanupGuard`.
+6. Extract and compress thin delta overlays via `storage.convert_thin_backup` to `.tmp` files and atomic move via `storage.move_file_safely`.
+7. Recommit live snapshots via `hypervisor.blockcommit(..., active: true, pivot: true)` and delete temporary `.snap` files via `storage.delete_image`.
+8. Disarm `SnapshotCleanupGuard`.
+9. Back up NVRAM via `storage.initialize_nvram`, dump Domain XML via `hypervisor.dump_xml`, and write `manifest.json`.
+
+#### 3. Disaster Recovery Restoration Pipeline
+1. Parse and validate `<backup-dir>/manifest.json`.
+2. Guardrail check: if domain already exists and `!allow_overwrite`, abort with `RestoreError::DomainAlreadyExists`.
+3. Resolve target storage pool directory path via `hypervisor.resolve_pool_path`.
+4. Ensure base image is cached in target pool: if not cached, verify depot store and copy via `storage.copy_base_image` (`0444`).
+5. For each disk entry in manifest: execute `storage.restore_thin_backup` to reconstruct thin CoW overlay reattached to the base backing file.
+6. Ingest domain XML and restore NVRAM to host destination via `storage.initialize_nvram`.
+7. Register domain in Libvirt via `hypervisor.define_domain`.
+8. Refresh storage pool in Libvirt via `hypervisor.pool_refresh`.
+
+#### 4. Trait Purity & Hermetic Mock Isolation
+- Added `write_file(&self, destination_path: &Path, content: &str)` and `read_file(&self, source_path: &Path)` to `StorageManager` trait.
+- Production `QemuImgStorage` delegates to `std::fs`.
+- `MockStorageManager` tracks virtual files in `files: HashMap<PathBuf, String>`, achieving 100% in-memory hermeticity with zero host disk operations.
+
 
 

@@ -74,6 +74,7 @@ pub struct MockHypervisorState {
     pub recorded_actions: Vec<RecordedHypervisorAction>,
     pub injected_domain_errors: HashMap<String, String>,
     pub injected_pool_errors: HashMap<String, String>,
+    pub fail_quiesce: bool,
 }
 
 /// In-memory mock implementing the Hypervisor trait for hermetic testing.
@@ -186,6 +187,14 @@ impl MockHypervisor {
             locked_state
                 .injected_pool_errors
                 .insert(pool_name.into(), error_details.into());
+        }
+        self
+    }
+
+    /// Functional builder: sets whether guest agent quiesce should fail.
+    pub fn with_quiesce_failure(self, fail_quiesce: bool) -> Self {
+        if let Ok(mut locked_state) = self.state.lock() {
+            locked_state.fail_quiesce = fail_quiesce;
         }
         self
     }
@@ -464,15 +473,23 @@ impl Hypervisor for MockHypervisor {
                 quiesce,
             });
 
-        locked_state
-            .domains
-            .contains_key(domain_name)
-            .then_some(())
-            .ok_or_else(|| HypervisorError::DomainNotFound {
-                domain_name: domain_name.to_string(),
-            })?;
+        if quiesce && locked_state.fail_quiesce {
+            Err(HypervisorError::CommandExecutionFailed {
+                command: format!("virsh snapshot-create-as {domain_name} {snapshot_name} --quiesce"),
+                exit_code: Some(1),
+                stderr: "error: Guest agent is not responding: QEMU guest agent is not configured".to_string(),
+            })
+        } else {
+            locked_state
+                .domains
+                .contains_key(domain_name)
+                .then_some(())
+                .ok_or_else(|| HypervisorError::DomainNotFound {
+                    domain_name: domain_name.to_string(),
+                })?;
 
-        Ok(())
+            Ok(())
+        }
     }
 
     fn blockcommit(

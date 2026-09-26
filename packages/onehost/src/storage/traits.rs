@@ -189,4 +189,11 @@ pub trait StorageManager: Send + Sync {
 
     /// Deletes an image file from storage if it exists.
     fn delete_image(&self, image_path: &Path) -> Result<(), StorageError>;
+
+    /// Writes text content to a destination file, creating parent directories if needed.
+    fn write_file(&self, destination_path: &Path, content: &str) -> Result<(), StorageError>;
+
+    /// Reads text content from a source file.
+    fn read_file(&self, source_path: &Path) -> Result<String, StorageError>;
 }
+

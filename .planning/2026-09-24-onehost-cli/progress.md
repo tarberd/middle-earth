@@ -241,6 +241,30 @@
           - 0 single-letter closures across `src/` and `tests/`.
           - 0 Hungarian notation or banned suffixes across `src/` and `tests/`.
         - Re-ran 4-tier verification matrix: 105/105 tests passed, 0 clippy warnings, hermetic Nix flake package build succeeds.
+      - Executed Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD):
+        - Ingested planning files and guidelines via Fresh Read Protocol.
+        - Extended `StorageManager` trait with `write_file(&self, destination_path: &Path, content: &str)` and `read_file(&self, source_path: &Path)`, implementing both in `QemuImgStorage` and `MockStorageManager` to strictly preserve the Shell Trait Boundary Invariant and 100% in-memory mock isolation.
+        - Extended `MockHypervisor` with `fail_quiesce` simulation and `with_quiesce_failure` builder to test guest agent unresponsive fallback.
+        - Implemented `src/backup/model.rs`: `BackupManifest`, `DiskBackupEntry`, `BackupConsistencyLevel`, `BackupOptions`, and `RestoreOptions` as transparent records with public attributes.
+        - Implemented `src/backup/guard.rs`: `SnapshotCleanupGuard` implementing `Drop` with `hypervisor.blockcommit(..., active: true, pivot: true)` to guarantee automatic recovery and zero dangling `.snap` overlays on failure or interruption.
+        - Implemented `src/backup/engine.rs`: `BackupEngine` orchestrating online (multi-disk atomic snapshotting, VSS quiesce with crash-consistent fallback, thin delta extraction, live blockcommit `--active --pivot`, NVRAM copy, XML dump, manifest writing) and offline (direct thin compression of overlays) backups.
+        - Implemented `src/backup/restore.rs`: `RestoreEngine` executing single-command disaster recovery (manifest validation, domain existence check, pool resolution, base image depot-to-pool cache copy, thin archive overlay restoration, NVRAM restoration, domain definition, pool refresh).
+        - Implemented `src/backup/mod.rs`: Strongly typed `BackupError` and `RestoreError` hierarchies via `thiserror` (0 stringly-typed errors).
+        - Implemented `tests/backup_tests.rs`: 11 comprehensive TDD unit tests covering offline backup, online VSS quiesced backup, quiesce fallback to crash-consistent, RAII guard blockcommit triggering on failure, multi-disk atomic snapshotting, restore engine end-to-end, allow_overwrite override, and error validations.
+        - Codebase audit & refinement during Phase 13:
+          - Remediated `return Err(...)` in `engine.rs` match expression to a pure value-producing expression with trailing `?`.
+          - Remediated `children_acc` and `text_acc` accumulator variables in `src/domain/element.rs` to `accumulated_children` and `accumulated_text`.
+        - Verified full static invariant suite across `src/` and `tests/`:
+          - 0 imperative loops (`for`, `while`, `loop`).
+          - 0 unwraps or expects in `src/`.
+          - 0 explicit `return` statements across `src/` and `tests/`.
+          - 0 `let _ =` silent swallowing across `src/` and `tests/`.
+          - 0 single-letter closures across `src/` and `tests/`.
+          - 0 Hungarian notation or banned suffixes across `src/` and `tests/`.
+        - Executed full 4-tier verification protocol:
+          - 116/116 unit and integration tests passing (`cargo test --all-targets`).
+          - 0 warnings in Clippy static audit (`cargo clippy --all-targets -- -D warnings`).
+          - Hermetic Nix flake derivation build and checkPhase passing (`nix build .#packages.x86_64-linux.onehost --no-link`).
 
 
 ### Test Results
@@ -316,6 +340,10 @@
 | Post-Compaction Review: Test Suite (cargo test --all-targets) | 105 unit/integration tests pass cleanly | 105 passed, 0 failed, 0 warnings | PASS |
 | Post-Compaction Review: Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Post-Compaction Review: Hermetic Nix Build | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Stage 8 Backup Tests (tests/backup_tests.rs) | 11 unit tests for backup and restore engine | 11 passed, 0 failed, 0 warnings | PASS |
+| Phase 13 Full Test Suite (cargo test --all-targets) | 116 unit/integration tests pass cleanly | 116 passed, 0 failed, 0 warnings | PASS |
+| Phase 13 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
+| Phase 13 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 
 ### Errors
 | Error | Resolution |
@@ -327,6 +355,8 @@
 | Explicit `return` in `mock.rs` and `diff.rs` | Refactored `undefine_domain` and `summary` to functional value-producing `if / else` expressions |
 | Silent error swallowing (`let _ =`) in `applier.rs` | Replaced all 6 instances with `?` propagation and explicit pattern matching on expected idempotent errors (`DomainNotFound`, `SourceFileNotFound`) |
 | Hungarian notation suffixes in `src/` and `tests/` | Renamed `xml_string`, `transform_os_element`, `transform_devices_element`, `base_element`, `element_acc`, `current_element`, `parse_start_element`, `parse_empty_element`, `valid_uuid_string`, `os_element` to clean domain names |
+| Explicit `return` in `backup/engine.rs` | Refactored `match domain_info.state` into pure value-producing expression with trailing `?` |
+| Accumulator variables `children_acc`/`text_acc` in `element.rs` | Renamed to `accumulated_children` and `accumulated_text` to eliminate Hungarian `_acc` suffix |
 
 
 

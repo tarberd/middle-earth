@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 13 (Stage 8 - Online/Offline Thin Backup and Restore Engine).
+Await user signal to begin Phase 13b (Full Disaster Recovery & Backup Integration Suite) or Phase 14 (Image Builder Pipeline & CLI Wiring).
 
 ## Current Phase
-Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User Authorization)
+Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Complete)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -480,16 +480,19 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
 - **Status:** complete
 
 ### Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD)
-- [ ] Write unit tests in `tests/backup_tests.rs`:
+- [x] Write unit tests in `tests/backup_tests.rs`:
   - Multi-disk atomic snapshotting: `--diskspec` for all attached disks simultaneously
   - Opportunistic VSS quiescing via `qemu-ga` with graceful fallback to crash-consistent snapshot
   - RAII cleanup guard: verifies `blockcommit --active --pivot` executes on conversion failure, panic, or cancellation
   - Thin extraction and zlib compression via `qemu-img convert -c -B <base> -F qcow2`
   - Structured `manifest.json` generation and validation
   - Restore engine: verifies single-command disaster recovery (`onehost restore <backup-dir>`) re-attaches base image, restores NVRAM, defines domain, and refreshes pool
-- [ ] Implement `src/backup/engine.rs` and `src/backup/restore.rs`
-- [ ] Verify `cargo test` passes
-- **Status:** pending
+- [x] Implement `src/backup/engine.rs` and `src/backup/restore.rs`
+- [x] Verify `cargo test` passes cleanly (116 tests total)
+- [x] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings
+- [x] Verify `nix build .#packages.x86_64-linux.onehost --no-link` passes
+- [x] Conduct senior-level code review of Stage 8
+- **Status:** complete
 
 ### Phase 13b: Full Disaster Recovery & Backup Integration Suite
 - [ ] Write full disaster recovery integration tests in `tests/disaster_recovery_integration_tests.rs`:

@@ -356,4 +356,24 @@ impl StorageManager for QemuImgStorage {
         }
         Ok(())
     }
+
+    fn write_file(&self, destination_path: &Path, content: &str) -> Result<(), StorageError> {
+        if let Some(destination_parent) = destination_path.parent() {
+            std::fs::create_dir_all(destination_parent)?;
+        }
+        std::fs::write(destination_path, content)?;
+        Ok(())
+    }
+
+    fn read_file(&self, source_path: &Path) -> Result<String, StorageError> {
+        source_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| StorageError::SourceFileNotFound {
+                path: source_path.to_path_buf(),
+            })?;
+        let content = std::fs::read_to_string(source_path)?;
+        Ok(content)
+    }
 }
+

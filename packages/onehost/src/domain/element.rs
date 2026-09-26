@@ -425,12 +425,12 @@ impl DomainXmlElement {
 
         let (children, text_fragments): (Vec<DomainXmlElement>, Vec<String>) = parsed_items
             .into_iter()
-            .fold((Vec::new(), Vec::new()), |(mut children_acc, mut text_acc), item| {
+            .fold((Vec::new(), Vec::new()), |(mut accumulated_children, mut accumulated_text), item| {
                 match item {
-                    BodyItem::Child(child) => children_acc.push(child),
-                    BodyItem::Text(text) => text_acc.push(text),
+                    BodyItem::Child(child) => accumulated_children.push(child),
+                    BodyItem::Text(text) => accumulated_text.push(text),
                 }
-                (children_acc, text_acc)
+                (accumulated_children, accumulated_text)
             });
 
         let text_content = Some(text_fragments.concat()).filter(|text| !text.is_empty());
