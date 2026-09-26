@@ -14,6 +14,9 @@
 #### North Star Architectural Vision
 > **"A Functional Core with an Imperative Shell, orchestrating declarative, idempotent, and hermetic Windows Libvirt/KVM lifecycles via OpenTofu-style reconciliation."**
 
+#### Foundational Principle: Universal Code Equivalence & Absolute Standards
+> **"NEVER assume code to be less critical or important to any task. All code across the entire codebase—whether pure domain logic, imperative execution shell, low-level parser routines, CLI dispatchers, error definitions, mock drivers, test harnesses, or integration suites—must be held to the exact same uncompromising, high quality standards during any task. There are zero second-class components, zero exemptions, and zero quality tiers."**
+
 #### Pillar I: Architectural Blueprint & System Contracts
 1. **The Boundary Contract: Functional Core vs. Imperative Shell**:
    - **The Functional Core (Pure Domain Logic)**:
@@ -98,6 +101,9 @@
        2. *Recent Execution History & State (`progress.md`)*: Current status, recent milestones achieved, key architectural decisions, and error resolutions.
        3. *Domain Contracts & Invariants (`findings.md`)*: Applicable data schemas, domain XML template specifications, state machine transitions, trait interfaces, and verification invariants.
      - *Compaction Defense*: The Fresh Read Protocol guarantees that no architectural boundary, functional coding standard, or domain invariant degrades due to context compaction, ensuring that every phase executes with total fidelity to the Triad of Foundations.
+   - **Universal Code Equivalence (Zero Second-Class Code)**:
+     - *The Absolute Equality Invariant*: NEVER assume code to be less critical or important to any task. Every single line of code—whether pure domain models, imperative I/O shells, low-level streaming parsers, mock implementations, CLI drivers, or test suites—must be held to the exact same high quality standards during any task without exception.
+     - *Anti-Rationalization Guardrail*: It is strictly forbidden to bypass, dilute, or excuse engineering standards (such as imperative loops, mutable accumulators, panics via `unwrap`/`expect`, truncated single-letter names, unhandled error cases, or incomplete reporting) by rationalizing code as "just boilerplate", "just low-level reader logic", "just a test mock", "just an internal helper", or "less critical". If code exists in the repository, it demands production-grade excellence.
    - **Zero Unspecified Assumptions**: Never guess or assume unspecified behavior; conduct an interactive interview whenever implementation semantics are ambiguous.
    - **Stage-Gated Senior Code Review**: Perform a thorough senior-level code review upon completion of each phase before advancing.
    - **Have Fun**: Maintain high engineering standards and enjoy the craft.

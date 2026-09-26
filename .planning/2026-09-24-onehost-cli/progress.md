@@ -198,6 +198,10 @@
         - Replaced 3 imperative `loop` blocks (`parse_document_root`, `verify_eof`, `parse_element_body`) with pure functional tail recursion and `std::iter::from_fn(|| Self::next_body_item(...))`.
         - Verified that production code across `packages/onehost/src/` contains literally 0 `loop`, `while`, or `for` loops.
         - Re-ran 4-tier verification protocol: 99/99 tests passed, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
+      - Adapted Mandatory Design Guidelines & Engineering Standards:
+        - Codified Foundational Principle & Pillar III.3 invariant: **Universal Code Equivalence & Absolute Standards**.
+        - Invariant: NEVER assume code to be less critical or important to any task. Every single line of code across the entire codebase—whether pure domain models, imperative I/O shells, low-level streaming parsers, mock implementations, CLI drivers, or test suites—must be held to the exact same uncompromising, high quality standards during any task without exception.
+        - Anti-Rationalization Guardrail: Strictly prohibits bypassing or excusing engineering standards by rationalizing code as "just boilerplate", "just low-level reader logic", "just a test mock", "just an internal helper", or "less critical".
       - Awaiting user signal before initiating Phase 13.
 
 
