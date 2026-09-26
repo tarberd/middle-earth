@@ -57,36 +57,36 @@ struct TestWorkspace {
 
 impl TestWorkspace {
     fn new(on_image_change_policy: &str) -> Self {
-        let workspace = tempdir().expect("create workspace tempdir");
-        let root = workspace.path();
+        let temporary_workspace_directory = tempdir().expect("create workspace tempdir");
+        let workspace_root_path = temporary_workspace_directory.path();
 
-        let depot_dir = root.join("depot");
-        let depot_store = depot_dir.join("store");
-        let depot_iso = depot_dir.join("iso");
-        let depot_backup = depot_dir.join("backup");
-        let nvram_dir = root.join("nvram");
-        let default_pool_dir = root.join("default_pool");
-        let nvme_pool_dir = root.join("nvme_pool");
+        let depot_directory = workspace_root_path.join("depot");
+        let depot_store_directory = depot_directory.join("store");
+        let depot_iso_directory = depot_directory.join("iso");
+        let depot_backup_directory = depot_directory.join("backup");
+        let nvram_directory = workspace_root_path.join("nvram");
+        let default_pool_directory = workspace_root_path.join("default_pool");
+        let nvme_pool_directory = workspace_root_path.join("nvme_pool");
 
-        std::fs::create_dir_all(&depot_store).expect("create depot_store");
-        std::fs::create_dir_all(&depot_iso).expect("create depot_iso");
-        std::fs::create_dir_all(&depot_backup).expect("create depot_backup");
-        std::fs::create_dir_all(&nvram_dir).expect("create nvram_dir");
-        std::fs::create_dir_all(&default_pool_dir).expect("create default_pool_dir");
-        std::fs::create_dir_all(&nvme_pool_dir).expect("create nvme_pool_dir");
+        std::fs::create_dir_all(&depot_store_directory).expect("create depot_store");
+        std::fs::create_dir_all(&depot_iso_directory).expect("create depot_iso");
+        std::fs::create_dir_all(&depot_backup_directory).expect("create depot_backup");
+        std::fs::create_dir_all(&nvram_directory).expect("create nvram_dir");
+        std::fs::create_dir_all(&default_pool_directory).expect("create default_pool_dir");
+        std::fs::create_dir_all(&nvme_pool_directory).expect("create nvme_pool_dir");
 
-        let nvram_template = root.join("edk2-vars.fd");
-        let mut nvram_file = File::create(&nvram_template).expect("create nvram template");
+        let nvram_template_path = workspace_root_path.join("edk2-vars.fd");
+        let mut nvram_file = File::create(&nvram_template_path).expect("create nvram template");
         nvram_file
             .write_all(b"NVRAM_TEMPLATE_VARS")
             .expect("write nvram template");
 
-        let template_xml = root.join("win11-template.xml");
-        std::fs::write(&template_xml, SAMPLE_TEMPLATE_XML).expect("write template xml");
+        let template_xml_path = workspace_root_path.join("win11-template.xml");
+        std::fs::write(&template_xml_path, SAMPLE_TEMPLATE_XML).expect("write template xml");
 
-        let initial_master =
-            depot_store.join("win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2");
-        std::fs::write(&initial_master, b"GOLDEN_MASTER_QCOW2").expect("write golden master");
+        let initial_master_path =
+            depot_store_directory.join("win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2");
+        std::fs::write(&initial_master_path, b"GOLDEN_MASTER_QCOW2").expect("write golden master");
 
         let manifest_content = format!(
             r#"{{
@@ -121,27 +121,27 @@ impl TestWorkspace {
     }}
   }}
 }}"#,
-            depot_store.display(),
-            depot_iso.display(),
-            depot_backup.display(),
-            nvram_dir.display(),
-            nvram_template.display(),
-            template_xml.display(),
+            depot_store_directory.display(),
+            depot_iso_directory.display(),
+            depot_backup_directory.display(),
+            nvram_directory.display(),
+            nvram_template_path.display(),
+            template_xml_path.display(),
             on_image_change_policy
         );
 
-        let manifest_file_path = root.join("onehost.json");
+        let manifest_file_path = workspace_root_path.join("onehost.json");
         std::fs::write(&manifest_file_path, manifest_content).expect("write manifest");
 
         Self {
-            _workspace_directory: workspace,
+            _workspace_directory: temporary_workspace_directory,
             manifest_path: manifest_file_path,
-            template_xml_path: template_xml,
-            depot_store_directory: depot_store,
-            nvram_directory: nvram_dir,
-            default_pool_directory: default_pool_dir,
-            nvme_pool_directory: nvme_pool_dir,
-            initial_golden_master_path: initial_master,
+            template_xml_path,
+            depot_store_directory,
+            nvram_directory,
+            default_pool_directory,
+            nvme_pool_directory,
+            initial_golden_master_path: initial_master_path,
         }
     }
 

@@ -205,9 +205,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
             &injection_parameters,
         )?;
 
-        let live_domain_result = self.hypervisor.domain_info(instance_name);
-
-        match live_domain_result {
+        match self.hypervisor.domain_info(instance_name) {
             Err(HypervisorError::DomainNotFound { .. }) => {
                 let create_action = InstancePlanAction::Create {
                     instance_name: instance_name.to_string(),
@@ -247,7 +245,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                     .and_then(|device| device.source_file.as_ref());
 
                 let live_xml = self.hypervisor.dump_xml(instance_name, false)?;
-                let diff_result =
+                let domain_diff_result =
                     DomainXmlDiffer::compare_domain_xmls(&concrete_xml, &live_xml)?;
 
                 let storage_reconciliation_action: Option<InstancePlanAction> = primary_disk
@@ -258,7 +256,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                                 let backing_matches_hash = inspection_info
                                     .backing_file
                                     .as_ref()
-                                    .is_some_and(|backing| backing.to_string_lossy().contains(expected_hash));
+                                    .is_some_and(|backing_file_path| backing_file_path.to_string_lossy().contains(expected_hash));
 
                                 let planned_action = if !backing_matches_hash {
                                     Some(InstancePlanAction::Recreate {
@@ -278,19 +276,19 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                                         autostart: instance_configuration.autostart,
                                     })
                                 } else {
-                                    let active_parent = active_disk_path.parent();
-                                    let target_parent = overlay_path.parent();
+                                    let active_disk_directory = active_disk_path.parent();
+                                    let target_overlay_directory = overlay_path.parent();
 
-                                    if active_parent != target_parent {
-                                        let source_pool = active_parent
-                                            .and_then(|parent_path| {
+                                    if active_disk_directory != target_overlay_directory {
+                                        let source_pool = active_disk_directory
+                                            .and_then(|directory_path| {
                                                 self.hypervisor
-                                                    .resolve_pool_name_by_path(parent_path)
+                                                    .resolve_pool_name_by_path(directory_path)
                                                     .ok()
                                                     .flatten()
-                                            })
+                                             })
                                             .or_else(|| {
-                                                active_parent.map(|parent_path| parent_path.to_string_lossy().to_string())
+                                                active_disk_directory.map(|directory_path| directory_path.to_string_lossy().to_string())
                                             })
                                             .unwrap_or_else(|| "unknown".to_string());
 
@@ -318,17 +316,14 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                     .flatten();
 
                 let action = match storage_reconciliation_action {
-                    Some(action) => action,
-                    None => if diff_result.has_drift {
-                        InstancePlanAction::UpdateDomainXml {
-                            instance_name: instance_name.to_string(),
-                            concrete_xml,
-                            diff_summary: diff_result.summary(),
-                        }
-                    } else {
-                        InstancePlanAction::NoOp {
-                            instance_name: instance_name.to_string(),
-                        }
+                    Some(reconciliation_action) => reconciliation_action,
+                    None if domain_diff_result.has_drift => InstancePlanAction::UpdateDomainXml {
+                        instance_name: instance_name.to_string(),
+                        concrete_xml,
+                        diff_summary: domain_diff_result.summary(),
+                    },
+                    None => InstancePlanAction::NoOp {
+                        instance_name: instance_name.to_string(),
                     },
                 };
 

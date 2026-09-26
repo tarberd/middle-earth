@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 12c.4 (`src/lifecycle/`, `tests/pipeline_integration_tests.rs`, `tests/storage_toolchain_tests.rs`).
+Await user signal to begin Phase 12c.5 (Whole-System Verification & Senior Gate Review).
 
 ## Current Phase
-Phase 12c.4: Lifecycle Reconciliation & Integration Pipelines Audit (Pending User Authorization)
+Phase 12c.5: Whole-System Verification & Senior Gate Review (Pending User Authorization)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -374,25 +374,25 @@ Phase 12c.4: Lifecycle Reconciliation & Integration Pipelines Audit (Pending Use
 - **Status:** complete
 
 #### Phase 12c.4: Lifecycle Reconciliation & Integration Pipelines Audit (`src/lifecycle/`, `tests/pipeline_integration_tests.rs`, `tests/storage_toolchain_tests.rs`)
-- [ ] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)
-- [ ] Audit & refactor `src/lifecycle/planner.rs`:
+- [x] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)
+- [x] Audit & refactor `src/lifecycle/planner.rs`:
   - Verify Query Shell vs. Pure Core separation: query traits for live snapshots, delegate drift computation to pure Core differ, emit immutable `OnehostPlan`
   - Ensure pure iterator pipelines: `.map()` for pure projections, `.fold()` / `.try_for_each()` for accumulation
   - Enforce guardrail detection: accurately classify and tag destructive actions requiring `--allow-recreate` or `--allow-destroy-protected`
   - Zero single-letter closure variables, zero `.unwrap()` / `.expect()`
-- [ ] Audit & refactor `src/lifecycle/applier.rs`:
+- [x] Audit & refactor `src/lifecycle/applier.rs`:
   - Verify Execution Shell linear orchestration: execute plan actions via traits
   - Audit iterator semantics: `.try_for_each()` for effectful execution, zero imperative `for` loops
   - Verify non-destructive guardrails: abort safely on unpermitted recreation or pool relocation
   - Verify RAII safety and error handling with typed `thiserror` variants
-- [ ] Audit & refactor `src/lifecycle/destroyer.rs`:
+- [x] Audit & refactor `src/lifecycle/destroyer.rs`:
   - Verify lifecycle policy enforcement (`prevent_destroy` aborts unless `--allow-destroy-protected`)
   - Ensure pure pipeline orchestration of domain shutdown, undefine, and storage cleanup via `StorageManager`
-- [ ] Audit & refactor integration tests:
+- [x] Audit & refactor integration tests:
   - Verify `tests/pipeline_integration_tests.rs` and `tests/storage_toolchain_tests.rs` follow clean TDD style, no brittle host coupling, hermetic Nix environment execution
-- [ ] Run test suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, hermetic Nix flake package build
-- [ ] Conduct Stage-Gated Senior Code Review for Phase 12c.4
-- **Status:** pending
+- [x] Run test suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, hermetic Nix flake package build
+- [x] Conduct Stage-Gated Senior Code Review for Phase 12c.4
+- **Status:** complete
 
 #### Phase 12c.5: Whole-System Verification & Senior Gate Review
 - [ ] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)

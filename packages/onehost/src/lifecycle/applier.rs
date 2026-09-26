@@ -53,10 +53,11 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 autostart,
             } => {
                 // Ensure base image is cached in target pool
-                if self.storage.inspect_image(base_cache_path).is_err() {
-                    self.storage
-                        .copy_base_image(golden_master_path, base_cache_path)?;
-                }
+                self.storage
+                    .inspect_image(base_cache_path)
+                    .is_err()
+                    .then(|| self.storage.copy_base_image(golden_master_path, base_cache_path))
+                    .transpose()?;
 
                 // Create fresh CoW overlay
                 self.storage
@@ -69,9 +70,9 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                     .map(fs::create_dir_all)
                     .transpose()?;
 
-                if nvram_template_path.exists() && !nvram_path.exists() {
-                    fs::copy(nvram_template_path, nvram_path)?;
-                }
+                (nvram_template_path.exists() && !nvram_path.exists())
+                    .then(|| fs::copy(nvram_template_path, nvram_path))
+                    .transpose()?;
 
                 // Define domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;
@@ -106,33 +107,32 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 autostart,
             } => {
                 // Guardrail 1: prevent_destroy check
-                if *prevent_destroy {
-                    return Err(LifecycleError::LifecyclePolicyViolation {
+                (!*prevent_destroy)
+                    .then_some(())
+                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
                         instance_name: instance_name.clone(),
                         details: format!(
                             "Instance '{instance_name}' has prevent_destroy enabled; cannot recreate overlay ({reason})"
                         ),
-                    });
-                }
+                    })?;
 
                 // Guardrail 2: on_image_change policy check
-                if *policy == ImageChangePolicy::Protect && !options.allow_recreate {
-                    return Err(LifecycleError::LifecyclePolicyViolation {
+                (*policy != ImageChangePolicy::Protect || options.allow_recreate)
+                    .then_some(())
+                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
                         instance_name: instance_name.clone(),
                         details: format!(
                             "Instance '{instance_name}' base image changed with policy 'protect'; recreation requires --allow-recreate flag ({reason})"
                         ),
-                    });
-                }
+                    })?;
 
                 // Graceful shutdown if running
-                if self
-                    .hypervisor
+                self.hypervisor
                     .domain_info(instance_name)
-                    .is_ok_and(|info| info.state == DomainState::Running)
-                {
-                    let _ = self.hypervisor.shutdown_domain(instance_name);
-                }
+                    .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
+                    .then(|| {
+                        let _ = self.hypervisor.shutdown_domain(instance_name);
+                    });
 
                 // Undefine domain and clean up NVRAM
                 let _ = self.hypervisor.undefine_domain(instance_name, true);
@@ -141,19 +141,20 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 let _ = self.storage.delete_image(overlay_path);
 
                 // Cache new base image in storage pool
-                if self.storage.inspect_image(base_cache_path).is_err() {
-                    self.storage
-                        .copy_base_image(golden_master_path, base_cache_path)?;
-                }
+                self.storage
+                    .inspect_image(base_cache_path)
+                    .is_err()
+                    .then(|| self.storage.copy_base_image(golden_master_path, base_cache_path))
+                    .transpose()?;
 
                 // Create fresh CoW overlay backed by new base image
                 self.storage
                     .create_cow_overlay(base_cache_path, overlay_path)?;
 
                 // Re-initialize fresh NVRAM vars
-                if nvram_template_path.exists() {
+                nvram_template_path.exists().then(|| {
                     let _ = fs::copy(nvram_template_path, nvram_path);
-                }
+                });
 
                 // Define updated domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;
@@ -179,19 +180,18 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 concrete_xml,
             } => {
                 // Ensure VM is shut off before disk move
-                if self
-                    .hypervisor
+                self.hypervisor
                     .domain_info(instance_name)
-                    .is_ok_and(|info| info.state == DomainState::Running)
-                {
-                    self.hypervisor.shutdown_domain(instance_name)?;
-                }
+                    .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
+                    .then(|| self.hypervisor.shutdown_domain(instance_name))
+                    .transpose()?;
 
                 // Ensure golden master base image is cached in target pool
-                if self.storage.inspect_image(target_base_cache_path).is_err() {
-                    self.storage
-                        .copy_base_image(golden_master_path, target_base_cache_path)?;
-                }
+                self.storage
+                    .inspect_image(target_base_cache_path)
+                    .is_err()
+                    .then(|| self.storage.copy_base_image(golden_master_path, target_base_cache_path))
+                    .transpose()?;
 
                 // Safely move overlay disk across storage pools
                 self.storage
@@ -215,22 +215,21 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 target_pool,
                 prevent_destroy,
             } => {
-                if *prevent_destroy {
-                    return Err(LifecycleError::LifecyclePolicyViolation {
+                (!*prevent_destroy)
+                    .then_some(())
+                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
                         instance_name: instance_name.clone(),
                         details: format!(
                             "Instance '{instance_name}' has prevent_destroy enabled; cannot delete"
                         ),
-                    });
-                }
+                    })?;
 
-                if self
-                    .hypervisor
+                self.hypervisor
                     .domain_info(instance_name)
-                    .is_ok_and(|info| info.state == DomainState::Running)
-                {
-                    let _ = self.hypervisor.shutdown_domain(instance_name);
-                }
+                    .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
+                    .then(|| {
+                        let _ = self.hypervisor.shutdown_domain(instance_name);
+                    });
 
                 let _ = self.hypervisor.undefine_domain(instance_name, true);
                 self.hypervisor.pool_refresh(target_pool)?;

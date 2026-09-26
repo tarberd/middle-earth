@@ -82,7 +82,7 @@ fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -139,7 +139,7 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     // Get expected concrete XML from a preliminary plan
     let initial_plan = planner.plan(&manifest).unwrap();
@@ -179,7 +179,7 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -200,7 +200,7 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let initial_plan = planner.plan(&manifest).unwrap();
     let expected_concrete_xml = match &initial_plan.actions[0] {
@@ -242,7 +242,7 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -268,7 +268,7 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let initial_plan = planner.plan(&manifest).unwrap();
     let expected_concrete_xml = match &initial_plan.actions[0] {
@@ -308,7 +308,7 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -348,7 +348,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let initial_plan = planner.plan(&manifest).unwrap();
     let expected_concrete_xml = match &initial_plan.actions[0] {
@@ -388,7 +388,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -435,7 +435,7 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let initial_plan = planner.plan(&manifest).unwrap();
     let expected_concrete_xml = match &initial_plan.actions[0] {
@@ -463,7 +463,7 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
         .with_block_devices("win11-gollum", block_devices);
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -492,7 +492,7 @@ fn test_plan_returns_error_when_flavor_not_registered() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan_result = planner.plan(&manifest);
 
@@ -513,7 +513,7 @@ fn test_plan_propagates_hypervisor_pool_resolution_error() {
     let storage = MockStorageManager::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan_result = planner.plan(&manifest);
 
@@ -532,7 +532,7 @@ fn test_plan_propagates_domain_synthesis_error_on_invalid_template() {
 
     // Template XML is missing the root <domain> tag
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_path| Ok("<invalid>Not a domain template</invalid>".to_string()));
+        .with_template_resolver(|_template_path| Ok("<invalid>Not a domain template</invalid>".to_string()));
 
     let plan_result = planner.plan(&manifest);
 

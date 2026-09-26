@@ -42,14 +42,14 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
             })?;
 
         // Lifecycle guardrail: prevent_destroy check
-        if instance_configuration.lifecycle.prevent_destroy && !options.allow_destroy_protected {
-            return Err(LifecycleError::LifecyclePolicyViolation {
+        (!instance_configuration.lifecycle.prevent_destroy || options.allow_destroy_protected)
+            .then_some(())
+            .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
                 instance_name: instance_name.to_string(),
                 details: format!(
                     "Instance '{instance_name}' has prevent_destroy enabled; destruction aborted. Use --allow-destroy-protected to override."
                 ),
-            });
-        }
+            })?;
 
         let effective_pool = instance_configuration
             .effective_pool(&manifest.storage)
@@ -59,30 +59,33 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
         let target_pool_directory = self.hypervisor.resolve_pool_path(effective_pool)?;
 
         // Stop running VM
-        if self
-            .hypervisor
+        self.hypervisor
             .domain_info(instance_name)
-            .is_ok_and(|info| info.state == DomainState::Running)
-        {
-            if options.force {
-                self.hypervisor.destroy_domain(instance_name)?;
-            } else {
-                self.hypervisor.shutdown_domain(instance_name)?;
-            }
-        }
+            .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
+            .then(|| {
+                if options.force {
+                    self.hypervisor.destroy_domain(instance_name)
+                } else {
+                    self.hypervisor.shutdown_domain(instance_name)
+                }
+            })
+            .transpose()?;
 
         // Undefine domain in Libvirt and clean up instance NVRAM
         let _ = self.hypervisor.undefine_domain(instance_name, true);
 
         // Delete volatile instance CoW overlay if requested
-        if options.delete_disk {
-            let overlay_path = ContentAddressedImageResolver::resolve_instance_overlay_path(
-                &target_pool_directory,
-                instance_name,
-            );
+        options
+            .delete_disk
+            .then(|| {
+                let overlay_path = ContentAddressedImageResolver::resolve_instance_overlay_path(
+                    &target_pool_directory,
+                    instance_name,
+                );
 
-            self.storage.delete_image(&overlay_path)?;
-        }
+                self.storage.delete_image(&overlay_path)
+            })
+            .transpose()?;
 
         // Refresh storage pool volume inventory
         self.hypervisor.pool_refresh(effective_pool)?;
