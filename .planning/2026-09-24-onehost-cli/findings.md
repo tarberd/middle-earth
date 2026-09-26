@@ -696,4 +696,33 @@ Under **Rule 11**, identifiers must communicate **domain purpose, role, lifecycl
 - Instead of `name_os_str` -> use `raw_name` or `unvalidated_name`.
 - Instead of `config_map` -> use `configurations` or `flavor_registry`.
 
+---
+
+### Phase 12c.6: Comprehensive Architectural Analysis & Structural Refactoring
+
+#### 1. Foundational Context & Invariant
+Per the **Universal Code Equivalence & Absolute Standards** principle:
+> **"NEVER assume code to be less critical or important to any task. All code across the entire codebase—whether pure domain logic, imperative execution shell, low-level parser routines, CLI dispatchers, error definitions, mock drivers, test harnesses, or integration suites—must be held to the exact same uncompromising, high quality standards during any task. There are zero second-class components, zero exemptions, and zero quality tiers."**
+
+Every scope of the codebase is treated equally. Both **deep domain enhancements** (semantic domain types, born-valid invariants, AST query/transformation combinators) and **boundary/trait interface cohesion** (trait ergonomics, mock fidelity, core vs. shell decoupling, forward compatibility for Phase 13) are equally critical and important.
+
+#### 2. The 5 Core Architectural Audit Tracks
+1. **Module Coupling & Dependency Graph**:
+   - Verify strict unidirectional layering: `config` / `domain` (Pure Core) -> `hypervisor` / `storage` (Trait Contracts) -> `lifecycle` (Imperative Shell).
+   - Ensure zero inverted dependencies, zero circular references, and strict visibility encapsulation (`pub(crate)` vs. `pub`).
+2. **Deep Domain Modeling & Type-Level Invariants**:
+   - Eradicate primitive obsession: evaluate semantic types/newtypes for storage pools, device bus models, disk roles, and domain names.
+   - Elevate `DomainXmlElement` AST query/transformation ergonomics: add higher-order functional combinators for child lookups, attribute filters, and recursive tree transforms.
+   - Enforce 100% "born-valid" data structures across all domain records.
+3. **Trait Boundary & Hardware Interface Cohesion**:
+   - Audit `trait Hypervisor` and `trait StorageManager` for interface segregation and single responsibility.
+   - Eliminate any leaking of filesystem mutations or command execution details into imperative shells.
+   - Standardize parameter borrowing (`&str`, `&Path`) and owned return semantics across all trait methods.
+4. **Universal Code Equivalence & Mock Fidelity**:
+   - Audit `MockHypervisor` and `MockStorageManager` against production implementations (`virsh.rs`, `qemu_img.rs`) to ensure 100% behavioral, error-mode, and state-transition parity.
+   - Ensure mock isolation without host environment leaks, and verify that test suites adhere to production-grade coding standards.
+5. **Error Architecture & Forward-Compatibility**:
+   - Harmonize all 9 error hierarchies across modules into clean categories (Domain, Infrastructure, Policy).
+   - Pressure-test traits and structures against Phase 13 requirements (multi-disk atomic snapshotting, active `blockcommit --pivot`, RAII cleanup guards, and thin compressed disaster recovery).
+
 

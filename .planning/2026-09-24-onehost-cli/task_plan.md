@@ -417,6 +417,35 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
 - [x] Prepare codebase for Phase 13 (Backup & Restore Engine)
 - **Status:** complete
 
+#### Phase 12c.6: Comprehensive Architectural Analysis & Structural Refactoring
+*Context Compaction Invariant: Must begin with the strict Fresh Read Protocol (reading the entire `## Mandatory Design Guidelines & Engineering Standards` section in whole together + target phase context bundle) to guarantee 100% adherence to Universal Code Equivalence and the Triad of Foundations.*
+- [ ] **Track 1: Architectural Surface Mapping & Dependency Graph Audit**:
+  - Map and audit internal crate dependency graph across `config`, `domain`, `hypervisor`, `storage`, and `lifecycle`.
+  - Verify strict unidirectional, acyclic module dependencies with zero circularity or inverted layers.
+  - Audit visibility scopes (`pub(crate)` vs. `pub` vs. private) to ensure tight encapsulation.
+- [ ] **Track 2: Deep Domain Modeling & Type-Level Invariants**:
+  - Audit primitive obsession across domain entities; evaluate semantic newtypes/types for storage pools, device buses, domain names, and disk targets to eliminate illegal states.
+  - Elevate `DomainXmlElement` AST query and transformation ergonomics: introduce higher-order functional combinators (e.g. child lookups, attribute filters, recursive tree transforms) to streamline `template.rs` and `diff.rs`.
+  - Verify 100% "born-valid" algebraic data structures across all domain records.
+- [ ] **Track 3: Trait Boundary & Hardware Interface Cohesion**:
+  - Audit `trait Hypervisor` and `trait StorageManager` for interface segregation and single responsibility.
+  - Eliminate any leaking of filesystem mutations or command execution details into imperative shells.
+  - Standardize parameter borrowing (`&str`, `&Path`) and owned return semantics across all trait methods.
+- [ ] **Track 4: Universal Code Equivalence & Mock Fidelity Audit**:
+  - Audit `MockHypervisor` and `MockStorageManager` against production implementations (`virsh.rs`, `qemu_img.rs`) to ensure 100% behavioral, error-mode, and state-transition parity.
+  - Verify mock isolation without host leaks, and audit test suites to ensure zero second-class code patterns.
+- [ ] **Track 5: Error Architecture & Failure Domain Harmonization**:
+  - Audit all 9 error hierarchies across modules; ensure clean categorization into Domain, Infrastructure, and Policy errors.
+  - Ensure error contexts are preserved losslessly across boundaries and diagnostic messages adhere strictly to Pillar I.4.
+- [ ] **Track 6: Forward-Compatibility Pressure Test for Phase 13 (Backup & Restore)**:
+  - Pressure-test trait contracts and lifecycle orchestration against Phase 13 requirements (multi-disk atomic snapshotting, active `blockcommit --pivot`, RAII cleanup guards, and thin compressed disaster recovery).
+- [ ] **Track 7: Refactoring Execution, 4-Tier Verification & Gate Review**:
+  - Present concrete Architectural Refactoring Matrix for user alignment.
+  - Implement approved refactorings under strict TDD.
+  - Execute full 4-tier verification protocol (`cargo check`, `cargo test --all-targets`, `cargo clippy -- -D warnings`, `nix build`).
+  - Conduct Stage-Gated Senior Code Review for Phase 12c.6.
+- **Status:** pending
+
 ### Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD)
 - [ ] Write unit tests in `tests/backup_tests.rs`:
   - Multi-disk atomic snapshotting: `--diskspec` for all attached disks simultaneously
