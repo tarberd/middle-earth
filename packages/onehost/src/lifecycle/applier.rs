@@ -1,5 +1,3 @@
-use std::fs;
-
 use crate::config::model::ImageChangePolicy;
 use crate::hypervisor::traits::{DomainState, Hypervisor};
 use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
@@ -64,15 +62,8 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                     .create_cow_overlay(base_cache_path, overlay_path)?;
 
                 // Initialize NVRAM from template
-                nvram_path
-                    .parent()
-                    .filter(|parent_directory| !parent_directory.exists())
-                    .map(fs::create_dir_all)
-                    .transpose()?;
-
-                (nvram_template_path.exists() && !nvram_path.exists())
-                    .then(|| fs::copy(nvram_template_path, nvram_path))
-                    .transpose()?;
+                self.storage
+                    .initialize_nvram(nvram_template_path, nvram_path)?;
 
                 // Define domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;
@@ -152,9 +143,8 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                     .create_cow_overlay(base_cache_path, overlay_path)?;
 
                 // Re-initialize fresh NVRAM vars
-                nvram_template_path.exists().then(|| {
-                    let _ = fs::copy(nvram_template_path, nvram_path);
-                });
+                self.storage
+                    .initialize_nvram(nvram_template_path, nvram_path)?;
 
                 // Define updated domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;

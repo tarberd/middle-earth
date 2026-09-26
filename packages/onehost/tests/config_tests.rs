@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use onehost::config::loader::{ManifestLoadError, ManifestLoader};
-use onehost::config::model::ImageChangePolicy;
+use onehost::config::model::{ImageChangePolicy, InstanceUuid};
 use onehost::config::validation::ManifestValidationError;
 
 const VALID_MANIFEST_JSON: &str = r#"{
@@ -244,3 +244,31 @@ fn test_load_manifest_from_filesystem_file() {
     assert_eq!(manifest.version, "1.0");
     assert!(manifest.instances.contains_key("win11-gollum"));
 }
+
+#[test]
+fn test_born_valid_instance_uuid_parsing_and_invariants() {
+    let valid_uuid_string = "e5a7d620-8931-4bf6-98ec-7e44a30e8c45";
+    let instance_uuid = InstanceUuid::parse(valid_uuid_string).expect("Valid UUID should parse");
+
+    assert_eq!(instance_uuid.as_str(), valid_uuid_string);
+    assert_eq!(instance_uuid, valid_uuid_string);
+    assert_eq!(valid_uuid_string, instance_uuid);
+    assert_eq!(&*instance_uuid, valid_uuid_string);
+    assert_eq!(format!("{instance_uuid}"), valid_uuid_string);
+
+    // Invalid length / segments
+    assert!(InstanceUuid::parse("not-a-uuid").is_err());
+    assert!(InstanceUuid::parse("e5a7d620-8931-4bf6-98ec").is_err());
+    assert!(InstanceUuid::parse("e5a7d620-8931-4bf6-98ec-7e44a30e8c45-extra").is_err());
+    // Invalid non-hex characters
+    assert!(InstanceUuid::parse("g5a7d620-8931-4bf6-98ec-7e44a30e8c45").is_err());
+    assert!(InstanceUuid::parse("e5a7d620-8931-4bf6-98ec-7e44a30e8c4z").is_err());
+
+    // TryFrom and FromStr
+    let from_str_uuid: InstanceUuid = valid_uuid_string.parse().expect("FromStr must succeed");
+    assert_eq!(instance_uuid, from_str_uuid);
+
+    let try_from_uuid = InstanceUuid::try_from(valid_uuid_string).expect("TryFrom must succeed");
+    assert_eq!(instance_uuid, try_from_uuid);
+}
+

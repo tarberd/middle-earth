@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::storage::traits::{
-    execute_cross_device_streaming_move, ImageInspectionInfo, StorageError, StorageManager,
-};
+use crate::storage::traits::{ImageInspectionInfo, StorageError, StorageManager};
 
 /// Records an individual storage management action for assertion in test suites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +35,15 @@ pub enum RecordedStorageAction {
         destination_archive_path: PathBuf,
         backing_file_path: Option<PathBuf>,
         compress: bool,
+    },
+    RestoreThinBackup {
+        archive_path: PathBuf,
+        destination_overlay_path: PathBuf,
+        backing_file_path: Option<PathBuf>,
+    },
+    InitializeNvram {
+        template_path: PathBuf,
+        destination_nvram_path: PathBuf,
     },
     DeleteImage {
         image_path: PathBuf,
@@ -72,6 +79,7 @@ pub struct MockStorageManagerState {
     pub recorded_actions: Vec<RecordedStorageAction>,
     pub simulate_cross_device_paths: HashSet<PathBuf>,
     pub copied_base_images: Vec<(PathBuf, PathBuf)>,
+    pub initialized_nvrams: Vec<(PathBuf, PathBuf)>,
     pub injected_errors: HashMap<PathBuf, String>,
 }
 
@@ -122,6 +130,14 @@ impl MockStorageManager {
         self.state
             .lock()
             .map(|locked_state| locked_state.recorded_actions.clone())
+            .unwrap_or_default()
+    }
+
+    /// Returns recorded NVRAM initializations.
+    pub fn initialized_nvrams(&self) -> Vec<(PathBuf, PathBuf)> {
+        self.state
+            .lock()
+            .map(|locked_state| locked_state.initialized_nvrams.clone())
             .unwrap_or_default()
     }
 }
@@ -291,20 +307,6 @@ impl StorageManager for MockStorageManager {
                 .insert(destination_pool_path.to_path_buf(), source_record);
         }
 
-        // If physical files exist on the filesystem, perform physical copy and set read-only permissions
-        if source_depot_path.exists() {
-            if let Some(destination_parent) = destination_pool_path.parent() {
-                std::fs::create_dir_all(destination_parent)?;
-            }
-            std::fs::copy(source_depot_path, destination_pool_path)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let permissions = std::fs::Permissions::from_mode(0o444);
-                std::fs::set_permissions(destination_pool_path, permissions)?;
-            }
-        }
-
         Ok(())
     }
 
@@ -325,38 +327,8 @@ impl StorageManager for MockStorageManager {
                 destination_path: destination_path.to_path_buf(),
             });
 
-        let simulate_cross_device = locked_state
-            .simulate_cross_device_paths
-            .contains(source_path);
-
-        drop(locked_state);
-
-        if simulate_cross_device {
-            // Force cross-device streaming fallback
-            execute_cross_device_streaming_move(source_path, destination_path)?;
-        } else if source_path.exists() {
-            // Standard move using rename with fallback
-            if let Err(error) = std::fs::rename(source_path, destination_path) {
-                let is_cross_device = error.kind() == std::io::ErrorKind::CrossesDevices
-                    || error.raw_os_error() == Some(18);
-
-                if is_cross_device {
-                    execute_cross_device_streaming_move(source_path, destination_path)?;
-                } else {
-                    Err(StorageError::IoError { source: error })?;
-                }
-            }
-        }
-
-        let maybe_moved_record = self
-            .state
-            .lock()
-            .ok()
-            .and_then(|mut locked_state| locked_state.images.remove(source_path));
-
-        if let (Some(moved_record), Ok(mut locked_state)) =
-            (maybe_moved_record, self.state.lock())
-        {
+        let maybe_moved_record = locked_state.images.remove(source_path);
+        if let Some(moved_record) = maybe_moved_record {
             locked_state
                 .images
                 .insert(destination_path.to_path_buf(), moved_record);
@@ -400,6 +372,63 @@ impl StorageManager for MockStorageManager {
         Ok(())
     }
 
+    fn restore_thin_backup(
+        &self,
+        archive_path: &Path,
+        destination_overlay_path: &Path,
+        backing_file_path: Option<&Path>,
+    ) -> Result<(), StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::RestoreThinBackup {
+                archive_path: archive_path.to_path_buf(),
+                destination_overlay_path: destination_overlay_path.to_path_buf(),
+                backing_file_path: backing_file_path.map(Path::to_path_buf),
+            });
+
+        let restored_record = MockImageRecord {
+            format: "qcow2".to_string(),
+            virtual_size_bytes: 68_719_476_736,
+            actual_size_bytes: 196_608,
+            backing_file: backing_file_path.map(Path::to_path_buf),
+            is_corrupted: false,
+        };
+
+        locked_state
+            .images
+            .insert(destination_overlay_path.to_path_buf(), restored_record);
+        Ok(())
+    }
+
+    fn initialize_nvram(
+        &self,
+        template_path: &Path,
+        destination_nvram_path: &Path,
+    ) -> Result<(), StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::InitializeNvram {
+                template_path: template_path.to_path_buf(),
+                destination_nvram_path: destination_nvram_path.to_path_buf(),
+            });
+
+        locked_state
+            .initialized_nvrams
+            .push((template_path.to_path_buf(), destination_nvram_path.to_path_buf()));
+
+        Ok(())
+    }
+
     fn delete_image(&self, image_path: &Path) -> Result<(), StorageError> {
         let mut locked_state = self
             .state
@@ -413,11 +442,6 @@ impl StorageManager for MockStorageManager {
             });
 
         locked_state.images.remove(image_path);
-
-        if image_path.exists() {
-            let _ = std::fs::remove_file(image_path);
-        }
-
         Ok(())
     }
 }

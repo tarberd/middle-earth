@@ -49,6 +49,51 @@ impl DomainXmlElement {
         self.children.iter().find(|child| child.tag_name == tag)
     }
 
+    /// Checks if an attribute exists and has the specified value.
+    pub fn has_attribute_value(&self, key: &str, expected_value: &str) -> bool {
+        self.get_attribute(key) == Some(expected_value)
+    }
+
+    /// Checks if any attribute matches the given predicate.
+    pub fn has_matching_attribute<P>(&self, predicate: P) -> bool
+    where
+        P: Fn(&str, &str) -> bool,
+    {
+        self.attributes
+            .iter()
+            .any(|(attribute_key, attribute_value)| predicate(attribute_key, attribute_value))
+    }
+
+    /// Looks up an attribute value on a named child element.
+    pub fn child_attribute(&self, child_tag: &str, attribute_key: &str) -> Option<&str> {
+        self.find_child_by_tag(child_tag)
+            .and_then(|child| child.get_attribute(attribute_key))
+    }
+
+    /// Looks up text content on a named child element.
+    pub fn child_text(&self, child_tag: &str) -> Option<&str> {
+        self.find_child_by_tag(child_tag)
+            .and_then(|child| child.text_content.as_deref())
+    }
+
+    /// Resolves a nested child element following a sequence of tag names.
+    pub fn find_path<'a>(&'a self, tag_path: &[&str]) -> Option<&'a DomainXmlElement> {
+        tag_path
+            .iter()
+            .try_fold(self, |current_element, &tag| current_element.find_child_by_tag(tag))
+    }
+
+    /// Resolves text content at a nested path of tag names.
+    pub fn path_text(&self, tag_path: &[&str]) -> Option<&str> {
+        self.find_path(tag_path)
+            .and_then(|element| element.text_content.as_deref())
+    }
+
+    /// Returns an iterator yielding all children with the specified tag name.
+    pub fn find_children<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a DomainXmlElement> {
+        self.children.iter().filter(move |child| child.tag_name == tag)
+    }
+
     /// Functional builder: returns a new element with an additional attribute.
     pub fn with_attribute(self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let attribute_key = key.into();

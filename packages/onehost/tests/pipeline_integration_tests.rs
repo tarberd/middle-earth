@@ -240,7 +240,9 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     assert!(storage.inspect_image(&expected_overlay_path).is_ok());
 
     let nvram_target = workspace.nvram_directory.join("win11-gollum_VARS.fd");
-    assert!(nvram_target.exists());
+    assert!(storage
+        .initialized_nvrams()
+        .contains(&(manifest.storage.nvram_template.clone(), nvram_target)));
 
     // 5. Assert IDEMPOTENCY: second plan emits NoOp
     let idempotent_plan = planner

@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
@@ -11,6 +10,7 @@ use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use onehost::lifecycle::LifecycleError;
 use onehost::storage::mock::{MockImageRecord, MockStorageManager, RecordedStorageAction};
+use onehost::storage::StorageManager;
 
 const SAMPLE_MANIFEST_JSON: &str = r#"{
   "$schema": "https://middle-earth.internal/schemas/onehost.v1.json",
@@ -583,11 +583,8 @@ fn test_destroyer_force_cuts_power_when_force_flag_is_set() {
 
 #[test]
 fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
-    let temporary_directory = tempdir().unwrap();
-    let pool_path = temporary_directory.path().to_path_buf();
+    let pool_path = PathBuf::from("/var/lib/libvirt/images");
     let overlay_path = pool_path.join("win11-gollum.qcow2");
-    fs::write(&overlay_path, b"dummy-qcow2-data").unwrap();
-    assert!(overlay_path.exists());
 
     let pool_xml = format!(
         "<pool type='dir'><name>default</name><target><path>{}</path></target></pool>",
@@ -596,7 +593,7 @@ fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
 
     let manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).unwrap();
     let hypervisor = MockHypervisor::new().with_pool_xml("default", pool_xml);
-    let storage = MockStorageManager::new();
+    let storage = MockStorageManager::new().with_image(&overlay_path, MockImageRecord::default());
 
     let destroyer = DomainLifecycleDestroyer::new(&hypervisor, &storage);
     destroyer
@@ -615,5 +612,61 @@ fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
     assert!(storage_actions.contains(&RecordedStorageAction::DeleteImage {
         image_path: overlay_path.clone(),
     }));
-    assert!(!overlay_path.exists(), "overlay disk should have been unlinked");
+    assert!(storage.inspect_image(&overlay_path).is_err(), "in-memory overlay image record should have been unlinked");
+}
+
+#[test]
+fn test_destroyer_returns_instance_not_declared_for_unregistered_instance() {
+    let manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).unwrap();
+    let hypervisor = MockHypervisor::new();
+    let storage = MockStorageManager::new();
+
+    let destroyer = DomainLifecycleDestroyer::new(&hypervisor, &storage);
+    let result = destroyer.destroy(
+        "non-existent-vm",
+        &manifest,
+        &DestroyOptions::default(),
+    );
+
+    match result {
+        Err(LifecycleError::InstanceNotDeclared { instance_name }) => {
+            assert_eq!(instance_name, "non-existent-vm");
+        }
+        other => panic!("expected InstanceNotDeclared error, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_destroyer_idempotent_undefine_ignores_domain_not_found_but_propagates_hypervisor_error() {
+    let manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).unwrap();
+    let pool_xml = "<pool type='dir'><name>default</name><target><path>/data/pool</path></target></pool>";
+
+    // Case 1: Domain does not exist in hypervisor -> idempotent success
+    let hypervisor_without_domain = MockHypervisor::new().with_pool_xml("default", pool_xml);
+    let storage = MockStorageManager::new();
+    let destroyer = DomainLifecycleDestroyer::new(&hypervisor_without_domain, &storage);
+
+    let result = destroyer.destroy(
+        "win11-gollum",
+        &manifest,
+        &DestroyOptions::default(),
+    );
+    assert!(result.is_ok(), "destroying when domain is not found in hypervisor must succeed idempotently");
+
+    // Case 2: Hypervisor undefine fails with fatal error -> bubbles up error
+    let hypervisor_with_error = MockHypervisor::new()
+        .with_pool_xml("default", pool_xml)
+        .with_injected_domain_error("win11-gollum", "Libvirt daemon disconnected");
+    let destroyer_error = DomainLifecycleDestroyer::new(&hypervisor_with_error, &storage);
+
+    let error_result = destroyer_error.destroy(
+        "win11-gollum",
+        &manifest,
+        &DestroyOptions::default(),
+    );
+    assert!(error_result.is_err());
+    assert!(matches!(
+        error_result.unwrap_err(),
+        LifecycleError::HypervisorError { .. }
+    ));
 }

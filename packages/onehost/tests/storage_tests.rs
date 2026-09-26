@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use onehost::storage::{
-    execute_cross_device_streaming_move, parse_qemu_img_info_json, MockImageRecord,
-    MockStorageManager, RecordedStorageAction, StorageError, StorageManager,
+    execute_cross_device_streaming_move, execute_safe_file_move, parse_qemu_img_info_json,
+    MockImageRecord, MockStorageManager, QemuImgStorage, RecordedStorageAction, StorageError,
+    StorageManager,
 };
 
 const SAMPLE_QEMU_IMG_INFO_JSON: &str = r#"
@@ -141,14 +142,14 @@ fn test_mock_storage_manager_image_inspection_and_check() {
 }
 
 #[test]
-fn test_mock_storage_manager_copy_base_image_sets_readonly_permissions() {
+fn test_qemu_img_storage_copy_base_image_sets_readonly_permissions() {
     let temp_workspace = tempdir().expect("Failed to create temporary workspace");
     let depot_path = temp_workspace.path().join("depot-master.qcow2");
     let pool_path = temp_workspace.path().join("pool").join("cached-master.qcow2");
 
     fs::write(&depot_path, b"GOLDEN_MASTER_READONLY_BITS").expect("Failed to write golden master");
 
-    let storage = MockStorageManager::new();
+    let storage = QemuImgStorage::new();
     storage
         .copy_base_image(&depot_path, &pool_path)
         .expect("Base image copy should succeed");
@@ -165,6 +166,23 @@ fn test_mock_storage_manager_copy_base_image_sets_readonly_permissions() {
 }
 
 #[test]
+fn test_qemu_img_initialize_nvram() {
+    let temp_workspace = tempdir().expect("Failed to create temporary workspace");
+    let template_path = temp_workspace.path().join("template_VARS.fd");
+    let destination_nvram = temp_workspace.path().join("nvram_dir").join("instance_VARS.fd");
+
+    fs::write(&template_path, b"NVRAM_TEMPLATE_BITS").expect("Failed to write template NVRAM");
+
+    let storage = QemuImgStorage::new();
+    storage
+        .initialize_nvram(&template_path, &destination_nvram)
+        .expect("NVRAM initialization should succeed");
+
+    assert!(destination_nvram.exists());
+    assert_eq!(fs::read(&destination_nvram).unwrap(), b"NVRAM_TEMPLATE_BITS");
+}
+
+#[test]
 fn test_storage_manager_move_file_safely_same_filesystem() {
     let temp_workspace = tempdir().expect("Failed to create temporary workspace");
     let source_path = temp_workspace.path().join("source.qcow2");
@@ -172,7 +190,7 @@ fn test_storage_manager_move_file_safely_same_filesystem() {
 
     fs::write(&source_path, b"DISK_DATA").expect("Failed to write source file");
 
-    let storage = MockStorageManager::new();
+    let storage = QemuImgStorage::new();
     storage
         .move_file_safely(&source_path, &destination_path)
         .expect("Safe move on same filesystem should succeed");
@@ -183,22 +201,60 @@ fn test_storage_manager_move_file_safely_same_filesystem() {
 }
 
 #[test]
-fn test_storage_manager_move_file_safely_simulated_cross_device_fallback() {
+fn test_execute_safe_file_move_success() {
     let temp_workspace = tempdir().expect("Failed to create temporary workspace");
-    let source_path = temp_workspace.path().join("cross-source.qcow2");
-    let destination_path = temp_workspace.path().join("cross-destination.qcow2");
+    let source_path = temp_workspace.path().join("source_direct.qcow2");
+    let destination_path = temp_workspace.path().join("destination_direct.qcow2");
 
-    fs::write(&source_path, b"CROSS_DEVICE_DATA").expect("Failed to write source file");
+    fs::write(&source_path, b"DIRECT_SAFE_MOVE_DATA").expect("Failed to write source file");
 
-    let storage = MockStorageManager::new().with_simulated_cross_device_path(&source_path);
-
-    storage
-        .move_file_safely(&source_path, &destination_path)
-        .expect("Cross device move fallback should succeed");
+    execute_safe_file_move(&source_path, &destination_path)
+        .expect("Direct execute_safe_file_move should succeed");
 
     assert!(!source_path.exists());
     assert!(destination_path.exists());
-    assert_eq!(fs::read(&destination_path).unwrap(), b"CROSS_DEVICE_DATA");
+    assert_eq!(fs::read(&destination_path).unwrap(), b"DIRECT_SAFE_MOVE_DATA");
+}
+
+#[test]
+fn test_mock_storage_manager_pure_in_memory_hermeticity() {
+    let storage = MockStorageManager::new();
+    let depot_path = PathBuf::from("/depot/image.qcow2");
+    let pool_path = PathBuf::from("/pool/image.qcow2");
+    let nvram_template = PathBuf::from("/templates/nvram.fd");
+    let nvram_destination = PathBuf::from("/instances/nvram.fd");
+    let archive_path = PathBuf::from("/backups/backup.qcow2");
+    let restored_overlay = PathBuf::from("/instances/restored.qcow2");
+
+    // Copy base image (in-memory)
+    storage
+        .copy_base_image(&depot_path, &pool_path)
+        .expect("In-memory copy should succeed");
+    assert!(!pool_path.exists(), "Mock must not write to host filesystem");
+    assert!(storage.recorded_actions().contains(&RecordedStorageAction::CopyBaseImage {
+        source_depot_path: depot_path.clone(),
+        destination_pool_path: pool_path.clone(),
+    }));
+
+    // Initialize NVRAM (in-memory)
+    storage
+        .initialize_nvram(&nvram_template, &nvram_destination)
+        .expect("In-memory NVRAM initialization should succeed");
+    assert!(!nvram_destination.exists(), "Mock must not write to host filesystem");
+    assert_eq!(storage.initialized_nvrams(), vec![(nvram_template.clone(), nvram_destination.clone())]);
+
+    // Restore thin backup (in-memory)
+    storage
+        .restore_thin_backup(&archive_path, &restored_overlay, Some(&pool_path))
+        .expect("In-memory restore should succeed");
+    assert!(!restored_overlay.exists(), "Mock must not write to host filesystem");
+    assert!(storage.inspect_image(&restored_overlay).is_ok());
+
+    // Delete image (in-memory)
+    storage
+        .delete_image(&restored_overlay)
+        .expect("In-memory delete should succeed");
+    assert!(storage.inspect_image(&restored_overlay).is_err());
 }
 
 #[test]

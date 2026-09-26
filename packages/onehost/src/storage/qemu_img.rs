@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use serde::Deserialize;
 
-use crate::storage::traits::{ImageInspectionInfo, StorageError, StorageManager};
+use crate::storage::traits::{
+    execute_safe_file_move, ImageInspectionInfo, StorageError, StorageManager,
+};
 
 /// Production implementation of StorageManager backed by the `qemu-img` command-line utility.
 #[derive(Debug, Clone)]
@@ -271,6 +273,87 @@ impl StorageManager for QemuImgStorage {
             .collect();
 
         self.execute_command(&arguments)?;
+        Ok(())
+    }
+
+    fn restore_thin_backup(
+        &self,
+        archive_path: &Path,
+        destination_overlay_path: &Path,
+        backing_file_path: Option<&Path>,
+    ) -> Result<(), StorageError> {
+        archive_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| StorageError::SourceFileNotFound {
+                path: archive_path.to_path_buf(),
+            })?;
+
+        let rendered_archive_path = archive_path.to_str().ok_or_else(|| {
+            StorageError::InspectionParseError {
+                details: "Archive path contains invalid UTF-8".to_string(),
+            }
+        })?;
+
+        let rendered_destination_path = destination_overlay_path.to_str().ok_or_else(|| {
+            StorageError::InspectionParseError {
+                details: "Destination overlay path contains invalid UTF-8".to_string(),
+            }
+        })?;
+
+        let rendered_backing_file = backing_file_path
+            .map(|backing_file| {
+                backing_file.to_str().ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Backing file path contains invalid UTF-8".to_string(),
+                })
+            })
+            .transpose()?;
+
+        let backing_flag_arguments = rendered_backing_file
+            .map(|rendered_backing| ["-B", rendered_backing, "-F", "qcow2"]);
+
+        let arguments: Vec<&str> = ["convert", "-O", "qcow2"]
+            .into_iter()
+            .chain(backing_flag_arguments.into_iter().flatten())
+            .chain([rendered_archive_path, rendered_destination_path])
+            .collect();
+
+        self.execute_command(&arguments)?;
+        Ok(())
+    }
+
+    fn move_file_safely(
+        &self,
+        source_path: &Path,
+        destination_path: &Path,
+    ) -> Result<(), StorageError> {
+        execute_safe_file_move(source_path, destination_path)
+    }
+
+    fn initialize_nvram(
+        &self,
+        template_path: &Path,
+        destination_nvram_path: &Path,
+    ) -> Result<(), StorageError> {
+        template_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| StorageError::SourceFileNotFound {
+                path: template_path.to_path_buf(),
+            })?;
+
+        if let Some(destination_parent) = destination_nvram_path.parent() {
+            std::fs::create_dir_all(destination_parent)?;
+        }
+
+        std::fs::copy(template_path, destination_nvram_path)?;
+        Ok(())
+    }
+
+    fn delete_image(&self, image_path: &Path) -> Result<(), StorageError> {
+        if image_path.exists() {
+            std::fs::remove_file(image_path)?;
+        }
         Ok(())
     }
 }

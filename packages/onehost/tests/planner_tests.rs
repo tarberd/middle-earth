@@ -4,6 +4,7 @@ use onehost::config::loader::ManifestLoader;
 use onehost::config::model::ImageChangePolicy;
 use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{BlockDeviceInfo, DomainInfo, DomainState};
+use onehost::image::tag::FlavorResolutionError;
 use onehost::lifecycle::{DanglingSnapshotAlert, DomainLifecyclePlanner, InstancePlanAction, LifecycleError};
 use onehost::storage::mock::{MockImageRecord, MockStorageManager};
 
@@ -498,10 +499,12 @@ fn test_plan_returns_error_when_flavor_not_registered() {
 
     assert!(plan_result.is_err());
     match plan_result.unwrap_err() {
-        LifecycleError::ConfigurationError { details } => {
-            assert!(details.contains("unregistered-flavor"));
+        LifecycleError::FlavorResolutionError {
+            source: FlavorResolutionError::UnknownFlavor { requested_flavor, .. },
+        } => {
+            assert_eq!(requested_flavor, "unregistered-flavor");
         }
-        other_error => panic!("expected ConfigurationError, but got: {:?}", other_error),
+        other_error => panic!("expected FlavorResolutionError, but got: {:?}", other_error),
     }
 }
 

@@ -272,11 +272,20 @@
 | Phase 12c.5 Full Test Suite (cargo test --all-targets) | 99 unit/integration tests pass cleanly | 99 passed, 0 failed, 0 warnings | PASS |
 | Phase 12c.5 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 12c.5 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Phase 12c.6 Structural Refactoring (Domain & Types) | Born-valid InstanceUuid & DomainXmlElement higher-order combinators | 100% compliant | PASS |
+| Phase 12c.6 Structural Refactoring (Hermetic Mocks & Traits) | StorageManager::initialize_nvram, restore_thin_backup, pure in-memory MockStorageManager | 100% compliant | PASS |
+| Phase 12c.6 Structural Refactoring (Error Hierarchy) | InstanceNotDeclared, ManifestValidationError, explicit undefine_domain matching | 100% compliant | PASS |
+| Phase 12c.6 Full Test Suite (cargo test --all-targets) | 105 unit/integration tests pass cleanly | 105 passed, 0 failed, 0 warnings | PASS |
+| Phase 12c.6 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
+| Phase 12c.6 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 
 ### Errors
 | Error | Resolution |
 |-------|------------|
 | Host base image existence leaking into unit tests | Queried `storage.inspect_image(...)` in `applier.rs` instead of host `fs::exists(...)` |
 | 3 `loop` blocks left in `src/domain/element.rs` | Refactored `parse_document_root`, `verify_eof`, and `next_body_item` to functional tail recursion |
+| Host filesystem mutation in `MockStorageManager` | Removed all `std::fs` operations; made mock 100% in-memory and delegated NVRAM creation via `StorageManager::initialize_nvram` |
+| Silent error swallowing in `destroyer.rs` | Explicitly matched `undefine_domain` results, treating `DomainNotFound` as idempotent no-op while propagating fatal hypervisor errors |
+
 
 

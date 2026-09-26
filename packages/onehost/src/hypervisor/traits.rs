@@ -102,9 +102,7 @@ pub fn parse_pool_target_path(pool_xml: &str) -> Result<PathBuf, HypervisorError
     })?;
 
     let pool_target_path = pool_root
-        .find_child_by_tag("target")
-        .and_then(|target_section| target_section.find_child_by_tag("path"))
-        .and_then(|path_node| path_node.text_content.as_deref())
+        .path_text(&["target", "path"])
         .ok_or_else(|| HypervisorError::MissingPoolPathElement {
             details: "No <target><path> child found in storage pool XML".to_string(),
         })?;

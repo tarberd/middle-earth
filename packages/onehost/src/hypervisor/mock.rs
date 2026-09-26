@@ -85,34 +85,31 @@ pub struct MockHypervisor {
 fn extract_block_devices_from_domain_xml(domain_xml: &str) -> Vec<BlockDeviceInfo> {
     DomainXmlElement::parse(domain_xml)
         .ok()
-        .and_then(|parsed_root| parsed_root.find_child_by_tag("devices").cloned())
-        .map(|devices_node| {
-            devices_node
-                .children
-                .into_iter()
-                .filter(|child| child.tag_name == "disk")
-                .map(|child| {
-                    let target_device = child
-                        .find_child_by_tag("target")
-                        .and_then(|target| target.get_attribute("dev"))
-                        .unwrap_or("sda")
-                        .to_string();
-                    let device_type = child
-                        .get_attribute("device")
-                        .unwrap_or("disk")
-                        .to_string();
-                    let source_file = child
-                        .find_child_by_tag("source")
-                        .and_then(|source| source.get_attribute("file"))
-                        .map(PathBuf::from);
+        .and_then(|parsed_root| {
+            parsed_root.find_child_by_tag("devices").map(|devices_node| {
+                devices_node
+                    .find_children("disk")
+                    .map(|child| {
+                        let target_device = child
+                            .child_attribute("target", "dev")
+                            .unwrap_or("sda")
+                            .to_string();
+                        let device_type = child
+                            .get_attribute("device")
+                            .unwrap_or("disk")
+                            .to_string();
+                        let source_file = child
+                            .child_attribute("source", "file")
+                            .map(PathBuf::from);
 
-                    BlockDeviceInfo {
-                        target_device,
-                        device_type,
-                        source_file,
-                    }
-                })
-                .collect()
+                        BlockDeviceInfo {
+                            target_device,
+                            device_type,
+                            source_file,
+                        }
+                    })
+                    .collect()
+            })
         })
         .unwrap_or_default()
 }
@@ -329,6 +326,14 @@ impl Hypervisor for MockHypervisor {
                 domain_name: domain_name.to_string(),
                 cleanup_nvram,
             });
+
+        if let Some(error_details) = locked_state.injected_domain_errors.get(domain_name) {
+            return Err(HypervisorError::CommandExecutionFailed {
+                command: format!("virsh undefine {domain_name}"),
+                exit_code: Some(1),
+                stderr: error_details.clone(),
+            });
+        }
 
         if locked_state.domains.remove(domain_name).is_some() {
             locked_state.domain_xmls.remove(domain_name);

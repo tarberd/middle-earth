@@ -4,7 +4,9 @@ use crate::config::model::{ImageChangePolicy, InstanceConfiguration, OnehostMani
 use crate::domain::diff::DomainXmlDiffer;
 use crate::domain::template::{DomainTemplateEngine, DomainTemplateInjectionParameters};
 use crate::hypervisor::traits::{Hypervisor, HypervisorError};
-use crate::image::tag::{ContentAddressedImageResolver, FlavorDerivationMetadata};
+use crate::image::tag::{
+    ContentAddressedImageResolver, FlavorDerivationMetadata, FlavorResolutionError,
+};
 use crate::lifecycle::LifecycleError;
 use crate::storage::traits::{StorageError, StorageManager};
 
@@ -142,20 +144,15 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
         manifest: &OnehostManifest,
     ) -> Result<(InstancePlanAction, Vec<DanglingSnapshotAlert>), LifecycleError> {
         let effective_pool = instance_configuration
-            .effective_pool(&manifest.storage)
-            .map_err(|validation_error| LifecycleError::ConfigurationError {
-                details: validation_error.to_string(),
-            })?;
+            .effective_pool(&manifest.storage)?;
         let target_pool_directory = self.hypervisor.resolve_pool_path(effective_pool)?;
 
         let flavor_metadata = manifest
             .flavors
             .get(&instance_configuration.image.flavor_name)
-            .ok_or_else(|| LifecycleError::ConfigurationError {
-                details: format!(
-                    "Flavor '{}' for instance '{}' is not registered in manifest",
-                    instance_configuration.image.flavor_name, instance_name
-                ),
+            .ok_or_else(|| FlavorResolutionError::UnknownFlavor {
+                requested_flavor: instance_configuration.image.flavor_name.clone(),
+                available_flavors: manifest.flavors.keys().cloned().collect(),
             })?;
 
         let derivation_metadata = FlavorDerivationMetadata::new(

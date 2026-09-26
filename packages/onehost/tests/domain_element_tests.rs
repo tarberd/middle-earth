@@ -135,3 +135,53 @@ fn test_malformed_xml_edge_cases() {
     // 5. Unexpected text after root
     assert!(DomainXmlElement::parse("<domain/>trailing text").is_err());
 }
+
+#[test]
+fn test_higher_order_query_combinators() {
+    let domain = DomainXmlElement::parse(COMPLEX_DOMAIN_XML).expect("Must parse complex XML");
+
+    // has_attribute_value and has_matching_attribute
+    assert!(domain.has_attribute_value("type", "kvm"));
+    assert!(!domain.has_attribute_value("type", "qemu"));
+    assert!(domain.has_matching_attribute(|key, value| key.starts_with("xmlns:onehost") && value.contains("middle-earth")));
+    assert!(!domain.has_matching_attribute(|key, _| key == "nonexistent"));
+
+    // child_text
+    assert_eq!(domain.child_text("name"), Some("win11-gollum"));
+    assert_eq!(domain.child_text("uuid"), Some("e5a7d620-8931-4bf6-98ec-7e44a30e8c45"));
+    assert_eq!(domain.child_text("nonexistent"), None);
+
+    // child_attribute
+    let os_element = domain.find_child_by_tag("os").expect("os child must exist");
+    assert_eq!(os_element.child_attribute("type", "arch"), Some("x86_64"));
+    assert_eq!(os_element.child_attribute("type", "machine"), Some("q35"));
+    assert_eq!(os_element.child_attribute("loader", "readonly"), Some("yes"));
+    assert_eq!(os_element.child_attribute("loader", "nonexistent"), None);
+
+    // find_path and path_text
+    assert_eq!(domain.path_text(&["os", "type"]), Some("hvm"));
+    assert_eq!(
+        domain.path_text(&["os", "loader"]),
+        Some("/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd")
+    );
+    assert_eq!(domain.path_text(&["devices", "emulator"]), Some("/usr/bin/qemu-system-x86_64"));
+    assert_eq!(domain.path_text(&["devices", "nonexistent"]), None);
+
+    let sda_target = domain.find_path(&["devices", "disk", "target"]);
+    assert!(sda_target.is_some());
+    assert_eq!(sda_target.and_then(|target| target.get_attribute("dev")), Some("sda"));
+
+    // find_children
+    let devices = domain.find_child_by_tag("devices").expect("devices must exist");
+    let disks: Vec<&DomainXmlElement> = devices.find_children("disk").collect();
+    assert_eq!(disks.len(), 1);
+    assert_eq!(disks[0].child_attribute("target", "dev"), Some("sda"));
+
+    let interfaces: Vec<&DomainXmlElement> = devices.find_children("interface").collect();
+    assert_eq!(interfaces.len(), 1);
+    assert_eq!(interfaces[0].get_attribute("type"), Some("bridge"));
+
+    let nones: Vec<&DomainXmlElement> = devices.find_children("nonexistent").collect();
+    assert!(nones.is_empty());
+}
+

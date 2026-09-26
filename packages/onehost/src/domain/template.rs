@@ -69,11 +69,8 @@ impl DomainTemplateEngine {
             .find_child_by_tag("devices")
             .map(|devices| {
                 devices
-                    .children
-                    .iter()
-                    .filter(|device_child| {
-                        device_child.tag_name == "disk" && Self::is_designated_os_disk(device_child)
-                    })
+                    .find_children("disk")
+                    .filter(|device_child| Self::is_designated_os_disk(device_child))
                     .count()
             })
             .unwrap_or(0);
@@ -117,7 +114,7 @@ impl DomainTemplateEngine {
     }
 
     fn is_designated_os_disk(element: &DomainXmlElement) -> bool {
-        element.attributes.iter().any(|(attribute_key, attribute_value)| {
+        element.has_matching_attribute(|attribute_key, attribute_value| {
             (attribute_key == "onehost:role"
                 || attribute_key.ends_with(":role")
                 || attribute_key == "role")

@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::config::validation::ManifestValidationError;
 use crate::domain::diff::DomainXmlDiffError;
 use crate::domain::template::DomainTemplateSynthesisError;
 use crate::hypervisor::traits::HypervisorError;
@@ -60,6 +61,17 @@ pub enum LifecycleError {
     FlavorResolutionError {
         #[from]
         source: FlavorResolutionError,
+    },
+
+    #[error("Instance '{instance_name}' is not declared in manifest")]
+    InstanceNotDeclared {
+        instance_name: String,
+    },
+
+    #[error("Manifest validation error: {source}")]
+    ManifestValidationError {
+        #[from]
+        source: ManifestValidationError,
     },
 
     #[error("Configuration error: {details}")]

@@ -96,6 +96,34 @@ pub fn execute_cross_device_streaming_move(
     Ok(())
 }
 
+/// Safely moves a file, using `std::fs::rename` with fallback to streaming copy, fsync, and atomic rename
+/// when encountering cross-device filesystem boundary (`EXDEV`).
+pub fn execute_safe_file_move(
+    source_path: &Path,
+    destination_path: &Path,
+) -> Result<(), StorageError> {
+    source_path
+        .exists()
+        .then_some(())
+        .ok_or_else(|| StorageError::SourceFileNotFound {
+            path: source_path.to_path_buf(),
+        })?;
+
+    match fs::rename(source_path, destination_path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let is_cross_device = error.kind() == io::ErrorKind::CrossesDevices
+                || error.raw_os_error() == Some(18); // 18 is EXDEV on Linux
+
+            if is_cross_device {
+                execute_cross_device_streaming_move(source_path, destination_path)
+            } else {
+                Err(StorageError::IoError { source: error })
+            }
+        }
+    }
+}
+
 /// Trait abstracting image manipulation and storage management.
 pub trait StorageManager: Send + Sync {
     /// Creates a QCOW2 copy-on-write overlay backed by `backing_file_path`.
@@ -133,28 +161,7 @@ pub trait StorageManager: Send + Sync {
         &self,
         source_path: &Path,
         destination_path: &Path,
-    ) -> Result<(), StorageError> {
-        source_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| StorageError::SourceFileNotFound {
-                path: source_path.to_path_buf(),
-            })?;
-
-        match fs::rename(source_path, destination_path) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                let is_cross_device = error.kind() == io::ErrorKind::CrossesDevices
-                    || error.raw_os_error() == Some(18); // 18 is EXDEV on Linux
-
-                if is_cross_device {
-                    execute_cross_device_streaming_move(source_path, destination_path)
-                } else {
-                    Err(StorageError::IoError { source: error })
-                }
-            }
-        }
-    }
+    ) -> Result<(), StorageError>;
 
     /// Converts and compresses a frozen overlay disk to a standalone or thin backup archive.
     fn convert_thin_backup(
@@ -165,11 +172,21 @@ pub trait StorageManager: Send + Sync {
         compress: bool,
     ) -> Result<(), StorageError>;
 
+    /// Restores a thin backup archive to a destination overlay disk backed by the designated base image.
+    fn restore_thin_backup(
+        &self,
+        archive_path: &Path,
+        destination_overlay_path: &Path,
+        backing_file_path: Option<&Path>,
+    ) -> Result<(), StorageError>;
+
+    /// Initializes a fresh NVRAM vars file by copying from the template.
+    fn initialize_nvram(
+        &self,
+        template_path: &Path,
+        destination_nvram_path: &Path,
+    ) -> Result<(), StorageError>;
+
     /// Deletes an image file from storage if it exists.
-    fn delete_image(&self, image_path: &Path) -> Result<(), StorageError> {
-        if image_path.exists() {
-            fs::remove_file(image_path)?;
-        }
-        Ok(())
-    }
+    fn delete_image(&self, image_path: &Path) -> Result<(), StorageError>;
 }

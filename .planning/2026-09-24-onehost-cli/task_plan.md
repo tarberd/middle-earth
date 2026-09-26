@@ -435,11 +435,11 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
   - Identified silent error swallowing in `destroyer.rs`: `let _ = undefine_domain(...)` discarding fatal hypervisor failures.
 - [x] **Track 6: Forward-Compatibility Pressure Test for Phase 13 (Backup & Restore)**:
   - Identified missing trait capability: `StorageManager` needs `restore_thin_backup` to complete symmetry with `convert_thin_backup` for disaster recovery.
-- [ ] **Track 7: Architectural Refactoring Execution & Verification**:
-  - [ ] **Track 7.1: Domain Modeling & Types Refactoring**:
-    - [ ] Implement born-valid `InstanceUuid` newtype in `src/config/model.rs` enforcing RFC-4122 syntax on construction (`new()`, `parse()`, `FromStr`, `Display`, `Serialize`, `Deserialize`).
-    - [ ] Update `InstanceConfiguration.uuid` to use `InstanceUuid` and streamline `validation.rs`.
-    - [ ] Add functional query combinators to `DomainXmlElement` in `src/domain/element.rs`:
+- [x] **Track 7: Architectural Refactoring Execution & Verification**:
+  - [x] **Track 7.1: Domain Modeling & Types Refactoring**:
+    - [x] Implement born-valid `InstanceUuid` newtype in `src/config/model.rs` enforcing RFC-4122 syntax on construction (`new()`, `parse()`, `FromStr`, `Display`, `Serialize`, `Deserialize`, `Deref`, `TryFrom`).
+    - [x] Update `InstanceConfiguration.uuid` to use `InstanceUuid` and streamline `validation.rs`.
+    - [x] Add functional query combinators to `DomainXmlElement` in `src/domain/element.rs`:
       - `child_attribute(&self, child_tag: &str, attribute_key: &str) -> Option<&str>`
       - `child_text(&self, child_tag: &str) -> Option<&str>`
       - `path_text(&self, tag_path: &[&str]) -> Option<&str>`
@@ -447,29 +447,29 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
       - `find_children<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a DomainXmlElement>`
       - `has_attribute_value(&self, key: &str, value: &str) -> bool`
       - `has_matching_attribute(&self, predicate: impl Fn(&str, &str) -> bool) -> bool`
-    - [ ] Refactor call sites in `template.rs`, `diff.rs`, `hypervisor/mock.rs`, and `hypervisor/traits.rs` to use new combinators.
-    - [ ] Write unit tests for `InstanceUuid` and new `DomainXmlElement` combinators.
-  - [ ] **Track 7.2: Trait Boundary & Mock Hermeticity Refactoring**:
-    - [ ] Add `initialize_nvram(&self, template_path: &Path, destination_nvram_path: &Path) -> Result<(), StorageError>` to `trait StorageManager` in `src/storage/traits.rs`.
-    - [ ] Add `restore_thin_backup(&self, archive_path: &Path, destination_overlay_path: &Path, backing_file_path: Option<&Path>) -> Result<(), StorageError>` to `trait StorageManager`.
-    - [ ] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/qemu_img.rs` for `QemuImgStorage`.
-    - [ ] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/mock.rs` for `MockStorageManager` with pure in-memory tracking and `RecordedStorageAction` variants (`InitializeNvram`, `RestoreThinBackup`).
-    - [ ] Eradicate ALL `std::fs` operations (`exists()`, `copy()`, `rename()`, `remove_file()`, `set_permissions()`) from `MockStorageManager`, achieving 100% hermetic in-memory mock isolation.
-    - [ ] Refactor `DomainLifecycleApplier` in `src/lifecycle/applier.rs` to delegate NVRAM creation to `self.storage.initialize_nvram(...)`.
-    - [ ] Write unit tests verifying hermetic mock behaviors, `initialize_nvram`, and `restore_thin_backup`.
-  - [ ] **Track 7.3: Error Hierarchy Harmonization & Diagnostics**:
-    - [ ] Add `InstanceNotDeclared { instance_name: String }` and `ManifestValidationError(#[from] ManifestValidationError)` to `LifecycleError` in `src/lifecycle/mod.rs`.
-    - [ ] Refactor `planner.rs` to propagate `FlavorResolutionError::FlavorNotRegistered` directly.
-    - [ ] Refactor `destroyer.rs` to return `InstanceNotDeclared` and propagate `ManifestValidationError`.
-    - [ ] Refactor `destroyer.rs` to explicitly match `undefine_domain` results: treat `DomainNotFound` as idempotent no-op while bubbling up true infrastructure errors.
-    - [ ] Update affected unit tests to verify typed error assertions.
-  - [ ] **Track 7.4: Verification, 4-Tier Test Suite & Senior Gate Review**:
-    - [ ] Verify `cargo check` passes with 0 warnings.
-    - [ ] Verify `cargo test --all-targets` passes across all test suites.
-    - [ ] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings.
-    - [ ] Verify hermetic Nix flake package build (`nix build .#packages.x86_64-linux.onehost --no-link`).
-    - [ ] Conduct Stage-Gated Senior Code Review for Phase 12c.6.
-- **Status:** in-progress
+    - [x] Refactor call sites in `template.rs`, `diff.rs`, `hypervisor/mock.rs`, and `hypervisor/traits.rs` to use new combinators.
+    - [x] Write unit tests for `InstanceUuid` and new `DomainXmlElement` combinators.
+  - [x] **Track 7.2: Trait Boundary & Mock Hermeticity Refactoring**:
+    - [x] Add `initialize_nvram(&self, template_path: &Path, destination_nvram_path: &Path) -> Result<(), StorageError>` to `trait StorageManager` in `src/storage/traits.rs`.
+    - [x] Add `restore_thin_backup(&self, archive_path: &Path, destination_overlay_path: &Path, backing_file_path: Option<&Path>) -> Result<(), StorageError>` to `trait StorageManager`.
+    - [x] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/qemu_img.rs` for `QemuImgStorage`.
+    - [x] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/mock.rs` for `MockStorageManager` with pure in-memory tracking and `RecordedStorageAction` variants (`InitializeNvram`, `RestoreThinBackup`).
+    - [x] Eradicate ALL `std::fs` operations (`exists()`, `copy()`, `rename()`, `remove_file()`, `set_permissions()`) from `MockStorageManager`, achieving 100% hermetic in-memory mock isolation.
+    - [x] Refactor `DomainLifecycleApplier` in `src/lifecycle/applier.rs` to delegate NVRAM creation to `self.storage.initialize_nvram(...)`.
+    - [x] Write unit tests verifying hermetic mock behaviors, `initialize_nvram`, and `restore_thin_backup`.
+  - [x] **Track 7.3: Error Hierarchy Harmonization & Diagnostics**:
+    - [x] Add `InstanceNotDeclared { instance_name: String }` and `ManifestValidationError(#[from] ManifestValidationError)` to `LifecycleError` in `src/lifecycle/mod.rs`.
+    - [x] Refactor `planner.rs` to propagate `FlavorResolutionError::UnknownFlavor` directly.
+    - [x] Refactor `destroyer.rs` to return `InstanceNotDeclared` and propagate `ManifestValidationError`.
+    - [x] Refactor `destroyer.rs` to explicitly match `undefine_domain` results: treat `DomainNotFound` as idempotent no-op while bubbling up true infrastructure errors.
+    - [x] Update affected unit tests to verify typed error assertions.
+  - [x] **Track 7.4: Verification, 4-Tier Test Suite & Senior Gate Review**:
+    - [x] Verify `cargo check` passes with 0 warnings.
+    - [x] Verify `cargo test --all-targets` passes across all 105 tests.
+    - [x] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings.
+    - [x] Verify hermetic Nix flake package build (`nix build .#packages.x86_64-linux.onehost --no-link`).
+    - [x] Conduct Stage-Gated Senior Code Review for Phase 12c.6.
+- **Status:** complete
 
 ### Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD)
 - [ ] Write unit tests in `tests/backup_tests.rs`:

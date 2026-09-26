@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::config::model::OnehostManifest;
+use crate::config::model::{InstanceUuid, OnehostManifest};
 
 /// Enumerates validation failures for a declared `onehost.json` manifest.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -144,18 +144,7 @@ fn validate_rfc4122_uuid(
     instance_name: &str,
     raw_uuid: &str,
 ) -> Result<(), ManifestValidationError> {
-    let uuid_segments: Vec<&str> = raw_uuid.split('-').collect();
-    let is_valid = uuid_segments.len() == 5
-        && uuid_segments[0].len() == 8
-        && uuid_segments[1].len() == 4
-        && uuid_segments[2].len() == 4
-        && uuid_segments[3].len() == 4
-        && uuid_segments[4].len() == 12
-        && uuid_segments
-            .iter()
-            .all(|segment| segment.chars().all(|character| character.is_ascii_hexdigit()));
-
-    if is_valid {
+    if InstanceUuid::is_valid_rfc4122(raw_uuid) {
         Ok(())
     } else {
         Err(ManifestValidationError::InvalidInstanceUuid {
@@ -164,3 +153,4 @@ fn validate_rfc4122_uuid(
         })
     }
 }
+

@@ -1,5 +1,5 @@
 use crate::config::model::OnehostManifest;
-use crate::hypervisor::traits::{DomainState, Hypervisor};
+use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
 use crate::image::tag::ContentAddressedImageResolver;
 use crate::lifecycle::LifecycleError;
 use crate::storage::traits::StorageManager;
@@ -37,8 +37,8 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
         let instance_configuration = manifest
             .instances
             .get(instance_name)
-            .ok_or_else(|| LifecycleError::ConfigurationError {
-                details: format!("Instance '{instance_name}' is not declared in the manifest"),
+            .ok_or_else(|| LifecycleError::InstanceNotDeclared {
+                instance_name: instance_name.to_string(),
             })?;
 
         // Lifecycle guardrail: prevent_destroy check
@@ -52,10 +52,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
             })?;
 
         let effective_pool = instance_configuration
-            .effective_pool(&manifest.storage)
-            .map_err(|validation_error| LifecycleError::ConfigurationError {
-                details: validation_error.to_string(),
-            })?;
+            .effective_pool(&manifest.storage)?;
         let target_pool_directory = self.hypervisor.resolve_pool_path(effective_pool)?;
 
         // Stop running VM
@@ -71,8 +68,11 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
             })
             .transpose()?;
 
-        // Undefine domain in Libvirt and clean up instance NVRAM
-        let _ = self.hypervisor.undefine_domain(instance_name, true);
+        // Undefine domain in Libvirt and clean up instance NVRAM (idempotent if already not defined)
+        match self.hypervisor.undefine_domain(instance_name, true) {
+            Ok(()) | Err(HypervisorError::DomainNotFound { .. }) => Ok(()),
+            Err(error) => Err(error),
+        }?;
 
         // Delete volatile instance CoW overlay if requested
         options

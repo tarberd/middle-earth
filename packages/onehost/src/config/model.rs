@@ -93,10 +93,127 @@ impl FlavorConfiguration {
     }
 }
 
+/// A strongly typed, born-valid RFC-4122 instance UUID.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct InstanceUuid(String);
+
+impl InstanceUuid {
+    /// Validates and constructs an `InstanceUuid`.
+    pub fn parse(raw_uuid: &str) -> Result<Self, ManifestValidationError> {
+        if Self::is_valid_rfc4122(raw_uuid) {
+            Ok(Self(raw_uuid.to_string()))
+        } else {
+            Err(ManifestValidationError::InvalidInstanceUuid {
+                instance_name: String::new(),
+                raw_uuid: raw_uuid.to_string(),
+            })
+        }
+    }
+
+    /// Validates if a raw string conforms to standard RFC-4122 8-4-4-4-12 hex syntax.
+    pub fn is_valid_rfc4122(raw_uuid: &str) -> bool {
+        let uuid_segments: Vec<&str> = raw_uuid.split('-').collect();
+        uuid_segments.len() == 5
+            && uuid_segments[0].len() == 8
+            && uuid_segments[1].len() == 4
+            && uuid_segments[2].len() == 4
+            && uuid_segments[3].len() == 4
+            && uuid_segments[4].len() == 12
+            && uuid_segments
+                .iter()
+                .all(|segment| segment.chars().all(|character| character.is_ascii_hexdigit()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for InstanceUuid {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for InstanceUuid {
+    type Err = ManifestValidationError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        Self::parse(raw)
+    }
+}
+
+impl std::ops::Deref for InstanceUuid {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for InstanceUuid {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for InstanceUuid {
+    type Error = ManifestValidationError;
+
+    fn try_from(raw_uuid: &str) -> Result<Self, Self::Error> {
+        Self::parse(raw_uuid)
+    }
+}
+
+impl TryFrom<String> for InstanceUuid {
+    type Error = ManifestValidationError;
+
+    fn try_from(raw_uuid: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw_uuid)
+    }
+}
+
+impl PartialEq<&str> for InstanceUuid {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<InstanceUuid> for &str {
+    fn eq(&self, other: &InstanceUuid) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialEq<str> for InstanceUuid {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<InstanceUuid> for str {
+    fn eq(&self, other: &InstanceUuid) -> bool {
+        self == other.0
+    }
+}
+
+impl PartialEq<String> for InstanceUuid {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
+impl PartialEq<InstanceUuid> for String {
+    fn eq(&self, other: &InstanceUuid) -> bool {
+        other == self
+    }
+}
+
 /// Declarative instance configuration specifying hardware template, base image, and lifecycle policies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceConfiguration {
-    pub uuid: String,
+    pub uuid: InstanceUuid,
     pub template_xml: PathBuf,
     pub image: ImageTagSpecification,
     #[serde(default)]
@@ -108,7 +225,7 @@ pub struct InstanceConfiguration {
 
 impl InstanceConfiguration {
     pub fn new(
-        uuid: impl Into<String>,
+        uuid: InstanceUuid,
         template_xml: PathBuf,
         image: ImageTagSpecification,
         pool: Option<String>,
@@ -116,7 +233,7 @@ impl InstanceConfiguration {
         lifecycle: InstanceLifecycleConfiguration,
     ) -> Self {
         Self {
-            uuid: uuid.into(),
+            uuid,
             template_xml,
             image,
             pool,
@@ -151,7 +268,7 @@ impl InstanceConfiguration {
                     .filter(|default_pool| !default_pool.is_empty())
             })
             .ok_or_else(|| ManifestValidationError::MissingStoragePool {
-                instance_name: self.uuid.clone(),
+                instance_name: self.uuid.to_string(),
             })
     }
 }

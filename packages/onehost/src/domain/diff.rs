@@ -273,10 +273,7 @@ impl DomainXmlNormalizer {
     pub fn compute_device_identity_key(element: &DomainXmlElement) -> String {
         match element.tag_name.as_str() {
             "disk" => {
-                let target_device = element
-                    .find_child_by_tag("target")
-                    .and_then(|target_element| target_element.get_attribute("dev"))
-                    .unwrap_or("");
+                let target_device = element.child_attribute("target", "dev").unwrap_or("");
                 format!("disk[target={}]", target_device)
             }
             "interface" => {
@@ -288,10 +285,7 @@ impl DomainXmlNormalizer {
                             .or_else(|| source_element.get_attribute("network"))
                     })
                     .unwrap_or("");
-                let target_device = element
-                    .find_child_by_tag("target")
-                    .and_then(|target_element| target_element.get_attribute("dev"))
-                    .unwrap_or("");
+                let target_device = element.child_attribute("target", "dev").unwrap_or("");
                 if !target_device.is_empty() {
                     format!("interface[source={},target={}]", source, target_device)
                 } else {
@@ -306,8 +300,7 @@ impl DomainXmlNormalizer {
             "hostdev" => {
                 let hostdev_type = element.get_attribute("type").unwrap_or("");
                 let source_bus = element
-                    .find_child_by_tag("source")
-                    .and_then(|source_element| source_element.find_child_by_tag("address"))
+                    .find_path(&["source", "address"])
                     .and_then(|address_element| address_element.get_attribute("bus"))
                     .unwrap_or("");
                 format!("hostdev[type={},bus={}]", hostdev_type, source_bus)
