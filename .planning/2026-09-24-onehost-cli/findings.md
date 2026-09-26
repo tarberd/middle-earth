@@ -725,4 +725,68 @@ Every scope of the codebase is treated equally. Both **deep domain enhancements*
    - Harmonize all 9 error hierarchies across modules into clean categories (Domain, Infrastructure, Policy).
    - Pressure-test traits and structures against Phase 13 requirements (multi-disk atomic snapshotting, active `blockcommit --pivot`, RAII cleanup guards, and thin compressed disaster recovery).
 
+#### 3. The 6 Concrete Architectural Oversights Discovered
+1. **Leaky Trait Boundary in Applier (Raw `fs` Operations for NVRAM)**:
+   - *Location*: `src/lifecycle/applier.rs:67-75`
+   - *Violation*: Imperative shell calls raw `fs::create_dir_all` and `fs::copy` instead of delegating to `StorageManager`. Bypasses trait boundary, leaks to host disk during tests.
+   - *Solution*: Add `initialize_nvram` to `StorageManager`, implement in `QemuImgStorage` and `MockStorageManager`, and delegate from `applier.rs`.
+2. **Host Filesystem Leaks in `MockStorageManager`**:
+   - *Location*: `src/storage/mock.rs:295-349`, `src/storage/traits.rs:132-174`
+   - *Violation*: Mock calls `source_depot_path.exists()`, `std::fs::copy()`, `std::fs::rename()`, and `std::fs::remove_file()`, mutating the developer's real machine. Trait provides default implementations with real filesystem side-effects.
+   - *Solution*: Remove all `std::fs` operations from `MockStorageManager` to make it 100% hermetic and in-memory. Keep shared helpers in `traits.rs` but remove default implementations from the trait so implementors handle their backends explicitly.
+3. **Primitive Obsession in Configuration (`InstanceUuid`)**:
+   - *Location*: `src/config/model.rs:99`, `src/config/validation.rs:143-167`
+   - *Violation*: `InstanceConfiguration.uuid` is raw `String`. Instantiating via `InstanceConfiguration::new` allows invalid UUIDs, violating the "born-valid" invariant.
+   - *Solution*: Introduce born-valid `InstanceUuid` newtype enforcing RFC-4122 on construction.
+4. **Repetitive XML AST Traversal in `DomainXmlElement`**:
+   - *Location*: `src/domain/template.rs:68-80`, `src/domain/diff.rs:274-320`, `src/hypervisor/mock.rs:85-118`
+   - *Violation*: Deep matching and chaining boilerplate repeated across multiple modules (`find_child_by_tag(...).and_then(...).and_then(...)`).
+   - *Solution*: Add higher-order query combinators to `DomainXmlElement` (`child_attribute`, `child_text`, `path_text`, `find_path`, `find_children`, `has_attribute_value`).
+5. **Stringly-Typed Errors & Unhandled Error Swallowing**:
+   - *Location*: `src/lifecycle/planner.rs:155-160`, `src/lifecycle/destroyer.rs:40-75`
+   - *Violation*: Emitting `LifecycleError::ConfigurationError` strings instead of strongly-typed error variants. Line 75 in `destroyer.rs` discards `undefine_domain` results with `let _ =`, silencing fatal hypervisor failures.
+   - *Solution*: Add `InstanceNotDeclared` and `ManifestValidationError` to `LifecycleError`. Match `undefine_domain` explicitly, ignoring only `DomainNotFound` and propagating true infrastructure errors.
+6. **Forward-Compatibility for Phase 13: `restore_thin_backup` in `StorageManager`**:
+   - *Location*: `src/storage/traits.rs:100-175`
+   - *Need*: Phase 13 disaster recovery restore needs a symmetrical `restore_thin_backup` method complementary to `convert_thin_backup`.
+   - *Solution*: Add `restore_thin_backup` to `StorageManager`, implement in `QemuImgStorage` and `MockStorageManager`, and verify with unit tests.
+
+#### 4. Technical Invariants & Signatures
+```rust
+// 1. Born-valid UUID
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct InstanceUuid(String);
+impl InstanceUuid {
+    pub fn parse(raw_uuid: &str) -> Result<Self, ManifestValidationError>;
+    pub fn as_str(&self) -> &str;
+}
+
+// 2. High-level DomainXmlElement combinators
+impl DomainXmlElement {
+    pub fn child_attribute(&self, child_tag: &str, attribute_key: &str) -> Option<&str>;
+    pub fn child_text(&self, child_tag: &str) -> Option<&str>;
+    pub fn find_path(&self, tag_path: &[&str]) -> Option<&DomainXmlElement>;
+    pub fn path_text(&self, tag_path: &[&str]) -> Option<&str>;
+    pub fn find_children<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a DomainXmlElement>;
+    pub fn has_attribute_value(&self, key: &str, value: &str) -> bool;
+    pub fn has_matching_attribute(&self, predicate: impl Fn(&str, &str) -> bool) -> bool;
+}
+
+// 3. StorageManager additions
+pub trait StorageManager: Send + Sync {
+    // ... existing methods ...
+    fn initialize_nvram(&self, template_path: &Path, destination_nvram_path: &Path) -> Result<(), StorageError>;
+    fn restore_thin_backup(&self, archive_path: &Path, destination_overlay_path: &Path, backing_file_path: Option<&Path>) -> Result<(), StorageError>;
+}
+
+// 4. LifecycleError additions
+pub enum LifecycleError {
+    // ...
+    #[error("Instance '{instance_name}' is not declared in the manifest")]
+    InstanceNotDeclared { instance_name: String },
+    #[error("Manifest validation error: {0}")]
+    ManifestValidationError(#[from] ManifestValidationError),
+}
+```
+
 

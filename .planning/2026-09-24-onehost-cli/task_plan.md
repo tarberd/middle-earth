@@ -419,32 +419,57 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
 
 #### Phase 12c.6: Comprehensive Architectural Analysis & Structural Refactoring
 *Context Compaction Invariant: Must begin with the strict Fresh Read Protocol (reading the entire `## Mandatory Design Guidelines & Engineering Standards` section in whole together + target phase context bundle) to guarantee 100% adherence to Universal Code Equivalence and the Triad of Foundations.*
-- [ ] **Track 1: Architectural Surface Mapping & Dependency Graph Audit**:
-  - Map and audit internal crate dependency graph across `config`, `domain`, `hypervisor`, `storage`, and `lifecycle`.
-  - Verify strict unidirectional, acyclic module dependencies with zero circularity or inverted layers.
-  - Audit visibility scopes (`pub(crate)` vs. `pub` vs. private) to ensure tight encapsulation.
-- [ ] **Track 2: Deep Domain Modeling & Type-Level Invariants**:
-  - Audit primitive obsession across domain entities; evaluate semantic newtypes/types for storage pools, device buses, domain names, and disk targets to eliminate illegal states.
-  - Elevate `DomainXmlElement` AST query and transformation ergonomics: introduce higher-order functional combinators (e.g. child lookups, attribute filters, recursive tree transforms) to streamline `template.rs` and `diff.rs`.
-  - Verify 100% "born-valid" algebraic data structures across all domain records.
-- [ ] **Track 3: Trait Boundary & Hardware Interface Cohesion**:
-  - Audit `trait Hypervisor` and `trait StorageManager` for interface segregation and single responsibility.
-  - Eliminate any leaking of filesystem mutations or command execution details into imperative shells.
-  - Standardize parameter borrowing (`&str`, `&Path`) and owned return semantics across all trait methods.
-- [ ] **Track 4: Universal Code Equivalence & Mock Fidelity Audit**:
-  - Audit `MockHypervisor` and `MockStorageManager` against production implementations (`virsh.rs`, `qemu_img.rs`) to ensure 100% behavioral, error-mode, and state-transition parity.
-  - Verify mock isolation without host leaks, and audit test suites to ensure zero second-class code patterns.
-- [ ] **Track 5: Error Architecture & Failure Domain Harmonization**:
-  - Audit all 9 error hierarchies across modules; ensure clean categorization into Domain, Infrastructure, and Policy errors.
-  - Ensure error contexts are preserved losslessly across boundaries and diagnostic messages adhere strictly to Pillar I.4.
-- [ ] **Track 6: Forward-Compatibility Pressure Test for Phase 13 (Backup & Restore)**:
-  - Pressure-test trait contracts and lifecycle orchestration against Phase 13 requirements (multi-disk atomic snapshotting, active `blockcommit --pivot`, RAII cleanup guards, and thin compressed disaster recovery).
-- [ ] **Track 7: Refactoring Execution, 4-Tier Verification & Gate Review**:
-  - Present concrete Architectural Refactoring Matrix for user alignment.
-  - Implement approved refactorings under strict TDD.
-  - Execute full 4-tier verification protocol (`cargo check`, `cargo test --all-targets`, `cargo clippy -- -D warnings`, `nix build`).
-  - Conduct Stage-Gated Senior Code Review for Phase 12c.6.
-- **Status:** pending
+- [x] **Track 1: Architectural Surface Mapping & Dependency Graph Audit**:
+  - Mapped internal crate dependency graph across `config`, `domain`, `hypervisor`, `storage`, and `lifecycle`.
+  - Verified strict unidirectional, acyclic module dependencies (Core $\to$ Traits $\to$ Shell) with zero inverted layers.
+- [x] **Track 2: Deep Domain Modeling & Type-Level Invariants Audit**:
+  - Identified primitive obsession: `InstanceConfiguration.uuid` as raw unvalidated `String` upon `new()`.
+  - Identified AST ergonomics gap: verbose repeated boilerplate across `template.rs`, `diff.rs`, and traits for nested XML lookups.
+- [x] **Track 3: Trait Boundary & Hardware Interface Cohesion Audit**:
+  - Discovered leaky trait boundary in `src/lifecycle/applier.rs`: direct calls to `fs::create_dir_all` and `fs::copy` for NVRAM bypassing `StorageManager`.
+  - Identified trait leakage: `trait StorageManager` embeds default `std::fs` operations.
+- [x] **Track 4: Universal Code Equivalence & Mock Fidelity Audit**:
+  - Discovered host filesystem leaks in `MockStorageManager`: calls to `source_depot_path.exists()`, `std::fs::copy()`, `std::fs::rename()`, and `std::fs::remove_file()` mutating the real host.
+- [x] **Track 5: Error Architecture & Failure Domain Harmonization Audit**:
+  - Identified stringly-typed `LifecycleError::ConfigurationError` usages in `planner.rs` and `destroyer.rs` bypassing strongly-typed error variants.
+  - Identified silent error swallowing in `destroyer.rs`: `let _ = undefine_domain(...)` discarding fatal hypervisor failures.
+- [x] **Track 6: Forward-Compatibility Pressure Test for Phase 13 (Backup & Restore)**:
+  - Identified missing trait capability: `StorageManager` needs `restore_thin_backup` to complete symmetry with `convert_thin_backup` for disaster recovery.
+- [ ] **Track 7: Architectural Refactoring Execution & Verification**:
+  - [ ] **Track 7.1: Domain Modeling & Types Refactoring**:
+    - [ ] Implement born-valid `InstanceUuid` newtype in `src/config/model.rs` enforcing RFC-4122 syntax on construction (`new()`, `parse()`, `FromStr`, `Display`, `Serialize`, `Deserialize`).
+    - [ ] Update `InstanceConfiguration.uuid` to use `InstanceUuid` and streamline `validation.rs`.
+    - [ ] Add functional query combinators to `DomainXmlElement` in `src/domain/element.rs`:
+      - `child_attribute(&self, child_tag: &str, attribute_key: &str) -> Option<&str>`
+      - `child_text(&self, child_tag: &str) -> Option<&str>`
+      - `path_text(&self, tag_path: &[&str]) -> Option<&str>`
+      - `find_path(&self, tag_path: &[&str]) -> Option<&DomainXmlElement>`
+      - `find_children<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a DomainXmlElement>`
+      - `has_attribute_value(&self, key: &str, value: &str) -> bool`
+      - `has_matching_attribute(&self, predicate: impl Fn(&str, &str) -> bool) -> bool`
+    - [ ] Refactor call sites in `template.rs`, `diff.rs`, `hypervisor/mock.rs`, and `hypervisor/traits.rs` to use new combinators.
+    - [ ] Write unit tests for `InstanceUuid` and new `DomainXmlElement` combinators.
+  - [ ] **Track 7.2: Trait Boundary & Mock Hermeticity Refactoring**:
+    - [ ] Add `initialize_nvram(&self, template_path: &Path, destination_nvram_path: &Path) -> Result<(), StorageError>` to `trait StorageManager` in `src/storage/traits.rs`.
+    - [ ] Add `restore_thin_backup(&self, archive_path: &Path, destination_overlay_path: &Path, backing_file_path: Option<&Path>) -> Result<(), StorageError>` to `trait StorageManager`.
+    - [ ] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/qemu_img.rs` for `QemuImgStorage`.
+    - [ ] Implement `initialize_nvram` and `restore_thin_backup` in `src/storage/mock.rs` for `MockStorageManager` with pure in-memory tracking and `RecordedStorageAction` variants (`InitializeNvram`, `RestoreThinBackup`).
+    - [ ] Eradicate ALL `std::fs` operations (`exists()`, `copy()`, `rename()`, `remove_file()`, `set_permissions()`) from `MockStorageManager`, achieving 100% hermetic in-memory mock isolation.
+    - [ ] Refactor `DomainLifecycleApplier` in `src/lifecycle/applier.rs` to delegate NVRAM creation to `self.storage.initialize_nvram(...)`.
+    - [ ] Write unit tests verifying hermetic mock behaviors, `initialize_nvram`, and `restore_thin_backup`.
+  - [ ] **Track 7.3: Error Hierarchy Harmonization & Diagnostics**:
+    - [ ] Add `InstanceNotDeclared { instance_name: String }` and `ManifestValidationError(#[from] ManifestValidationError)` to `LifecycleError` in `src/lifecycle/mod.rs`.
+    - [ ] Refactor `planner.rs` to propagate `FlavorResolutionError::FlavorNotRegistered` directly.
+    - [ ] Refactor `destroyer.rs` to return `InstanceNotDeclared` and propagate `ManifestValidationError`.
+    - [ ] Refactor `destroyer.rs` to explicitly match `undefine_domain` results: treat `DomainNotFound` as idempotent no-op while bubbling up true infrastructure errors.
+    - [ ] Update affected unit tests to verify typed error assertions.
+  - [ ] **Track 7.4: Verification, 4-Tier Test Suite & Senior Gate Review**:
+    - [ ] Verify `cargo check` passes with 0 warnings.
+    - [ ] Verify `cargo test --all-targets` passes across all test suites.
+    - [ ] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings.
+    - [ ] Verify hermetic Nix flake package build (`nix build .#packages.x86_64-linux.onehost --no-link`).
+    - [ ] Conduct Stage-Gated Senior Code Review for Phase 12c.6.
+- **Status:** in-progress
 
 ### Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD)
 - [ ] Write unit tests in `tests/backup_tests.rs`:
