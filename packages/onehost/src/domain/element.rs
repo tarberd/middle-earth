@@ -174,32 +174,28 @@ impl DomainXmlElement {
         reader: &mut Reader<&[u8]>,
         event_buffer: &mut Vec<u8>,
     ) -> Result<DomainXmlElement, DomainXmlParseError> {
-        loop {
-            event_buffer.clear();
-            match reader.read_event_into(event_buffer) {
-                Ok(Event::Start(start_event)) => {
-                    let owned_start = start_event.into_owned();
-                    let root = Self::parse_start_element(owned_start, reader, event_buffer)?;
-                    Self::verify_eof(reader, event_buffer)?;
-                    return Ok(root);
-                }
-                Ok(Event::Empty(empty_event)) => {
-                    let owned_empty = empty_event.into_owned();
-                    let root = Self::parse_empty_element(owned_empty)?;
-                    Self::verify_eof(reader, event_buffer)?;
-                    return Ok(root);
-                }
-                Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
-                    // Ignored leading metadata
-                }
-                Ok(Event::Eof) => return Err(DomainXmlParseError::EmptyContent),
-                Err(error) => {
-                    return Err(DomainXmlParseError::XmlParserError {
-                        message: error.to_string(),
-                    })
-                }
-                _ => return Err(DomainXmlParseError::UnexpectedLeadingEvent),
+        event_buffer.clear();
+        match reader.read_event_into(event_buffer) {
+            Ok(Event::Start(start_event)) => {
+                let owned_start = start_event.into_owned();
+                let root = Self::parse_start_element(owned_start, reader, event_buffer)?;
+                Self::verify_eof(reader, event_buffer)?;
+                Ok(root)
             }
+            Ok(Event::Empty(empty_event)) => {
+                let owned_empty = empty_event.into_owned();
+                let root = Self::parse_empty_element(owned_empty)?;
+                Self::verify_eof(reader, event_buffer)?;
+                Ok(root)
+            }
+            Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
+                Self::parse_document_root(reader, event_buffer)
+            }
+            Ok(Event::Eof) => Err(DomainXmlParseError::EmptyContent),
+            Err(error) => Err(DomainXmlParseError::XmlParserError {
+                message: error.to_string(),
+            }),
+            _ => Err(DomainXmlParseError::UnexpectedLeadingEvent),
         }
     }
 
@@ -207,26 +203,24 @@ impl DomainXmlElement {
         reader: &mut Reader<&[u8]>,
         event_buffer: &mut Vec<u8>,
     ) -> Result<(), DomainXmlParseError> {
-        loop {
-            event_buffer.clear();
-            match reader.read_event_into(event_buffer) {
-                Ok(Event::Eof) => return Ok(()),
-                Ok(Event::Comment(_)) | Ok(Event::PI(_)) => {}
-                Ok(Event::Start(_)) | Ok(Event::Empty(_)) => {
-                    return Err(DomainXmlParseError::MultipleRootElements);
-                }
-                Ok(Event::Text(text)) => {
-                    if !text.as_ref().iter().all(|byte| byte.is_ascii_whitespace()) {
-                        return Err(DomainXmlParseError::TrailingContent);
-                    }
-                }
-                Err(error) => {
-                    return Err(DomainXmlParseError::XmlParserError {
-                        message: error.to_string(),
-                    })
-                }
-                _ => {}
+        event_buffer.clear();
+        match reader.read_event_into(event_buffer) {
+            Ok(Event::Eof) => Ok(()),
+            Ok(Event::Comment(_)) | Ok(Event::PI(_)) => Self::verify_eof(reader, event_buffer),
+            Ok(Event::Start(_)) | Ok(Event::Empty(_)) => {
+                Err(DomainXmlParseError::MultipleRootElements)
             }
+            Ok(Event::Text(text)) => {
+                if text.as_ref().iter().all(|byte| byte.is_ascii_whitespace()) {
+                    Self::verify_eof(reader, event_buffer)
+                } else {
+                    Err(DomainXmlParseError::TrailingContent)
+                }
+            }
+            Err(error) => Err(DomainXmlParseError::XmlParserError {
+                message: error.to_string(),
+            }),
+            _ => Self::verify_eof(reader, event_buffer),
         }
     }
 
@@ -301,89 +295,86 @@ impl DomainXmlElement {
             .map(|sorted_attributes| sorted_attributes.into_iter().collect())
     }
 
+    fn next_body_item(
+        expected_tag: &str,
+        reader: &mut Reader<&[u8]>,
+        event_buffer: &mut Vec<u8>,
+    ) -> Option<Result<BodyItem, DomainXmlParseError>> {
+        event_buffer.clear();
+        match reader.read_event_into(event_buffer) {
+            Ok(Event::Start(child_start)) => {
+                let owned_start = child_start.into_owned();
+                Some(
+                    Self::parse_start_element(owned_start, reader, event_buffer)
+                        .map(BodyItem::Child),
+                )
+            }
+            Ok(Event::Empty(child_empty)) => {
+                let owned_empty = child_empty.into_owned();
+                Some(Self::parse_empty_element(owned_empty).map(BodyItem::Child))
+            }
+            Ok(Event::Text(text_event)) => {
+                let parsed_text = text_event
+                    .unescape()
+                    .map_err(|unescape_error| DomainXmlParseError::TextUnescapeError {
+                        message: unescape_error.to_string(),
+                    })
+                    .map(|unescaped_text| unescaped_text.trim().to_string());
+                match parsed_text {
+                    Ok(text) if !text.is_empty() => Some(Ok(BodyItem::Text(text))),
+                    Ok(_) => Self::next_body_item(expected_tag, reader, event_buffer),
+                    Err(error) => Some(Err(error)),
+                }
+            }
+            Ok(Event::CData(cdata_event)) => {
+                let parsed_cdata = std::str::from_utf8(cdata_event.as_ref())
+                    .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
+                        field_name: "CDATA".to_string(),
+                        details: utf8_error.to_string(),
+                    })
+                    .map(|raw_cdata| raw_cdata.trim().to_string());
+                match parsed_cdata {
+                    Ok(text) if !text.is_empty() => Some(Ok(BodyItem::Text(text))),
+                    Ok(_) => Self::next_body_item(expected_tag, reader, event_buffer),
+                    Err(error) => Some(Err(error)),
+                }
+            }
+            Ok(Event::End(end_event)) => {
+                let end_name = end_event.name();
+                let parsed_end_tag = std::str::from_utf8(end_name.as_ref())
+                    .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
+                        field_name: "closing tag".to_string(),
+                        details: utf8_error.to_string(),
+                    });
+                match parsed_end_tag {
+                    Ok(end_tag) if end_tag == expected_tag => None,
+                    Ok(end_tag) => Some(Err(DomainXmlParseError::MismatchedClosingTag {
+                        expected_tag: expected_tag.to_string(),
+                        actual_tag: end_tag.to_string(),
+                    })),
+                    Err(error) => Some(Err(error)),
+                }
+            }
+            Ok(Event::Eof) => Some(Err(DomainXmlParseError::UnclosedTag {
+                expected_tag: expected_tag.to_string(),
+            })),
+            Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
+                Self::next_body_item(expected_tag, reader, event_buffer)
+            }
+            Err(error) => Some(Err(DomainXmlParseError::XmlParserError {
+                message: error.to_string(),
+            })),
+        }
+    }
+
     fn parse_element_body(
         expected_tag: &str,
         reader: &mut Reader<&[u8]>,
         event_buffer: &mut Vec<u8>,
     ) -> Result<(Vec<DomainXmlElement>, Option<String>), DomainXmlParseError> {
-        let items: Result<Vec<BodyItem>, DomainXmlParseError> = std::iter::from_fn(|| {
-            loop {
-                event_buffer.clear();
-                match reader.read_event_into(event_buffer) {
-                    Ok(Event::Start(child_start)) => {
-                        let owned_start = child_start.into_owned();
-                        return Some(
-                            Self::parse_start_element(owned_start, reader, event_buffer)
-                                .map(BodyItem::Child),
-                        );
-                    }
-                    Ok(Event::Empty(child_empty)) => {
-                        let owned_empty = child_empty.into_owned();
-                        return Some(
-                            Self::parse_empty_element(owned_empty).map(BodyItem::Child),
-                        );
-                    }
-                    Ok(Event::Text(text_event)) => {
-                        let parsed_text = text_event
-                            .unescape()
-                            .map_err(|unescape_error| DomainXmlParseError::TextUnescapeError {
-                                message: unescape_error.to_string(),
-                            })
-                            .map(|unescaped_text| unescaped_text.trim().to_string());
-                        match parsed_text {
-                            Ok(text) if !text.is_empty() => return Some(Ok(BodyItem::Text(text))),
-                            Ok(_) => continue,
-                            Err(error) => return Some(Err(error)),
-                        }
-                    }
-                    Ok(Event::CData(cdata_event)) => {
-                        let parsed_cdata = std::str::from_utf8(cdata_event.as_ref())
-                            .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
-                                field_name: "CDATA".to_string(),
-                                details: utf8_error.to_string(),
-                            })
-                            .map(|raw_cdata| raw_cdata.trim().to_string());
-                        match parsed_cdata {
-                            Ok(text) if !text.is_empty() => return Some(Ok(BodyItem::Text(text))),
-                            Ok(_) => continue,
-                            Err(error) => return Some(Err(error)),
-                        }
-                    }
-                    Ok(Event::End(end_event)) => {
-                        let end_name = end_event.name();
-                        let parsed_end_tag = std::str::from_utf8(end_name.as_ref())
-                            .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
-                                field_name: "closing tag".to_string(),
-                                details: utf8_error.to_string(),
-                            });
-                        match parsed_end_tag {
-                            Ok(end_tag) if end_tag == expected_tag => return None,
-                            Ok(end_tag) => {
-                                return Some(Err(DomainXmlParseError::MismatchedClosingTag {
-                                    expected_tag: expected_tag.to_string(),
-                                    actual_tag: end_tag.to_string(),
-                                }));
-                            }
-                            Err(error) => return Some(Err(error)),
-                        }
-                    }
-                    Ok(Event::Eof) => {
-                        return Some(Err(DomainXmlParseError::UnclosedTag {
-                            expected_tag: expected_tag.to_string(),
-                        }));
-                    }
-                    Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
-                        continue;
-                    }
-                    Err(error) => {
-                        return Some(Err(DomainXmlParseError::XmlParserError {
-                            message: error.to_string(),
-                        }))
-                    }
-                }
-            }
-        })
-        .collect();
+        let items: Result<Vec<BodyItem>, DomainXmlParseError> =
+            std::iter::from_fn(|| Self::next_body_item(expected_tag, reader, event_buffer))
+                .collect();
 
         let parsed_items = items?;
 
@@ -397,16 +388,7 @@ impl DomainXmlElement {
                 (children_acc, text_acc)
             });
 
-        let text_content = if text_fragments.is_empty() {
-            None
-        } else {
-            let combined = text_fragments.concat();
-            if combined.is_empty() {
-                None
-            } else {
-                Some(combined)
-            }
-        };
+        let text_content = Some(text_fragments.concat()).filter(|text| !text.is_empty());
 
         Ok((children, text_content))
     }

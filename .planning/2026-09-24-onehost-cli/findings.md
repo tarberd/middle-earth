@@ -56,9 +56,9 @@
      - *Target Idiom*: Ownership-driven functional transformations; if a borrower holding a reference needs a transformed value, the `.clone()` must be explicit at the call site.
      - *Anti-Pattern*: `fn(&self, ...) -> Self`, which hides internal deep clones under the guise of call-site convenience.
 3. **Computation: Iterator Pipelines over Imperative Loops**:
-   - Multi-item transformations, searches, filters, and collections must use declarative iterator pipelines.
-     - *Target Idiom*: `.into_iter()`, `.iter()`, `.find()`, `.filter()`, `.map()`, `.try_for_each()`, `.fold()`, `.all()`, `.any()`, `.chain()`, `.flatten()`.
-     - *Anti-Pattern*: Imperative `for` or `while` loops with nested `if` statements and early returns.
+   - Multi-item transformations, searches, filters, and collections must use declarative iterator pipelines or functional recursion.
+     - *Target Idiom*: `.into_iter()`, `.iter()`, `.find()`, `.filter()`, `.map()`, `.try_for_each()`, `.fold()`, `.all()`, `.any()`, `.chain()`, `.flatten()`, `std::iter::from_fn()`, tail-recursive functional transformations.
+     - *Anti-Pattern*: Imperative `for`, `while`, or `loop` statements with mutable accumulators or early returns.
 4. **Control Flow: Expressions over Statements**:
    - Branching must be value-producing expressions that compute results directly.
      - *Target Idiom*: `let value = if cond { a } else { b };`, `match` expressions, or monadic combinators (`.is_ok_and()`, `.is_some_and()`, `.and_then()`, `.or_else()`, `.unwrap_or_else()`).

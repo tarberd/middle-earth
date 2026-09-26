@@ -193,7 +193,12 @@
         - `cargo test --all-targets`: all 99 tests passed cleanly across 12 test suites.
         - `cargo clippy --all-targets -- -D warnings`: passed with 0 warnings.
         - `nix build .#packages.x86_64-linux.onehost --no-link`: hermetic derivation build and checkPhase passed cleanly.
-      - Conducted comprehensive Senior Gate Review certifying that the entire codebase complies 100% with the Triad of Foundations. Prepared codebase for Phase 13 (Backup & Restore Engine). Awaiting user signal before initiating Phase 13.
+      - Conducted comprehensive Senior Gate Review across the entire codebase.
+      - Remediation of `loop` constructs in `src/domain/element.rs`:
+        - Replaced 3 imperative `loop` blocks (`parse_document_root`, `verify_eof`, `parse_element_body`) with pure functional tail recursion and `std::iter::from_fn(|| Self::next_body_item(...))`.
+        - Verified that production code across `packages/onehost/src/` contains literally 0 `loop`, `while`, or `for` loops.
+        - Re-ran 4-tier verification protocol: 99/99 tests passed, 0 clippy warnings (`-D warnings`), hermetic Nix flake package build succeeds.
+      - Awaiting user signal before initiating Phase 13.
 
 
 ### Test Results
@@ -255,6 +260,7 @@
 | Phase 12c.4 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 12c.4 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 | Phase 12c.5 Static Analysis Audit | Zero loops, zero unwraps, zero single-letter variables | 100% compliant | PASS |
+| Phase 12c.5 Loop Eradication in element.rs | 3 loop blocks refactored to tail recursion / from_fn | Zero loops in src/ | PASS |
 | Phase 12c.5 Full Test Suite (cargo test --all-targets) | 99 unit/integration tests pass cleanly | 99 passed, 0 failed, 0 warnings | PASS |
 | Phase 12c.5 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 12c.5 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
@@ -263,5 +269,6 @@
 | Error | Resolution |
 |-------|------------|
 | Host base image existence leaking into unit tests | Queried `storage.inspect_image(...)` in `applier.rs` instead of host `fs::exists(...)` |
+| 3 `loop` blocks left in `src/domain/element.rs` | Refactored `parse_document_root`, `verify_eof`, and `next_body_item` to functional tail recursion |
 
 

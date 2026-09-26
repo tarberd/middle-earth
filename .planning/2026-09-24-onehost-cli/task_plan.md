@@ -56,9 +56,9 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
      - *Target Idiom*: Ownership-driven functional transformations; if a borrower holding a reference needs a transformed value, the `.clone()` must be explicit at the call site.
      - *Anti-Pattern*: `fn(&self, ...) -> Self`, which hides internal deep clones under the guise of call-site convenience.
 3. **Computation: Iterator Pipelines over Imperative Loops**:
-   - Multi-item transformations, searches, filters, and collections must use declarative iterator pipelines.
-     - *Target Idiom*: `.into_iter()`, `.iter()`, `.find()`, `.filter()`, `.map()`, `.try_for_each()`, `.fold()`, `.all()`, `.any()`, `.chain()`, `.flatten()`.
-     - *Anti-Pattern*: Imperative `for` or `while` loops with nested `if` statements and early returns.
+   - Multi-item transformations, searches, filters, and collections must use declarative iterator pipelines or functional recursion.
+     - *Target Idiom*: `.into_iter()`, `.iter()`, `.find()`, `.filter()`, `.map()`, `.try_for_each()`, `.fold()`, `.all()`, `.any()`, `.chain()`, `.flatten()`, `std::iter::from_fn()`, tail-recursive functional transformations.
+     - *Anti-Pattern*: Imperative `for`, `while`, or `loop` statements with mutable accumulators or early returns.
 4. **Control Flow: Expressions over Statements**:
    - Branching must be value-producing expressions that compute results directly.
      - *Target Idiom*: `let value = if cond { a } else { b };`, `match` expressions, or monadic combinators (`.is_ok_and()`, `.is_some_and()`, `.and_then()`, `.or_else()`, `.unwrap_or_else()`).
@@ -397,7 +397,7 @@ Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User 
 #### Phase 12c.5: Whole-System Verification & Senior Gate Review
 - [x] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)
 - [x] Full codebase static analysis:
-  - Grep audit: verify 0 `for ` / `while ` loops across `packages/onehost/src/`
+  - Grep audit: verify 0 `for`, `while`, or `loop` statements across `packages/onehost/src/` (remediated 3 legacy reader loops in `element.rs` to pure tail recursion)
   - Grep audit: verify 0 `.unwrap()` and 0 `.expect()` across `packages/onehost/src/`
   - Grep audit: verify 0 single-letter closure/variable names across `packages/onehost/src/`
   - Grep audit: verify 0 `println!` or raw stdout writes in library code (`packages/onehost/src/` except intended CLI printer)
