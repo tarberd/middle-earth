@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 12c.5 (Whole-System Verification & Senior Gate Review).
+Await user signal to begin Phase 13 (Stage 8 - Online/Offline Thin Backup and Restore Engine).
 
 ## Current Phase
-Phase 12c.5: Whole-System Verification & Senior Gate Review (Pending User Authorization)
+Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (Pending User Authorization)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -395,21 +395,21 @@ Phase 12c.5: Whole-System Verification & Senior Gate Review (Pending User Author
 - **Status:** complete
 
 #### Phase 12c.5: Whole-System Verification & Senior Gate Review
-- [ ] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)
-- [ ] Full codebase static analysis:
+- [x] Fresh read of planning files via Fresh Read Protocol (full Standards section in whole together + target phase context bundle)
+- [x] Full codebase static analysis:
   - Grep audit: verify 0 `for ` / `while ` loops across `packages/onehost/src/`
   - Grep audit: verify 0 `.unwrap()` and 0 `.expect()` across `packages/onehost/src/`
   - Grep audit: verify 0 single-letter closure/variable names across `packages/onehost/src/`
   - Grep audit: verify 0 `println!` or raw stdout writes in library code (`packages/onehost/src/` except intended CLI printer)
   - Grep audit: verify 0 OOP getter/setter boilerplate on pure data structs
-- [ ] Verify Cargo metadata, documentation, and warning-free compilation:
+- [x] Verify Cargo metadata, documentation, and warning-free compilation:
   - `cargo check`
   - `cargo test --all-targets` (all 99+ tests passing)
   - `cargo clippy --all-targets -- -D warnings` (0 warnings)
   - `nix build .#packages.x86_64-linux.onehost --no-link` (hermetic flake build passes)
-- [ ] Conduct comprehensive Senior Gate Review across the entire codebase
-- [ ] Prepare codebase for Phase 13 (Backup & Restore Engine)
-- **Status:** pending
+- [x] Conduct comprehensive Senior Gate Review across the entire codebase
+- [x] Prepare codebase for Phase 13 (Backup & Restore Engine)
+- **Status:** complete
 
 ### Phase 13: Stage 8 - Online/Offline Thin Backup and Restore Engine (TDD)
 - [ ] Write unit tests in `tests/backup_tests.rs`:
