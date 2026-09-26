@@ -80,7 +80,7 @@ impl DomainXmlElement {
     pub fn find_path<'a>(&'a self, tag_path: &[&str]) -> Option<&'a DomainXmlElement> {
         tag_path
             .iter()
-            .try_fold(self, |current_element, &tag| current_element.find_child_by_tag(tag))
+            .try_fold(self, |current_node, &tag| current_node.find_child_by_tag(tag))
     }
 
     /// Resolves text content at a nested path of tag names.
@@ -223,13 +223,13 @@ impl DomainXmlElement {
         match reader.read_event_into(event_buffer) {
             Ok(Event::Start(start_event)) => {
                 let owned_start = start_event.into_owned();
-                let root = Self::parse_start_element(owned_start, reader, event_buffer)?;
+                let root = Self::parse_start_tag(owned_start, reader, event_buffer)?;
                 Self::verify_eof(reader, event_buffer)?;
                 Ok(root)
             }
             Ok(Event::Empty(empty_event)) => {
                 let owned_empty = empty_event.into_owned();
-                let root = Self::parse_empty_element(owned_empty)?;
+                let root = Self::parse_empty_tag(owned_empty)?;
                 Self::verify_eof(reader, event_buffer)?;
                 Ok(root)
             }
@@ -269,7 +269,7 @@ impl DomainXmlElement {
         }
     }
 
-    fn parse_start_element(
+    fn parse_start_tag(
         start_event: quick_xml::events::BytesStart<'_>,
         reader: &mut Reader<&[u8]>,
         event_buffer: &mut Vec<u8>,
@@ -292,7 +292,7 @@ impl DomainXmlElement {
         })
     }
 
-    fn parse_empty_element(
+    fn parse_empty_tag(
         empty_event: quick_xml::events::BytesStart<'_>,
     ) -> Result<DomainXmlElement, DomainXmlParseError> {
         let tag_name = std::str::from_utf8(empty_event.name().as_ref())
@@ -350,13 +350,13 @@ impl DomainXmlElement {
             Ok(Event::Start(child_start)) => {
                 let owned_start = child_start.into_owned();
                 Some(
-                    Self::parse_start_element(owned_start, reader, event_buffer)
+                    Self::parse_start_tag(owned_start, reader, event_buffer)
                         .map(BodyItem::Child),
                 )
             }
             Ok(Event::Empty(child_empty)) => {
                 let owned_empty = child_empty.into_owned();
-                Some(Self::parse_empty_element(owned_empty).map(BodyItem::Child))
+                Some(Self::parse_empty_tag(owned_empty).map(BodyItem::Child))
             }
             Ok(Event::Text(text_event)) => {
                 let parsed_text = text_event

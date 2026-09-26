@@ -152,11 +152,11 @@ fn test_higher_order_query_combinators() {
     assert_eq!(domain.child_text("nonexistent"), None);
 
     // child_attribute
-    let os_element = domain.find_child_by_tag("os").expect("os child must exist");
-    assert_eq!(os_element.child_attribute("type", "arch"), Some("x86_64"));
-    assert_eq!(os_element.child_attribute("type", "machine"), Some("q35"));
-    assert_eq!(os_element.child_attribute("loader", "readonly"), Some("yes"));
-    assert_eq!(os_element.child_attribute("loader", "nonexistent"), None);
+    let os_node = domain.find_child_by_tag("os").expect("os child must exist");
+    assert_eq!(os_node.child_attribute("type", "arch"), Some("x86_64"));
+    assert_eq!(os_node.child_attribute("type", "machine"), Some("q35"));
+    assert_eq!(os_node.child_attribute("loader", "readonly"), Some("yes"));
+    assert_eq!(os_node.child_attribute("loader", "nonexistent"), None);
 
     // find_path and path_text
     assert_eq!(domain.path_text(&["os", "type"]), Some("hvm"));

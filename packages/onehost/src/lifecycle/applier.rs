@@ -1,8 +1,8 @@
 use crate::config::model::ImageChangePolicy;
-use crate::hypervisor::traits::{DomainState, Hypervisor};
+use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
 use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use crate::lifecycle::LifecycleError;
-use crate::storage::traits::StorageManager;
+use crate::storage::traits::{StorageError, StorageManager};
 
 /// Options controlling apply execution.
 #[derive(Debug, Clone, Default)]
@@ -121,15 +121,20 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 self.hypervisor
                     .domain_info(instance_name)
                     .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
-                    .then(|| {
-                        let _ = self.hypervisor.shutdown_domain(instance_name);
-                    });
+                    .then(|| self.hypervisor.shutdown_domain(instance_name))
+                    .transpose()?;
 
-                // Undefine domain and clean up NVRAM
-                let _ = self.hypervisor.undefine_domain(instance_name, true);
+                // Undefine domain and clean up NVRAM (idempotent if already not defined)
+                match self.hypervisor.undefine_domain(instance_name, true) {
+                    Ok(()) | Err(HypervisorError::DomainNotFound { .. }) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
 
                 // Unlink outdated overlay via storage manager
-                let _ = self.storage.delete_image(overlay_path);
+                match self.storage.delete_image(overlay_path) {
+                    Ok(()) | Err(StorageError::SourceFileNotFound { .. }) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
 
                 // Cache new base image in storage pool
                 self.storage
@@ -195,7 +200,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 self.hypervisor.define_domain(concrete_xml)?;
 
                 // Refresh both storage pools
-                let _ = self.hypervisor.pool_refresh(source_pool);
+                self.hypervisor.pool_refresh(source_pool)?;
                 self.hypervisor.pool_refresh(target_pool)?;
                 Ok(())
             }
@@ -217,11 +222,14 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 self.hypervisor
                     .domain_info(instance_name)
                     .is_ok_and(|domain_info| domain_info.state == DomainState::Running)
-                    .then(|| {
-                        let _ = self.hypervisor.shutdown_domain(instance_name);
-                    });
+                    .then(|| self.hypervisor.shutdown_domain(instance_name))
+                    .transpose()?;
 
-                let _ = self.hypervisor.undefine_domain(instance_name, true);
+                match self.hypervisor.undefine_domain(instance_name, true) {
+                    Ok(()) | Err(HypervisorError::DomainNotFound { .. }) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
+
                 self.hypervisor.pool_refresh(target_pool)?;
                 Ok(())
             }

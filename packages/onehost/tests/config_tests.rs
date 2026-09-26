@@ -247,14 +247,14 @@ fn test_load_manifest_from_filesystem_file() {
 
 #[test]
 fn test_born_valid_instance_uuid_parsing_and_invariants() {
-    let valid_uuid_string = "e5a7d620-8931-4bf6-98ec-7e44a30e8c45";
-    let instance_uuid = InstanceUuid::parse(valid_uuid_string).expect("Valid UUID should parse");
+    let valid_uuid_literal = "e5a7d620-8931-4bf6-98ec-7e44a30e8c45";
+    let instance_uuid = InstanceUuid::parse(valid_uuid_literal).expect("Valid UUID should parse");
 
-    assert_eq!(instance_uuid.as_str(), valid_uuid_string);
-    assert_eq!(instance_uuid, valid_uuid_string);
-    assert_eq!(valid_uuid_string, instance_uuid);
-    assert_eq!(&*instance_uuid, valid_uuid_string);
-    assert_eq!(format!("{instance_uuid}"), valid_uuid_string);
+    assert_eq!(instance_uuid.as_str(), valid_uuid_literal);
+    assert_eq!(instance_uuid, valid_uuid_literal);
+    assert_eq!(valid_uuid_literal, instance_uuid);
+    assert_eq!(&*instance_uuid, valid_uuid_literal);
+    assert_eq!(format!("{instance_uuid}"), valid_uuid_literal);
 
     // Invalid length / segments
     assert!(InstanceUuid::parse("not-a-uuid").is_err());
@@ -265,10 +265,10 @@ fn test_born_valid_instance_uuid_parsing_and_invariants() {
     assert!(InstanceUuid::parse("e5a7d620-8931-4bf6-98ec-7e44a30e8c4z").is_err());
 
     // TryFrom and FromStr
-    let from_str_uuid: InstanceUuid = valid_uuid_string.parse().expect("FromStr must succeed");
+    let from_str_uuid: InstanceUuid = valid_uuid_literal.parse().expect("FromStr must succeed");
     assert_eq!(instance_uuid, from_str_uuid);
 
-    let try_from_uuid = InstanceUuid::try_from(valid_uuid_string).expect("TryFrom must succeed");
+    let try_from_uuid = InstanceUuid::try_from(valid_uuid_literal).expect("TryFrom must succeed");
     assert_eq!(instance_uuid, try_from_uuid);
 }
 

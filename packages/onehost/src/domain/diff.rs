@@ -66,95 +66,95 @@ impl DomainXmlDiffResult {
     /// Formats the differences into a human-readable summary.
     pub fn summary(&self) -> String {
         if !self.has_drift {
-            return "No semantic drift detected between declared and live Domain XML.".to_string();
+            "No semantic drift detected between declared and live Domain XML.".to_string()
+        } else {
+            let header = format!("Detected {} semantic difference(s):\n", self.differences.len());
+            let diff_lines: String = self
+                .differences
+                .iter()
+                .enumerate()
+                .map(|(index, diff)| match diff {
+                    DomainXmlDifference::TextContentMismatch {
+                        element_path,
+                        expected,
+                        actual,
+                    } => {
+                        format!(
+                            "  {}. Value mismatch at {}: expected '{}', live has '{}'\n",
+                            index + 1,
+                            element_path,
+                            expected,
+                            actual
+                        )
+                    }
+                    DomainXmlDifference::AttributeMismatch {
+                        element_path,
+                        attribute_name,
+                        expected,
+                        actual,
+                    } => {
+                        format!(
+                            "  {}. Attribute '{}' mismatch at {}: expected '{}', live has '{}'\n",
+                            index + 1,
+                            attribute_name,
+                            element_path,
+                            expected,
+                            actual
+                        )
+                    }
+                    DomainXmlDifference::MissingAttribute {
+                        element_path,
+                        attribute_name,
+                        expected,
+                    } => {
+                        format!(
+                            "  {}. Missing attribute '{}' at {}: expected '{}'\n",
+                            index + 1,
+                            attribute_name,
+                            element_path,
+                            expected
+                        )
+                    }
+                    DomainXmlDifference::UnexpectedAttribute {
+                        element_path,
+                        attribute_name,
+                        actual,
+                    } => {
+                        format!(
+                            "  {}. Unexpected attribute '{}' at {}: live has '{}'\n",
+                            index + 1,
+                            attribute_name,
+                            element_path,
+                            actual
+                        )
+                    }
+                    DomainXmlDifference::MissingChildElement {
+                        parent_path,
+                        expected_child,
+                    } => {
+                        format!(
+                            "  {}. Missing expected child under {}:\n{}\n",
+                            index + 1,
+                            parent_path,
+                            expected_child
+                        )
+                    }
+                    DomainXmlDifference::UnexpectedChildElement {
+                        parent_path,
+                        actual_child,
+                    } => {
+                        format!(
+                            "  {}. Unexpected child under {}:\n{}\n",
+                            index + 1,
+                            parent_path,
+                            actual_child
+                        )
+                    }
+                })
+                .collect();
+
+            format!("{header}{diff_lines}")
         }
-
-        let header = format!("Detected {} semantic difference(s):\n", self.differences.len());
-        let diff_lines: String = self
-            .differences
-            .iter()
-            .enumerate()
-            .map(|(index, diff)| match diff {
-                DomainXmlDifference::TextContentMismatch {
-                    element_path,
-                    expected,
-                    actual,
-                } => {
-                    format!(
-                        "  {}. Value mismatch at {}: expected '{}', live has '{}'\n",
-                        index + 1,
-                        element_path,
-                        expected,
-                        actual
-                    )
-                }
-                DomainXmlDifference::AttributeMismatch {
-                    element_path,
-                    attribute_name,
-                    expected,
-                    actual,
-                } => {
-                    format!(
-                        "  {}. Attribute '{}' mismatch at {}: expected '{}', live has '{}'\n",
-                        index + 1,
-                        attribute_name,
-                        element_path,
-                        expected,
-                        actual
-                    )
-                }
-                DomainXmlDifference::MissingAttribute {
-                    element_path,
-                    attribute_name,
-                    expected,
-                } => {
-                    format!(
-                        "  {}. Missing attribute '{}' at {}: expected '{}'\n",
-                        index + 1,
-                        attribute_name,
-                        element_path,
-                        expected
-                    )
-                }
-                DomainXmlDifference::UnexpectedAttribute {
-                    element_path,
-                    attribute_name,
-                    actual,
-                } => {
-                    format!(
-                        "  {}. Unexpected attribute '{}' at {}: live has '{}'\n",
-                        index + 1,
-                        attribute_name,
-                        element_path,
-                        actual
-                    )
-                }
-                DomainXmlDifference::MissingChildElement {
-                    parent_path,
-                    expected_child,
-                } => {
-                    format!(
-                        "  {}. Missing expected child under {}:\n{}\n",
-                        index + 1,
-                        parent_path,
-                        expected_child
-                    )
-                }
-                DomainXmlDifference::UnexpectedChildElement {
-                    parent_path,
-                    actual_child,
-                } => {
-                    format!(
-                        "  {}. Unexpected child under {}:\n{}\n",
-                        index + 1,
-                        parent_path,
-                        actual_child
-                    )
-                }
-            })
-            .collect();
-
-        format!("{header}{diff_lines}")
     }
 }
 
@@ -278,12 +278,8 @@ impl DomainXmlNormalizer {
             }
             "interface" => {
                 let source = element
-                    .find_child_by_tag("source")
-                    .and_then(|source_element| {
-                        source_element
-                            .get_attribute("bridge")
-                            .or_else(|| source_element.get_attribute("network"))
-                    })
+                    .child_attribute("source", "bridge")
+                    .or_else(|| element.child_attribute("source", "network"))
                     .unwrap_or("");
                 let target_device = element.child_attribute("target", "dev").unwrap_or("");
                 if !target_device.is_empty() {
@@ -301,7 +297,7 @@ impl DomainXmlNormalizer {
                 let hostdev_type = element.get_attribute("type").unwrap_or("");
                 let source_bus = element
                     .find_path(&["source", "address"])
-                    .and_then(|address_element| address_element.get_attribute("bus"))
+                    .and_then(|address_node| address_node.get_attribute("bus"))
                     .unwrap_or("");
                 format!("hostdev[type={},bus={}]", hostdev_type, source_bus)
             }
@@ -409,13 +405,13 @@ impl DomainXmlNormalizer {
                 .collect()
         };
 
-        let base_element = DomainXmlElement::new(tag_name)
+        let normalized_node = DomainXmlElement::new(tag_name)
             .with_attributes(attributes)
             .with_children(sorted_children);
 
         text_content
             .into_iter()
-            .fold(base_element, |element_acc, text| element_acc.with_replaced_text(text))
+            .fold(normalized_node, |accumulated_node, text| accumulated_node.with_replaced_text(text))
     }
 }
 

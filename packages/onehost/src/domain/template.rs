@@ -100,8 +100,8 @@ impl DomainTemplateEngine {
             .map(|child| match child.tag_name.as_str() {
                 "name" => child.with_replaced_text(injection_parameters.instance_name),
                 "uuid" => child.with_replaced_text(injection_parameters.instance_uuid),
-                "os" => Self::transform_os_element(child, injection_parameters),
-                "devices" => Self::transform_devices_element(child, injection_parameters),
+                "os" => Self::transform_os_node(child, injection_parameters),
+                "devices" => Self::transform_devices_node(child, injection_parameters),
                 _ => child,
             })
             .collect();
@@ -122,8 +122,8 @@ impl DomainTemplateEngine {
         })
     }
 
-    fn transform_os_element(
-        os_element: DomainXmlElement,
+    fn transform_os_node(
+        os_node: DomainXmlElement,
         injection_parameters: &DomainTemplateInjectionParameters,
     ) -> DomainXmlElement {
         let rendered_nvram_path = injection_parameters
@@ -131,10 +131,10 @@ impl DomainTemplateEngine {
             .to_str()
             .unwrap_or("");
 
-        let has_nvram = os_element.has_child("nvram");
+        let has_nvram = os_node.has_child("nvram");
 
         if has_nvram {
-            os_element.transform_children(|child| {
+            os_node.transform_children(|child| {
                 if child.tag_name == "nvram" {
                     let base_nvram = child.with_replaced_text(rendered_nvram_path);
                     Some(match injection_parameters.nvram_template_path {
@@ -155,15 +155,15 @@ impl DomainTemplateEngine {
                 }
                 None => base_nvram,
             };
-            os_element.with_child(new_nvram)
+            os_node.with_child(new_nvram)
         }
     }
 
-    fn transform_devices_element(
-        devices_element: DomainXmlElement,
+    fn transform_devices_node(
+        devices_node: DomainXmlElement,
         injection_parameters: &DomainTemplateInjectionParameters,
     ) -> DomainXmlElement {
-        devices_element.transform_children(|child| {
+        devices_node.transform_children(|child| {
             if child.tag_name == "disk" && Self::is_designated_os_disk(&child) {
                 Some(Self::transform_designated_disk(
                     child,

@@ -121,15 +121,15 @@ impl MockHypervisor {
     }
 
     /// Functional builder: registers a domain with its runtime info and Domain XML.
-    pub fn with_domain(self, info: DomainInfo, domain_xml: impl Into<String>) -> Self {
-        let domain_name = info.name.clone();
-        let xml_string = domain_xml.into();
-        let extracted_devices = extract_block_devices_from_domain_xml(&xml_string);
+    pub fn with_domain(self, domain_info: DomainInfo, domain_xml: impl Into<String>) -> Self {
+        let domain_name = domain_info.name.clone();
+        let raw_domain_xml = domain_xml.into();
+        let extracted_devices = extract_block_devices_from_domain_xml(&raw_domain_xml);
         if let Ok(mut locked_state) = self.state.lock() {
-            locked_state.domains.insert(domain_name.clone(), info);
+            locked_state.domains.insert(domain_name.clone(), domain_info);
             locked_state
                 .domain_xmls
-                .insert(domain_name.clone(), xml_string);
+                .insert(domain_name.clone(), raw_domain_xml);
             locked_state
                 .block_devices
                 .entry(domain_name)
@@ -287,7 +287,7 @@ impl Hypervisor for MockHypervisor {
         let existing_autostart = locked_state
             .domains
             .get(&domain_name)
-            .map(|info| info.autostart)
+            .map(|existing_domain_info| existing_domain_info.autostart)
             .unwrap_or(false);
 
         let defined_info = DomainInfo {
@@ -328,14 +328,12 @@ impl Hypervisor for MockHypervisor {
             });
 
         if let Some(error_details) = locked_state.injected_domain_errors.get(domain_name) {
-            return Err(HypervisorError::CommandExecutionFailed {
+            Err(HypervisorError::CommandExecutionFailed {
                 command: format!("virsh undefine {domain_name}"),
                 exit_code: Some(1),
                 stderr: error_details.clone(),
-            });
-        }
-
-        if locked_state.domains.remove(domain_name).is_some() {
+            })
+        } else if locked_state.domains.remove(domain_name).is_some() {
             locked_state.domain_xmls.remove(domain_name);
             locked_state.block_devices.remove(domain_name);
             Ok(())
