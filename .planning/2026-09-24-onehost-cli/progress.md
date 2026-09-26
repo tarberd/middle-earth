@@ -3,7 +3,7 @@
 ## Session: 2026-09-24
 
 ### Current Status
-- **Phase:** Phase 12c.6: Comprehensive Architectural Analysis & Structural Refactoring (In Progress)
+- **Phase:** Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring (Complete)
 - **Started:** 2026-09-24
 
 ### Actions Taken
@@ -287,6 +287,21 @@
           - 124/124 unit and integration tests passing (`cargo test --all-targets`).
           - 0 warnings in Clippy static audit (`cargo clippy --all-targets -- -D warnings`).
           - Hermetic Nix flake derivation build and checkPhase passing (`nix build .#packages.x86_64-linux.onehost --no-link`).
+    - **Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring** (2026-09-27):
+        - Configured Antigravity lifecycle hooks (`.agent/hooks.json` and `.agent/scripts/compaction_guard.py`) enforcing the Fresh Read Protocol across context compactions as a hard programmatic gate.
+        - Defined `ProcessRunner`, `ProcessHandle`, `ProcessOutput`, and `ProcessError` traits in `src/process/traits.rs`.
+        - Implemented `SystemProcessRunner` in `src/process/system.rs` (wrapping `std::process::Command` with RAII child termination in `Drop`, 0 `let _ =`).
+        - Implemented `MockProcessRunner` in `src/process/mock.rs` (100% in-memory hermetic recording, 0 host disk side effects).
+        - Extended `StorageManager` in `src/storage/traits.rs`, `src/storage/qemu_img.rs`, and `src/storage/mock.rs` with `create_empty_disk` (64GB ephemeral QCOW2) and `set_readonly` (`0444` immutable master permissions).
+        - Implemented `src/image/builder.rs` orchestrating unattended golden master image creation with swtpm, OVMF, and OEMDRV media, ephemeral scratch isolation, RAII cleanup guard, and atomic promotion sequence (`scratch` -> `.tmp` -> `check_image` -> atomic rename -> `0444`).
+        - Implemented `src/cli.rs` and `src/main.rs` wiring CLI dispatch (`plan`, `apply`, `destroy`, `backup`, `restore`, `image build`, `status`), human-readable diff and status tables, and machine-readable `--json` modes.
+        - Implemented `tests/builder_tests.rs` (7 tests) and `tests/cli_tests.rs` (10 tests).
+        - Eliminated the only remaining `std::fs` call from `src/lifecycle/planner.rs`, routing domain template reading through `StorageManager::read_file`.
+        - Verified static invariant audit (0 loops, 0 unwraps/expects in `src/`, 0 explicit returns, 0 `let _ =`, 0 single-letter closures).
+        - Executed full 4-tier verification protocol:
+          - 140/140 unit and integration tests passing (`cargo test --all-targets`).
+          - 0 warnings in Clippy static audit (`cargo clippy --all-targets -- -D warnings`).
+          - Hermetic Nix flake derivation build and checkPhase passing (`nix build .#packages.x86_64-linux.onehost --no-link`).
 
 
 ### Test Results
@@ -370,6 +385,11 @@
 | Phase 13b Full Test Suite (cargo test --all-targets) | 124 unit/integration tests pass cleanly | 124 passed, 0 failed, 0 warnings | PASS |
 | Phase 13b Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 13b Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Stage 9 Builder Tests (tests/builder_tests.rs) | 7 unit tests for unattended image builder | 7 passed, 0 failed, 0 warnings | PASS |
+| Stage 9 CLI Tests (tests/cli_tests.rs) | 10 integration tests for CLI commands | 10 passed, 0 failed, 0 warnings | PASS |
+| Phase 14 Full Test Suite (cargo test --all-targets) | 140 unit/integration tests pass cleanly | 140 passed, 0 failed, 0 warnings | PASS |
+| Phase 14 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
+| Phase 14 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
 
 ### Errors
 | Error | Resolution |
@@ -384,6 +404,9 @@
 | Explicit `return` in `backup/engine.rs` | Refactored `match domain_info.state` into pure value-producing expression with trailing `?` |
 | Accumulator variables `children_acc`/`text_acc` in `element.rs` | Renamed to `accumulated_children` and `accumulated_text` to eliminate Hungarian `_acc` suffix |
 | Destination parent directory missing during real `qemu-img convert` thin backup | Added `std::fs::create_dir_all` for destination parents in `QemuImgStorage` (`create_cow_overlay`, `convert_thin_backup`, `restore_thin_backup`) |
+| std::fs call in planner.rs | Replaced `std::fs::read_to_string` with `self.storage.read_file`, preserving Shell Trait Boundary Invariant |
+| Clippy unnecessary_map_or in cli.rs | Replaced `filter_instance.map_or(true, ...)` with `filter_instance.is_none_or(...)` |
+
 
 
 

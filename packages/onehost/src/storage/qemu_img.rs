@@ -387,5 +387,47 @@ impl StorageManager for QemuImgStorage {
         let content = std::fs::read_to_string(source_path)?;
         Ok(content)
     }
+
+    fn create_empty_disk(&self, disk_path: &Path, size_bytes: u64) -> Result<(), StorageError> {
+        if let Some(destination_parent) = disk_path.parent() {
+            std::fs::create_dir_all(destination_parent)?;
+        }
+
+        let rendered_disk_path = disk_path.to_str().ok_or_else(|| {
+            StorageError::InspectionParseError {
+                details: "Disk path contains invalid UTF-8".to_string(),
+            }
+        })?;
+
+        let size_argument = size_bytes.to_string();
+
+        self.execute_command(&[
+            "create",
+            "-f",
+            "qcow2",
+            rendered_disk_path,
+            &size_argument,
+        ])?;
+
+        Ok(())
+    }
+
+    fn set_readonly(&self, file_path: &Path) -> Result<(), StorageError> {
+        file_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| StorageError::SourceFileNotFound {
+                path: file_path.to_path_buf(),
+            })?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let read_only_permissions = std::fs::Permissions::from_mode(0o444);
+            std::fs::set_permissions(file_path, read_only_permissions)?;
+        }
+
+        Ok(())
+    }
 }
 

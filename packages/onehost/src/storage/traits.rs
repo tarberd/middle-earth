@@ -195,5 +195,11 @@ pub trait StorageManager: Send + Sync {
 
     /// Reads text content from a source file.
     fn read_file(&self, source_path: &Path) -> Result<String, StorageError>;
+
+    /// Creates a fresh empty QCOW2 disk of the specified size in bytes.
+    fn create_empty_disk(&self, disk_path: &Path, size_bytes: u64) -> Result<(), StorageError>;
+
+    /// Sets strict read-only permissions (0444) on a file.
+    fn set_readonly(&self, file_path: &Path) -> Result<(), StorageError>;
 }
 

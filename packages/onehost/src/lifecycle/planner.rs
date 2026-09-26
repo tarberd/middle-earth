@@ -7,11 +7,13 @@ use crate::hypervisor::traits::{Hypervisor, HypervisorError};
 use crate::image::tag::{
     ContentAddressedImageResolver, FlavorDerivationMetadata, FlavorResolutionError,
 };
+use serde::{Deserialize, Serialize};
+
 use crate::lifecycle::LifecycleError;
 use crate::storage::traits::{StorageError, StorageManager};
 
 /// Alert describing a dangling snapshot from an interrupted backup that needs recovery.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DanglingSnapshotAlert {
     pub instance_name: String,
     pub target_device: String,
@@ -19,7 +21,7 @@ pub struct DanglingSnapshotAlert {
 }
 
 /// Action to reconcile a declared instance.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InstancePlanAction {
     Create {
         instance_name: String,
@@ -71,8 +73,21 @@ pub enum InstancePlanAction {
     },
 }
 
+impl InstancePlanAction {
+    pub fn instance_name(&self) -> &str {
+        match self {
+            Self::Create { instance_name, .. }
+            | Self::UpdateDomainXml { instance_name, .. }
+            | Self::Recreate { instance_name, .. }
+            | Self::RelocateStoragePool { instance_name, .. }
+            | Self::Delete { instance_name, .. }
+            | Self::NoOp { instance_name } => instance_name,
+        }
+    }
+}
+
 /// Structured execution plan comparing declared manifest state against live infrastructure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OnehostPlan {
     pub actions: Vec<InstancePlanAction>,
     pub dangling_snapshots: Vec<DanglingSnapshotAlert>,
@@ -182,10 +197,10 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
             .nvram_dir
             .join(format!("{instance_name}_VARS.fd"));
 
-        // Read domain template XML
+        // Read domain template XML via custom resolver or storage manager
         let template_xml_content = match &self.template_resolver {
             Some(resolver) => resolver(&instance_configuration.template_xml)?,
-            None => std::fs::read_to_string(&instance_configuration.template_xml)?,
+            None => self.storage.read_file(&instance_configuration.template_xml)?,
         };
 
         let injection_parameters = DomainTemplateInjectionParameters {

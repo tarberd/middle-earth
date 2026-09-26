@@ -4,10 +4,10 @@
 Plan and execute the development of the `onehost` Rust CLI tool (at packages/onehost) for declarative Windows libvirt KVM lifecycle management, refactoring existing bash apps into a test-driven, declarative tool configured via Nix flake derivations with XDG compliance, zero implicit defaults, and OpenTofu-style reconciliation—using Domain Template XML with explicit `<disk onehost:role='os-disk'>` markers and content-addressed OEMDRV flavor derivations.
 
 ## Next Step
-Await user signal to begin Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring.
+Await user signal to begin Phase 15: Stage 10 - Nix Flake Derivation, Module, and App Integration.
 
 ## Current Phase
-Phase 13b: Full Disaster Recovery & Backup Integration Suite (Complete)
+Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring (Complete)
 
 ## Mandatory Design Guidelines & Engineering Standards
 
@@ -508,13 +508,18 @@ Phase 13b: Full Disaster Recovery & Backup Integration Suite (Complete)
 - **Status:** complete
 
 ### Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring
-- [ ] Write unit tests in `tests/builder_tests.rs`:
+- [x] Write unit tests in `tests/builder_tests.rs`:
   - Ephemeral scratch isolation in `$XDG_CACHE_HOME/onehost/build/`
   - Atomic promotion sequence (`scratch` -> `${master}.tmp` -> `qemu-img check` -> `0444` `${master}.qcow2`)
-- [ ] Implement `src/image/builder.rs` orchestrating unattended build using the Nix store OEMDRV derivation and headless QEMU/swtpm
-- [ ] Implement `src/cli.rs` and `src/main.rs` dispatching commands (`plan`, `apply`, `destroy`, `backup`, `restore`, `image build`, `status`)
-- [ ] Write CLI integration tests
-- **Status:** pending
+- [x] Implement `src/image/builder.rs` orchestrating unattended build using the Nix store OEMDRV derivation and headless QEMU/swtpm
+- [x] Implement `src/cli.rs` and `src/main.rs` dispatching commands (`plan`, `apply`, `destroy`, `backup`, `restore`, `image build`, `status`)
+- [x] Write CLI integration tests in `tests/cli_tests.rs` (10 tests)
+- [x] Verify `cargo test --all-targets` passes cleanly across 140 tests with zero warnings
+- [x] Verify `cargo clippy --all-targets -- -D warnings` passes with 0 warnings
+- [x] Verify `nix build .#packages.x86_64-linux.onehost --no-link` passes
+- [x] Implement Antigravity lifecycle hooks (`.agent/hooks.json` and `.agent/scripts/compaction_guard.py`)
+- [x] Conduct senior-level code review of Phase 14
+- **Status:** complete
 
 ### Phase 15: Stage 10 - Nix Flake Derivation, Module, and App Integration
 - [ ] Update `packages/onehost/default.nix` and `Cargo.lock`

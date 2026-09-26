@@ -55,6 +55,13 @@ pub enum RecordedStorageAction {
     ReadFile {
         source_path: PathBuf,
     },
+    CreateEmptyDisk {
+        disk_path: PathBuf,
+        size_bytes: u64,
+    },
+    SetReadonly {
+        file_path: PathBuf,
+    },
 }
 
 /// In-memory representation of an image tracked by MockStorageManager.
@@ -286,7 +293,12 @@ impl StorageManager for MockStorageManager {
                 path: image_path.to_path_buf(),
             })?;
 
-        if image_record.is_corrupted {
+        if let Some(error_details) = locked_state.injected_errors.get(image_path) {
+            Err(StorageError::ImageCorruptionDetected {
+                path: image_path.to_path_buf(),
+                details: error_details.clone(),
+            })
+        } else if image_record.is_corrupted {
             Err(StorageError::ImageCorruptionDetected {
                 path: image_path.to_path_buf(),
                 details: "Simulated corruption in disk image".to_string(),
@@ -507,6 +519,49 @@ impl StorageManager for MockStorageManager {
             .ok_or_else(|| StorageError::SourceFileNotFound {
                 path: source_path.to_path_buf(),
             })
+    }
+
+    fn create_empty_disk(&self, disk_path: &Path, size_bytes: u64) -> Result<(), StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::CreateEmptyDisk {
+                disk_path: disk_path.to_path_buf(),
+                size_bytes,
+            });
+
+        let image_record = MockImageRecord {
+            format: "qcow2".to_string(),
+            virtual_size_bytes: size_bytes,
+            actual_size_bytes: 196_608,
+            backing_file: None,
+            is_corrupted: false,
+        };
+
+        locked_state
+            .images
+            .insert(disk_path.to_path_buf(), image_record);
+
+        Ok(())
+    }
+
+    fn set_readonly(&self, file_path: &Path) -> Result<(), StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::SetReadonly {
+                file_path: file_path.to_path_buf(),
+            });
+
+        Ok(())
     }
 }
 

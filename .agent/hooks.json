@@ -1,0 +1,33 @@
+{
+  "compaction-guard": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 ./scripts/compaction_guard.py --event=pre_invocation",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content|run_command|invoke_subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/compaction_guard.py --event=pre_tool_use",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "view_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/compaction_guard.py --event=pre_tool_use",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

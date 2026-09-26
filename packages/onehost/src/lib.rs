@@ -1,8 +1,10 @@
 pub mod backup;
+pub mod cli;
 pub mod config;
 pub mod domain;
 pub mod hypervisor;
 pub mod image;
 pub mod lifecycle;
+pub mod process;
 pub mod storage;
 pub mod xdg;
