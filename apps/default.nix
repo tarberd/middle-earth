@@ -29,18 +29,6 @@ createFlakeModule {
       type = "app";
       program = "${flake.gameservers.buildPalworldImage}/bin/build-palworld-image";
     };
-    build-windows-image = {
-      type = "app";
-      program = "${onehostApps.buildImage}/bin/onehost-build-image";
-    };
-    provision-windows-vm = {
-      type = "app";
-      program = "${onehostApps.apply}/bin/onehost-apply";
-    };
-    backup-windows-vm = {
-      type = "app";
-      program = "${onehostApps.backup}/bin/onehost-backup";
-    };
     onehost = {
       type = "app";
       program = "${flake.packages.x86_64-linux.onehost}/bin/onehost";
@@ -72,6 +60,10 @@ createFlakeModule {
     onehost-build-image = {
       type = "app";
       program = "${onehostApps.buildImage}/bin/onehost-build-image";
+    };
+    onehost-build-iso = {
+      type = "app";
+      program = "${onehostApps.buildIso}/bin/onehost-build-iso";
     };
     default = {
       type = "app";

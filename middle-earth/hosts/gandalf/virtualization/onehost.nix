@@ -371,5 +371,6 @@ createFlakeModule {
     restore = makeOnehostApp "onehost-restore" "restore";
     status = makeOnehostApp "onehost-status" "status";
     buildImage = makeOnehostApp "onehost-build-image" "image build";
+    buildIso = windows.buildIsoApp;
   };
 }
