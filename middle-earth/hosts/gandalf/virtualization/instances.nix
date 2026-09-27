@@ -1,8 +1,8 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   ...
 }:
-createFlakeModule {
+mkFlakeModule { } {
   gollum = {
     image = "win11/26300.9457.pro.en-us/looking-glass-en";
     uuid = "e5a7d620-8931-4bf6-98ec-7e44a30e8c45";

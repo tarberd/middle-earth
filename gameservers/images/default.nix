@@ -1,9 +1,5 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-pub mod "palworld"
-
-createFlakeModule {}
+mkFlakeModule { public = [ ./palworld.nix ]; } { }

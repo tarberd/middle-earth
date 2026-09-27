@@ -1,5 +1,5 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   ...
 }:
 let
@@ -26,6 +26,6 @@ let
     else
       throw "Unknown Windows version key: '${versionKey}'. Supported versions: ${builtins.concatStringsSep ", " (builtins.attrNames versions)}";
 in
-createFlakeModule {
+mkFlakeModule { } {
   inherit versions resolveVersion;
 }

@@ -1,5 +1,5 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   nixpkgs,
   super,
   ...
@@ -403,15 +403,13 @@ let
 
       case "$VERSION_KEY" in
         ${lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (
-            verKey: verData: ''
-              "${verKey}")
-                UUP_ID="${verData.uupId}"
-                WIN_EDITION="${verData.edition}"
-                WIN_LANG="${verData.language}"
-                ;;
-            ''
-          ) windowsVersions.versions
+          lib.mapAttrsToList (verKey: verData: ''
+            "${verKey}")
+              UUP_ID="${verData.uupId}"
+              WIN_EDITION="${verData.edition}"
+              WIN_LANG="${verData.language}"
+              ;;
+          '') windowsVersions.versions
         )}
         *)
           echo "ERROR: Unsupported Windows version '$VERSION_KEY'."
@@ -461,7 +459,7 @@ let
     '';
   };
 in
-createFlakeModule {
+mkFlakeModule { } {
   inherit
     mkAutounattendXml
     mkSysprepXml

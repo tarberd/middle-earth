@@ -1,5 +1,5 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   flake,
   nixpkgs,
   ...
@@ -26,23 +26,25 @@ let
       sysprep,
       extraFiles,
     }:
-    pkgs.runCommand "oemdrv-${flavor}.iso" {
-      nativeBuildInputs = [ pkgs.cdrtools ];
-    } ''
-      mkdir -p root
-      cp "${autounattend}" root/autounattend.xml
-      cp "${sysprep}" root/sysprep.xml
-      cp "${windows.provisionPs1}" root/provision.ps1
-      cp "${windows.errorHandlerCmd}" root/ErrorHandler.cmd
+    pkgs.runCommand "oemdrv-${flavor}.iso"
+      {
+        nativeBuildInputs = [ pkgs.cdrtools ];
+      }
+      ''
+        mkdir -p root
+        cp "${autounattend}" root/autounattend.xml
+        cp "${sysprep}" root/sysprep.xml
+        cp "${windows.provisionPs1}" root/provision.ps1
+        cp "${windows.errorHandlerCmd}" root/ErrorHandler.cmd
 
-      ${lib.concatStringsSep "\n" (
-        lib.mapAttrsToList (name: path: ''
-          cp "${path}" "root/${name}"
-        '') extraFiles
-      )}
+        ${lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: path: ''
+            cp "${path}" "root/${name}"
+          '') extraFiles
+        )}
 
-      mkisofs -o "$out" -J -r -V "OEMDRV" root
-    '';
+        mkisofs -o "$out" -J -r -V "OEMDRV" root
+      '';
 
   oemdrvFlavors = {
     looking-glass-en = mkOemdrv {
@@ -374,7 +376,7 @@ let
   };
 
 in
-createFlakeModule {
+mkFlakeModule { } {
   manifest = manifestJson;
   inherit
     templateXmls

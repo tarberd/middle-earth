@@ -1,18 +1,16 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   flake,
   home-manager,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      lib,
-      config,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    lib,
+    config,
+    ...
+  }:
   let
     username = "root";
     dotmanProfilePath = ../../../dotfiles/sushi;
@@ -59,5 +57,4 @@ createFlakeModule (
       };
     };
   }
-  )
 )

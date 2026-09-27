@@ -1,13 +1,11 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   disko,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    { ... }:
-    {
+mkFlakeModule.withNixosModule { } (
+  { ... }:
+  {
     imports = [ disko.nixosModules.disko ];
 
     disko.devices = {
@@ -26,7 +24,10 @@ createFlakeModule (
                 type = "EF00";
                 content = {
                   type = "filesystem";
-                  extraArgs = [ "-n" "BOOT" ];
+                  extraArgs = [
+                    "-n"
+                    "BOOT"
+                  ];
                   format = "vfat";
                   mountpoint = "/boot";
                   mountOptions = [ "umask=0077" ];
@@ -46,19 +47,31 @@ createFlakeModule (
                   subvolumes = {
                     "@" = {
                       mountpoint = "/";
-                      mountOptions = [ "compress=zstd" "discard=async" ];
+                      mountOptions = [
+                        "compress=zstd"
+                        "discard=async"
+                      ];
                     };
                     "@home" = {
                       mountpoint = "/home";
-                      mountOptions = [ "compress=zstd" "discard=async" ];
+                      mountOptions = [
+                        "compress=zstd"
+                        "discard=async"
+                      ];
                     };
                     "@nix" = {
                       mountpoint = "/nix";
-                      mountOptions = [ "compress=zstd" "noatime" ];
+                      mountOptions = [
+                        "compress=zstd"
+                        "noatime"
+                      ];
                     };
                     "@snapshots" = {
                       mountpoint = "/snapshots";
-                      mountOptions = [ "compress=zstd" "discard=async" ];
+                      mountOptions = [
+                        "compress=zstd"
+                        "discard=async"
+                      ];
                     };
                   };
                 };
@@ -74,8 +87,12 @@ createFlakeModule (
     fileSystems."/data" = {
       device = "/dev/disk/by-label/stanley-data";
       fsType = "btrfs";
-      options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
+      options = [
+        "subvol=@"
+        "compress=zstd"
+        "discard=async"
+        "nofail"
+      ];
     };
   }
-  )
 )

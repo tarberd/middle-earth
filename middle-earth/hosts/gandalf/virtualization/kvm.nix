@@ -1,18 +1,16 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   nixvirt,
   flake,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      lib,
-      config,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    lib,
+    config,
+    ...
+  }:
   let
     intelGpuSriov = pkgs.writeShellApplication {
       name = "intel-gpu-sriov";
@@ -98,8 +96,8 @@ createFlakeModule (
       lookingGlassBeruthiel
     ];
 
-    services.udev.packages = lib.singleton (pkgs.writeTextFile
-      {
+    services.udev.packages = lib.singleton (
+      pkgs.writeTextFile {
         name = "kvmfr";
         text = ''
           SUBSYSTEM=="kvmfr", GROUP="kvm", MODE="0660", TAG+="uaccess"
@@ -117,11 +115,16 @@ createFlakeModule (
               name = "default";
               uuid = "cda3b7dd-71fd-44e3-8093-340f47a88c83";
               bridge.name = "virbr0";
-              forward = { mode = "nat"; };
+              forward = {
+                mode = "nat";
+              };
               ip = {
                 address = "10.101.1.1";
                 netmask = "255.255.255.0";
-                dhcp.range = { start = "10.101.1.2"; end = "10.101.1.254"; };
+                dhcp.range = {
+                  start = "10.101.1.2";
+                  end = "10.101.1.254";
+                };
               };
             };
             active = true;
@@ -133,7 +136,9 @@ createFlakeModule (
               name = "onehost";
               uuid = "8d1a7ca5-cd4a-4103-b488-c5f210552d33";
               type = "dir";
-              target = { path = "/var/lib/onehost/images"; };
+              target = {
+                path = "/var/lib/onehost/images";
+              };
             };
             active = true;
           }
@@ -142,7 +147,9 @@ createFlakeModule (
               name = "data-legacy";
               uuid = "b7bf2334-cbef-4198-ad75-1d44bb4d658a";
               type = "dir";
-              target = { path = "/data/kvm/libvirt/images"; };
+              target = {
+                path = "/data/kvm/libvirt/images";
+              };
             };
             active = true;
           }
@@ -189,5 +196,4 @@ createFlakeModule (
       };
     };
   }
-  )
 )

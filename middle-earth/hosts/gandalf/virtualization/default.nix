@@ -1,13 +1,13 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-pub mod "kvm"
-pub mod "container"
-pub mod "instances"
-pub mod "images"
-pub mod "onehost"
-
-createFlakeModule {}
+mkFlakeModule {
+  public = [
+    ./kvm.nix
+    ./container.nix
+    ./instances.nix
+    ./images
+    ./onehost.nix
+  ];
+} { }

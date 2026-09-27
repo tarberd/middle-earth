@@ -1,10 +1,8 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-mod "windows-versions"
-pub mod "windows"
-
-createFlakeModule {}
+mkFlakeModule {
+  public = [ ./windows.nix ];
+  private = [ ./windows-versions.nix ];
+} { }

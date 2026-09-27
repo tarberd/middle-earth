@@ -1,8 +1,8 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   ...
 }:
-createFlakeModule {
+mkFlakeModule { } {
   palworld-arnh = {
     image = "palworld/v1";
     ip4 = "10.100.2.100";

@@ -1,16 +1,14 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   flake,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      config,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    config,
+    ...
+  }:
   {
     imports = [
       flake.firewalld.firewalld-policies
@@ -30,7 +28,12 @@ createFlakeModule (
       hostName = "gandalf";
       networkmanager = {
         enable = true;
-        unmanaged = [ "br-public-hosts" "wg0" "incusbr0" "interface-name:incus*" ];
+        unmanaged = [
+          "br-public-hosts"
+          "wg0"
+          "incusbr0"
+          "interface-name:incus*"
+        ];
       };
 
       firewall.enable = false;
@@ -94,7 +97,10 @@ createFlakeModule (
         {
           PublicKey = "avUBAFdY8UIrBI2+FewyfKUH9n5v/fevKBLpOTLmuAU=";
           Endpoint = "[2a0f:9400:fa0:44::1]:51820";
-          AllowedIPs = [ "0.0.0.0/0" "::/0" ];
+          AllowedIPs = [
+            "0.0.0.0/0"
+            "::/0"
+          ];
           PersistentKeepalive = 25;
           RouteTable = "100";
         }
@@ -109,11 +115,27 @@ createFlakeModule (
       ];
       routingPolicyRules = [
         # Keep local subnet traffic in the main routing table
-        { To = "10.100.2.0/24";        Table = 254; Priority = 990; }
-        { To = "2a0f:9400:738f:2::/64"; Table = 254; Priority = 990; }
+        {
+          To = "10.100.2.0/24";
+          Table = 254;
+          Priority = 990;
+        }
+        {
+          To = "2a0f:9400:738f:2::/64";
+          Table = 254;
+          Priority = 990;
+        }
         # Route traffic originating from public IP block through table 100
-        { From = "10.100.0.0/16";        Table = 100; Priority = 999; }
-        { From = "2a0f:9400:738f::/48";  Table = 100; Priority = 999; }
+        {
+          From = "10.100.0.0/16";
+          Table = 100;
+          Priority = 999;
+        }
+        {
+          From = "2a0f:9400:738f::/48";
+          Table = 100;
+          Priority = 999;
+        }
       ];
     };
 
@@ -122,13 +144,24 @@ createFlakeModule (
 
       zones = {
         public = {
-          interfaces = [ "eth0" "eth1" ];
+          interfaces = [
+            "eth0"
+            "eth1"
+          ];
           services = [ ];
-          protocols = [ "icmp" "ipv6-icmp"];
+          protocols = [
+            "icmp"
+            "ipv6-icmp"
+          ];
           masquerade = true;
         };
         trusted = {
-          interfaces = [ "virbr0" "wg0" "br-public-hosts" "incusbr0" ];
+          interfaces = [
+            "virbr0"
+            "wg0"
+            "br-public-hosts"
+            "incusbr0"
+          ];
         };
       };
 
@@ -137,7 +170,10 @@ createFlakeModule (
           target = "CONTINUE";
           ingressZones = [ "public" ];
           egressZones = [ "trusted" ];
-          protocols = [ "icmp" "ipv6-icmp" ];
+          protocols = [
+            "icmp"
+            "ipv6-icmp"
+          ];
         };
         trusted-to-public = {
           target = "ACCEPT";
@@ -148,5 +184,4 @@ createFlakeModule (
     };
 
   }
-  )
 )

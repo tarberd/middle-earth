@@ -1,19 +1,17 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   flake,
   super,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      modulesPath,
-      lib,
-      pkgs,
-      config,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    modulesPath,
+    lib,
+    pkgs,
+    config,
+    ...
+  }:
   {
     imports = [
       (modulesPath + "/installer/scan/not-detected.nix")
@@ -44,10 +42,16 @@ createFlakeModule (
       interfaces = {
         eth0 = {
           ipv4.addresses = [
-            { address = "206.83.40.77"; prefixLength = 24; }
+            {
+              address = "206.83.40.77";
+              prefixLength = 24;
+            }
           ];
           ipv6.addresses = [
-            { address = "2a0f:9400:fa0:44::1"; prefixLength = 44; }
+            {
+              address = "2a0f:9400:fa0:44::1";
+              prefixLength = 44;
+            }
           ];
         };
       };
@@ -60,7 +64,8 @@ createFlakeModule (
           listenPort = 51820;
           privateKeyFile = config.artifacts.store.wireguard.files.private_key.path;
           peers = [
-            { # stanley
+            {
+              # stanley
               publicKey = "VNpR6K59HlEE9CRAiDxTkbFyZ0e5HCG8a+x7uyAdTmg=";
               allowedIPs = [
                 "10.100.1.2/32"
@@ -125,8 +130,14 @@ createFlakeModule (
       zones = {
         public = {
           interfaces = [ "eth0" ];
-          services = [ "wireguard" "ssh" ];
-          protocols = [ "icmp" "ipv6-icmp"];
+          services = [
+            "wireguard"
+            "ssh"
+          ];
+          protocols = [
+            "icmp"
+            "ipv6-icmp"
+          ];
           masquerade = true;
           forwardPorts = [
             {
@@ -150,7 +161,12 @@ createFlakeModule (
 
       services.palworld = {
         short = "Palworld Game Server";
-        ports = [ { port = 8211; protocol = "udp"; } ];
+        ports = [
+          {
+            port = 8211;
+            protocol = "udp";
+          }
+        ];
       };
 
       policies = {
@@ -158,8 +174,14 @@ createFlakeModule (
           target = "CONTINUE";
           ingressZones = [ "public" ];
           egressZones = [ "trusted" ];
-          protocols = [ "icmp" "ipv6-icmp" ];
-          services = [ "palworld" "factorio" ];
+          protocols = [
+            "icmp"
+            "ipv6-icmp"
+          ];
+          services = [
+            "palworld"
+            "factorio"
+          ];
         };
         vpn-outbound = {
           target = "ACCEPT";
@@ -169,7 +191,10 @@ createFlakeModule (
       };
     };
 
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    nix.settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
 
     middle-earth.roles = {
       admin = [ "wheel" ];
@@ -190,5 +215,4 @@ createFlakeModule (
       pkgs.wireguard-tools
     ];
   }
-  )
 )

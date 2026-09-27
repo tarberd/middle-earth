@@ -1,6 +1,5 @@
 {
-  createFlakeModule,
-  mod,
+  mkFlakeModule,
   self,
   terranix,
   nixpkgs,
@@ -36,13 +35,18 @@ let
       '';
     };
 in
-mod "config"
-mod "instances"
-mod "images"
-createFlakeModule {
-  inherit terraformConfiguration;
-  plan = makeRunner "plan" "plan";
-  apply = makeRunner "apply" "apply";
-  destroy = makeRunner "destroy" "destroy";
-  buildPalworldImage = self.images.palworld.buildApp;
-}
+mkFlakeModule
+  {
+    private = [
+      ./config.nix
+      ./instances.nix
+      ./images
+    ];
+  }
+  {
+    inherit terraformConfiguration;
+    plan = makeRunner "plan" "plan";
+    apply = makeRunner "apply" "apply";
+    destroy = makeRunner "destroy" "destroy";
+    buildPalworldImage = self.images.palworld.buildApp;
+  }

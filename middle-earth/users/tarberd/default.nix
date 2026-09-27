@@ -1,18 +1,16 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   flake,
   home-manager,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      lib,
-      config,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    lib,
+    config,
+    ...
+  }:
   let
     username = "tarberd";
     home = "/home/${username}";
@@ -29,7 +27,11 @@ createFlakeModule (
     ];
 
     config = {
-      middle-earth.userRoles.${username} = [ "admin" "virtualization" "desktop" ];
+      middle-earth.userRoles.${username} = [
+        "admin"
+        "virtualization"
+        "desktop"
+      ];
 
       users.users.${username} = {
         isNormalUser = true;
@@ -75,5 +77,4 @@ createFlakeModule (
       };
     };
   }
-  )
 )

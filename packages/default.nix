@@ -1,12 +1,10 @@
 {
-  createFlakeModule,
-  mod,
+  mkFlakeModule,
   self,
   flake,
   ...
 }:
-mod "onehost"
-createFlakeModule {
+mkFlakeModule { private = [ ./onehost ]; } {
   x86_64-linux = {
     gameservers-tf = flake.gameservers.terraformConfiguration;
     default = flake.gameservers.terraformConfiguration;

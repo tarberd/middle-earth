@@ -38,6 +38,5 @@
     };
   };
 
-  outputs = inputs@{ flake-modules, ... }:
-    flake-modules.lib.evalFlake ./. inputs;
+  outputs = inputs@{ flake-modules, ... }: flake-modules.lib.evalFlake ./. inputs;
 }

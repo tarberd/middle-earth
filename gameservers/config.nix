@@ -1,31 +1,30 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   super,
   ...
 }:
-createFlakeModule (
-{
-  lib,
-  ...
-}:
-let
-  instances = super.instances;
-in
-{
-  terraform.required_providers.incus = {
-    source = "lxc/incus";
-    version = ">= 0.1.0";
-  };
+mkFlakeModule { } (
+  {
+    lib,
+    ...
+  }:
+  let
+    instances = super.instances;
+  in
+  {
+    terraform.required_providers.incus = {
+      source = "lxc/incus";
+      version = ">= 0.1.0";
+    };
 
-  provider.incus = { };
+    provider.incus = { };
 
-  resource.incus_instance = lib.mapAttrs (name: cfg: {
-    inherit name;
-    image = cfg.image or "images:archlinux/cloud";
-    running = true;
+    resource.incus_instance = lib.mapAttrs (name: cfg: {
+      inherit name;
+      image = cfg.image or "images:archlinux/cloud";
+      running = true;
 
-    config =
-      {
+      config = {
         "boot.autostart" = toString (cfg.autostart or true);
         "user.network-config" = ''
           version: 2
@@ -52,32 +51,34 @@ in
       // (lib.optionalAttrs (cfg ? memory) { "limits.memory" = cfg.memory; })
       // (cfg.extraConfig or { });
 
-    device = [
-      {
-        name = "root";
-        type = "disk";
-        properties = {
-          path = "/";
-          pool = cfg.storagePool or "servers";
-        };
-      }
-      {
-        name = "eth0";
-        type = "nic";
-        properties = {
-          nictype = "bridged";
-          parent = cfg.parentBridge or "br-public-hosts";
-        };
-      }
-      {
-        name = "saves";
-        type = "disk";
-        properties = {
-          source = "/data/depot/games/saves/${name}";
-          path = cfg.savesPath or "/data";
-          shift = "true";
-        };
-      }
-    ] ++ (cfg.extraDevices or [ ]);
-  }) instances;
-})
+      device = [
+        {
+          name = "root";
+          type = "disk";
+          properties = {
+            path = "/";
+            pool = cfg.storagePool or "servers";
+          };
+        }
+        {
+          name = "eth0";
+          type = "nic";
+          properties = {
+            nictype = "bridged";
+            parent = cfg.parentBridge or "br-public-hosts";
+          };
+        }
+        {
+          name = "saves";
+          type = "disk";
+          properties = {
+            source = "/data/depot/games/saves/${name}";
+            path = cfg.savesPath or "/data";
+            shift = "true";
+          };
+        }
+      ]
+      ++ (cfg.extraDevices or [ ]);
+    }) instances;
+  }
+)

@@ -1,15 +1,13 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   disko,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      lib,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    lib,
+    ...
+  }:
   {
     imports = [ disko.nixosModules.disko ];
 
@@ -41,7 +39,10 @@ createFlakeModule (
               size = "100%";
               content = {
                 type = "btrfs";
-                extraArgs = [ "-f" "-O block-group-tree" ];
+                extraArgs = [
+                  "-f"
+                  "-O block-group-tree"
+                ];
                 subvolumes = {
                   "@root" = {
                     mountpoint = "/";
@@ -49,7 +50,10 @@ createFlakeModule (
                   };
                   "@nix" = {
                     mountpoint = "/nix";
-                    mountOptions = [ "compress=zstd" "noatime"];
+                    mountOptions = [
+                      "compress=zstd"
+                      "noatime"
+                    ];
                   };
                   "@home" = {
                     mountpoint = "/home";
@@ -73,8 +77,12 @@ createFlakeModule (
     fileSystems."/data" = {
       device = "/dev/disk/by-label/stanley-data";
       fsType = "btrfs";
-      options = [ "subvol=@" "compress=zstd" "discard=async" "nofail" ];
+      options = [
+        "subvol=@"
+        "compress=zstd"
+        "discard=async"
+        "nofail"
+      ];
     };
   }
-  )
 )

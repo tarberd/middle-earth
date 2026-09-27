@@ -1,5 +1,5 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   flake,
   nixos-artifacts-agenix,
   ...
@@ -7,7 +7,7 @@
 let
   onehostApps = flake.middle-earth.hosts.gandalf.virtualization.onehost.apps;
 in
-createFlakeModule {
+mkFlakeModule { } {
   x86_64-linux = {
     artifacts = {
       type = "app";

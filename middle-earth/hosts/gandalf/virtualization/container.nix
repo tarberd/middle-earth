@@ -1,14 +1,12 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   ...
 }:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      ...
-    }:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    ...
+  }:
   {
     virtualisation.incus = {
       enable = true;
@@ -76,5 +74,4 @@ createFlakeModule (
       opentofu
     ];
   }
-  )
 )

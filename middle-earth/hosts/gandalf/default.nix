@@ -1,15 +1,16 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-mod "hardware-configuration"
-mod "storage"
-mod "network"
-mod "backup"
-
-pub mod "configuration"
-pub mod "virtualization"
-
-createFlakeModule {}
+mkFlakeModule {
+  public = [
+    ./configuration.nix
+    ./virtualization
+  ];
+  private = [
+    ./hardware-configuration.nix
+    ./storage.nix
+    ./network.nix
+    ./backup.nix
+  ];
+} { }

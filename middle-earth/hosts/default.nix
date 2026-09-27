@@ -1,10 +1,10 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-pub mod "gandalf"
-pub mod "sauron"
-
-createFlakeModule {}
+mkFlakeModule {
+  public = [
+    ./gandalf
+    ./sauron
+  ];
+} { }

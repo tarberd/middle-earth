@@ -1,5 +1,5 @@
 {
-  createFlakeModule,
+  mkFlakeModule,
   flake,
   nixpkgs,
   nixos-artifacts,
@@ -9,8 +9,9 @@
 let
   inherit (nixpkgs) lib;
 in
-createFlakeModule (builtins.mapAttrs (
-  hostName: host:
+mkFlakeModule { } (
+  builtins.mapAttrs (
+    hostName: host:
     lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
@@ -30,4 +31,5 @@ createFlakeModule (builtins.mapAttrs (
         host.configuration
       ];
     }
-) flake.middle-earth.hosts)
+  ) flake.middle-earth.hosts
+)

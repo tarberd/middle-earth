@@ -1,16 +1,14 @@
 {
-  createFlakeModule,
-  declareNixosModule,
+  mkFlakeModule,
   super,
   antigravity-nix,
   ...
-} @ inputs:
-createFlakeModule (
-  declareNixosModule (
-    {
-      pkgs,
-      ...
-    }:
+}@inputs:
+mkFlakeModule.withNixosModule { } (
+  {
+    pkgs,
+    ...
+  }:
   {
     system.stateVersion = "26.05";
 
@@ -28,7 +26,10 @@ createFlakeModule (
     boot.kernelPackages = pkgs.linuxPackages_latest;
     boot.initrd.kernelModules = [ "xe" ];
 
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    nix.settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
     nix.settings.auto-optimise-store = true;
     nix.gc = {
       automatic = true;
@@ -46,7 +47,11 @@ createFlakeModule (
 
     middle-earth.roles = {
       admin = [ "wheel" ];
-      desktop = [ "audio" "video" "networkmanager" ];
+      desktop = [
+        "audio"
+        "video"
+        "networkmanager"
+      ];
     };
     security.sudo.wheelNeedsPassword = false;
 
@@ -127,5 +132,4 @@ createFlakeModule (
 
     nix.nixPath = [ "nixpkgs=${inputs.nixpkgs}" ];
   }
-  )
 )

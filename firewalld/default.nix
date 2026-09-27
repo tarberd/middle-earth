@@ -1,9 +1,5 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-pub mod "firewalld-policies"
-
-createFlakeModule {}
+mkFlakeModule { public = [ ./firewalld-policies.nix ]; } { }

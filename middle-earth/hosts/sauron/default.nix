@@ -1,10 +1,8 @@
 {
-  createFlakeModule,
-  pub,
-  mod,
+  mkFlakeModule,
   ...
 }:
-mod "disko-config"
-pub mod "configuration"
-
-createFlakeModule {}
+mkFlakeModule {
+  public = [ ./configuration.nix ];
+  private = [ ./disko-config.nix ];
+} { }
