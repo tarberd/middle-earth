@@ -870,7 +870,7 @@ let
       os = builtins.elemAt parts 0;
       verKey = builtins.elemAt parts 1;
       profile = builtins.elemAt parts 2;
-      revision = builtins.elemAt parts 3;
+      revision = if builtins.length parts > 3 then builtins.elemAt parts 3 else "latest";
       v = windowsVersions.resolveVersion verKey;
       uuidShort = builtins.substring 0 8 v.uupId;
       tagKey = "${os}-${verKey}-${uuidShort}-${profile}-${revision}";

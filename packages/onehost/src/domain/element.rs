@@ -328,12 +328,12 @@ impl DomainXmlElement {
                         details: utf8_error.to_string(),
                     })?
                     .to_string();
-                let value = std::str::from_utf8(attribute.value.as_ref())
-                    .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
-                        field_name: "attribute value".to_string(),
-                        details: utf8_error.to_string(),
+                let value = attribute
+                    .unescape_value()
+                    .map_err(|unescape_error| DomainXmlParseError::TextUnescapeError {
+                        message: unescape_error.to_string(),
                     })?
-                    .to_string();
+                    .into_owned();
                 Ok((key, value))
             })
             .collect::<Result<std::collections::BTreeMap<_, _>, DomainXmlParseError>>()

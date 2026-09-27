@@ -3,7 +3,7 @@
 ## Session: 2026-09-24
 
 ### Current Status
-- **Phase:** Phase 14: Stage 9 - Image Builder Pipeline & CLI Wiring (Complete)
+- **Phase:** Phase 15: Stage 10 - Nix Flake Derivation, Module, and App Integration (Complete)
 - **Started:** 2026-09-24
 
 ### Actions Taken
@@ -390,6 +390,13 @@
 | Phase 14 Full Test Suite (cargo test --all-targets) | 140 unit/integration tests pass cleanly | 140 passed, 0 failed, 0 warnings | PASS |
 | Phase 14 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 | Phase 14 Nix Flake Build (packages.x86_64-linux.onehost) | Hermetic build and checkPhase succeed | Successfully built via Nix | PASS |
+| Phase 15 Manifest Derivation Build (onehost-manifest) | Generates onehost.json, templates, OEMDRV ISOs | Successfully built via Nix | PASS |
+| Phase 15 Wrapped Package Build (packages.x86_64-linux.onehost) | Wrapped with libvirt, qemu_kvm, swtpm | Successfully built via Nix | PASS |
+| Phase 15 Flake App Evaluation (nix flake show) | All 7 onehost apps evaluate cleanly | Successfully evaluated | PASS |
+| Phase 15 Live Reconciliation (nix run .#onehost-plan) | Validates live state and detects drift | Executed cleanly on Gandalf | PASS |
+| Phase 15 Live Status Report (nix run .#onehost-status) | Formats and outputs live instance table | Executed cleanly on Gandalf | PASS |
+| Phase 15 Full Test Suite (cargo test --all-targets) | 140 unit/integration tests pass cleanly | 140 passed, 0 failed, 0 warnings | PASS |
+| Phase 15 Clippy Audit | Zero linter warnings with -D warnings | 0 warnings | PASS |
 
 ### Errors
 | Error | Resolution |
@@ -406,6 +413,8 @@
 | Destination parent directory missing during real `qemu-img convert` thin backup | Added `std::fs::create_dir_all` for destination parents in `QemuImgStorage` (`create_cow_overlay`, `convert_thin_backup`, `restore_thin_backup`) |
 | std::fs call in planner.rs | Replaced `std::fs::read_to_string` with `self.storage.read_file`, preserving Shell Trait Boundary Invariant |
 | Clippy unnecessary_map_or in cli.rs | Replaced `filter_instance.map_or(true, ...)` with `filter_instance.is_none_or(...)` |
+| XML attribute unescape gap in DomainXmlElement | Used `attribute.unescape_value()?` instead of raw UTF-8 bytes to properly normalize entities like `&apos;` |
+| 3-segment image tag in legacy provisionInstance | Handled list length before indexing revision to avoid out-of-bounds error |
 
 
 

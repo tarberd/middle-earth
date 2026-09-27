@@ -181,7 +181,7 @@ createFlakeModule (
       serviceConfig = {
         Type = "oneshot";
         User = "root";
-        ExecStart = "${flake.middle-earth.hosts.gandalf.virtualization.images.windows.backupApp}/bin/backup-windows-vm all";
+        ExecStart = "${flake.middle-earth.hosts.gandalf.virtualization.onehost.apps.backup}/bin/onehost-backup all";
       };
     };
 
