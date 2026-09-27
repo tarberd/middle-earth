@@ -23,9 +23,9 @@ let
 
   mkAutounattendXml =
     {
-      edition ? "professional",
-      language ? "en-us",
-      computerName ? "WIN11-VM",
+      edition,
+      language,
+      computerName,
     }:
     let
       cleanEdition = lib.toLower edition;
@@ -225,12 +225,10 @@ let
       </unattend>
     '';
 
-  autounattendXml = mkAutounattendXml { };
-
   mkSysprepXml =
     {
-      language ? "en-us",
-      computerName ? "WIN11-VM",
+      language,
+      computerName,
     }:
     let
       langTag = normalizeLang language;
@@ -466,7 +464,6 @@ in
 createFlakeModule {
   inherit
     mkAutounattendXml
-    autounattendXml
     mkSysprepXml
     provisionPs1
     errorHandlerCmd

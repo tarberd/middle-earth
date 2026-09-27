@@ -130,10 +130,10 @@ createFlakeModule (
         pools = [
           {
             definition = nixvirt.lib.pool.writeXML {
-              name = "default";
+              name = "onehost";
               uuid = "8d1a7ca5-cd4a-4103-b488-c5f210552d33";
               type = "dir";
-              target = { path = "/var/lib/libvirt/images"; };
+              target = { path = "/var/lib/onehost/images"; };
             };
             active = true;
           }
@@ -170,11 +170,6 @@ createFlakeModule (
         '';
       };
     };
-
-    systemd.tmpfiles.rules = [
-      "d /var/lib/libvirt/images 0775 root libvirtd -"
-      "d /var/lib/libvirt/qemu/nvram 0775 root libvirtd -"
-    ];
 
     systemd.services.libvirt-backup-vms = {
       description = "Nightly staging backup for Libvirt KVM Windows VMs";

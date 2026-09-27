@@ -22,9 +22,9 @@ let
   mkOemdrv =
     {
       flavor,
-      autounattend ? windows.autounattendXml,
-      sysprep ? windows.mkSysprepXml { },
-      extraFiles ? { },
+      autounattend,
+      sysprep,
+      extraFiles,
     }:
     pkgs.runCommand "oemdrv-${flavor}.iso" {
       nativeBuildInputs = [ pkgs.cdrtools ];
@@ -45,26 +45,47 @@ let
     '';
 
   oemdrvFlavors = {
-    looking-glass = mkOemdrv {
-      flavor = "looking-glass";
+    looking-glass-en = mkOemdrv {
+      flavor = "looking-glass-en";
+      autounattend = windows.mkAutounattendXml {
+        edition = "professional";
+        language = "en-us";
+        computerName = "WIN11-VM";
+      };
+      sysprep = windows.mkSysprepXml {
+        language = "ja-jp";
+        computerName = "WIN11-VM";
+      };
       extraFiles = {
         "looking-glass-host.zip" = lookingGlassHostZip;
       };
     };
-    minimal = mkOemdrv {
-      flavor = "minimal";
+    looking-glass-jp = mkOemdrv {
+      flavor = "looking-glass-jp";
+      autounattend = windows.mkAutounattendXml {
+        edition = "professional";
+        language = "ja-jp";
+        computerName = "WIN11-VM";
+      };
+      sysprep = windows.mkSysprepXml {
+        language = "ja-jp";
+        computerName = "WIN11-VM";
+      };
+      extraFiles = {
+        "looking-glass-host.zip" = lookingGlassHostZip;
+      };
     };
   };
 
-  mkDomainTemplateXml =
+  mkDomainVFIOTemplateXml =
     {
       name,
       uuid,
       mac,
-      kvmfrDev ? null,
-      vfFunction ? null,
-      memory ? 16777216,
-      cpus ? 16,
+      kvmfrDev,
+      vfFunction,
+      memory,
+      cpus,
     }:
     pkgs.writeText "${name}-domain-template.xml" ''
       <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0' xmlns:onehost='https://middle-earth.internal/onehost'>
@@ -269,20 +290,20 @@ let
 
   templateXmls = lib.mapAttrs (
     name: cfg:
-    mkDomainTemplateXml {
+    mkDomainVFIOTemplateXml {
       inherit name;
       inherit (cfg)
         uuid
         mac
+        kvmfrDev
+        vfFunction
+        memory
+        cpus
         ;
-      kvmfrDev = cfg.kvmfrDev or null;
-      vfFunction = cfg.vfFunction or null;
-      memory = cfg.memory or 16777216;
-      cpus = cfg.cpus or 16;
     }
   ) instances;
 
-  manifestJson = pkgs.writeText "onehost.json" (builtins.toJSON {
+  manifest = {
     "$schema" = "https://middle-earth.internal/schemas/onehost.v1.json";
     version = "1.0";
     storage = {
@@ -292,24 +313,22 @@ let
       nvram_dir = "/var/lib/libvirt/qemu/nvram";
       nvram_template = "/run/libvirt/nix-ovmf/edk2-i386-vars.fd";
       ovmf_code = "/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd";
-      default_pool = "default";
     };
     flavors = lib.mapAttrs (_name: oemdrv: {
       oemdrv_path = "${oemdrv}";
-      hash = builtins.substring 0 8 (builtins.baseNameOf oemdrv);
+      hash = builtins.substring 0 8 (baseNameOf oemdrv);
     }) oemdrvFlavors;
     instances = lib.mapAttrs (name: cfg: {
       uuid = cfg.uuid;
       template_xml = "${templateXmls.${name}}";
       image = cfg.image;
-      pool = cfg.pool or "default";
-      autostart = cfg.autostart or false;
-      lifecycle = {
-        on_image_change = cfg.lifecycle.on_image_change or "protect";
-        prevent_destroy = cfg.lifecycle.prevent_destroy or false;
-      };
+      pool = cfg.pool;
+      autostart = cfg.autostart;
+      lifecycle = cfg.lifecycle;
     }) instances;
-  });
+  };
+
+  manifestJson = pkgs.writeText "onehost.json" (builtins.toJSON manifest);
 
   makeOnehostApp =
     name: cmd:
@@ -361,7 +380,7 @@ createFlakeModule {
     templateXmls
     oemdrvFlavors
     mkOemdrv
-    mkDomainTemplateXml
+    mkDomainVFIOTemplateXml
     ;
   apps = {
     plan = makeOnehostApp "onehost-plan" "plan";
