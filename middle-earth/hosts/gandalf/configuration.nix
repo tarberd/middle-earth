@@ -112,6 +112,11 @@ createFlakeModule (
       python3
       pipx
       nixd
+      nixfmt
+      cargo
+      rustc
+      rust-analyzer
+      rustfmt
       polkit
       polkit_gnome
       antigravity-nix.packages.x86_64-linux.default # Base App
