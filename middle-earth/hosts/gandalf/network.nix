@@ -142,13 +142,20 @@ mkFlakeModule.withNixosModule { } (
     services.firewalld = {
       enable = true;
 
+      settings = {
+        DefaultZone = "home";
+      };
+
       zones = {
-        public = {
+        home = {
           interfaces = [
             "eth0"
             "eth1"
           ];
-          services = [ ];
+          services = [
+            "mdns"
+            "ssh"
+          ];
           protocols = [
             "icmp"
             "ipv6-icmp"
@@ -166,19 +173,19 @@ mkFlakeModule.withNixosModule { } (
       };
 
       policies = {
-        public-to-trusted = {
+        home-to-trusted = {
           target = "CONTINUE";
-          ingressZones = [ "public" ];
+          ingressZones = [ "home" ];
           egressZones = [ "trusted" ];
           protocols = [
             "icmp"
             "ipv6-icmp"
           ];
         };
-        trusted-to-public = {
+        trusted-to-home = {
           target = "ACCEPT";
           ingressZones = [ "trusted" ];
-          egressZones = [ "public" ];
+          egressZones = [ "home" ];
         };
       };
     };

@@ -2,6 +2,9 @@
   description = "tarberd's configuration flake";
 
   inputs = {
+    flake-modules = {
+      url = "github:tarberd/flake-modules";
+    };
     nixpkgs = {
       url = "github:nixos/nixpkgs?ref=nixos-unstable";
     };
@@ -17,24 +20,21 @@
       url = "github:mrVanDalo/nixos-artifacts-agenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixvirt = {
-      url = "https://flakehub.com/f/AshleyYakeley/NixVirt/*.tar.gz";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    antigravity-nix = {
-      url = "github:jacopone/antigravity-nix";
+    nixvirt = {
+      url = "https://flakehub.com/f/AshleyYakeley/NixVirt/*.tar.gz";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     terranix = {
       url = "github:terranix/terranix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-modules = {
-      url = "github:tarberd/flake-modules";
+    antigravity-nix = {
+      url = "github:jacopone/antigravity-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 

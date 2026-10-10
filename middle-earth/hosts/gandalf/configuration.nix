@@ -51,11 +51,54 @@ mkFlakeModule.withNixosModule { } (
         "audio"
         "video"
         "networkmanager"
+        "lp"
+        "scanner"
       ];
     };
     security.sudo.wheelNeedsPassword = false;
 
-    services.printing.enable = true;
+    services.printing = {
+      enable = true;
+      drivers = [ pkgs.epson-escpr2 ];
+      browsed.enable = true;
+    };
+
+    services.avahi = {
+      enable = true;
+      nssmdns4 = true;
+      reflector = true;
+      allowInterfaces = [
+        "eth0"
+        "eth1"
+        "virbr0"
+      ];
+    };
+
+    hardware.sane = {
+      enable = true;
+      extraBackends = [
+        pkgs.sane-airscan
+        pkgs.epsonscan2
+      ];
+    };
+
+    hardware.printers = {
+      ensurePrinters = [
+        {
+          name = "EPSON_EP-8550";
+          location = "Local Network";
+          description = "Epson EcoTank EP-8550 / ET-8550";
+          deviceUri = "ipp://EPSON5CA9BE.local:631/ipp/print";
+          model = "everywhere";
+        }
+      ];
+      ensureDefaultPrinter = "EPSON_EP-8550";
+    };
+
+    environment.etc."sane.d/airscan.conf".text = ''
+      [devices]
+      "EPSON EP-8550" = https://EPSON5CA9BE.local:443/eSCL/
+    '';
 
     services.openssh = {
       enable = true;
