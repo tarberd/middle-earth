@@ -38,7 +38,14 @@ mkFlakeModule.withNixosModule { } (
     };
 
     time.timeZone = "Europe/Amsterdam";
-    i18n.defaultLocale = "en_US.UTF-8";
+
+    i18n = {
+      defaultLocale = "en_US.UTF-8";
+      extraLocales = [ "pt_BR.UTF-8/UTF-8" ];
+      extraLocaleSettings = {
+        LC_CTYPE = "pt_BR.UTF-8";
+      };
+    };
 
     console = {
       font = "Lat2-Terminus16";
