@@ -17,7 +17,7 @@ mkFlakeModule.withNixosModule
     }:
     {
       options = {
-        middle-earth.users.linkConfigs = lib.mkEnableOption "declarative dotfile linking via Home Manager";
+        middle-earth.users.unlinkedConfigs = lib.mkEnableOption "declarative dotfile linking via Home Manager";
 
         # 1. Hosts declare which system groups each role receives on this machine
         middle-earth.roles = lib.mkOption {

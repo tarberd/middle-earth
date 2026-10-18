@@ -22,8 +22,8 @@ mkFlakeModule { } (
           home-manager.useUserPackages = true;
         }
         {
-          specialisation.linked.configuration = {
-            middle-earth.users.linkConfigs = lib.mkForce true;
+          specialisation.unlinked.configuration = {
+            middle-earth.users.unlinkedConfigs = lib.mkForce true;
           };
         }
         flake.middle-earth.users.root

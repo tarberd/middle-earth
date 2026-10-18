@@ -51,7 +51,7 @@ mkFlakeModule.withNixosModule { } (
           code2prompt
         ];
 
-        file = lib.mkIf config.middle-earth.users.linkConfigs (
+        file = lib.mkIf (!config.middle-earth.users.unlinkedConfigs) (
           flake.dotman2nix.parseDotmanProfile dotmanProfilePath
         );
       };
