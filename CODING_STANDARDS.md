@@ -8,7 +8,7 @@ See [ADR-0010 (Functional Rust Idioms and Pure Core Architecture)](docs/adr/0010
 
 ### 1. Pure Core / Imperative Shell
 - **Stateless Domain Logic**: Planners, parsers, and XML AST transformations must be pure, deterministic functions that take immutable inputs and return plain data structures.
-- **Isolate Side Effects**: All I/O, hypervisor calls, storage manipulations, and child processes must sit behind mockable traits (`Hypervisor`, `StorageManager`, `ProcessRunner`) in the lifecycle applier or CLI boundary.
+- **Isolate Side Effects**: All side effects must sit at the boundary: hypervisor interactions sit behind the `Hypervisor` boundary port (implemented by `VirshHypervisor` in production and an in-memory `FakeHypervisor` in tests), while disk and image manipulations directly utilize the local-substitutable `QemuImgStorage` toolchain against temporary directories, avoiding mockable traits and interaction-recording spies.
 - **Canonical Exemplar**: See [`packages/onehost/src/lifecycle/planner.rs`](packages/onehost/src/lifecycle/planner.rs) (`DomainLifecyclePlanner`) and [`packages/onehost/src/domain/element.rs`](packages/onehost/src/domain/element.rs) (`DomainXmlElement`).
 
 ### 2. Immutability & Functional Combinators

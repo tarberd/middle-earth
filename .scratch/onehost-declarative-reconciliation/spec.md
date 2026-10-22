@@ -87,9 +87,9 @@ Tests must evaluate observable external system behavior and contracts, not inter
 
 ### Testing Seams
 
-#### Seam 1: Real-Tool Storage & Process Seam (`QemuImgStorage` + Real Filesystem + `virt-xml-validate`)
+#### Seam 1: Real-Tool Storage Seam (`QemuImgStorage` + Real Filesystem + `virt-xml-validate`)
 - **Seam Location**: The boundary between `onehost` and host system tools.
-- **Components Tested**: `QemuImgStorage`, `ProcessRunner`, and filesystem I/O on a real temporary directory (`tempdir`).
+- **Components Tested**: `QemuImgStorage` and filesystem I/O on an ephemeral temporary directory (`tempdir`).
 - **Real-World Behaviors Validated**:
   - Real `qemu-img create -F qcow2 -b ...` backing chains and copy-on-write overlay allocation.
   - Real `qemu-img info` JSON parsing, backing file verification, and virtual/actual size queries.
@@ -97,15 +97,15 @@ Tests must evaluate observable external system behavior and contracts, not inter
   - Real advisory host process locking (`flock`) on `$XDG_STATE_HOME/onehost/onehost.lock`.
   - Real XML schema validation via `virt-xml-validate` against official Libvirt RNG schemas.
 
-#### Seam 2: Real Libvirt Integration Seam (`VirshHypervisor` on `test:///default`)
+#### Seam 2: Libvirt Hypervisor Boundary Port (`FakeHypervisor` State Adapter)
 - **Seam Location**: The boundary between `onehost` and Libvirt hypervisor daemon.
-- **Components Tested**: `VirshHypervisor` executing real `virsh` commands against Libvirt's hermetic test driver (`virsh -c test:///default`).
-- **Real-World Behaviors Validated**:
+- **Components Tested**: `DomainLifecycleApplier`, `DomainLifecycleDestroyer`, and `DomainLifecyclePlanner` operating against an in-memory `FakeHypervisor` test double (`tests/common/fake_hypervisor.rs`). (Note: Libvirt's `test:///default` driver is unviable as it is ephemeral across individual CLI processes and rejects Windows KVM XML topologies).
+- **Observable State Behaviors Validated**:
   - Real domain definitions with embedded `<metadata><onehost:instance managed="true"/></metadata>` blocks.
-  - Real hypervisor domain enumeration (`virsh list --all`), state queries (`virsh dominfo`), and XML dumping (`virsh dumpxml`).
-  - Real stateless orphan discovery: detecting domains carrying onehost metadata that are missing from the current manifest.
-  - Real domain deprovisioning (`virsh undefine --nvram`).
-  - Strict hypervisor quiescence rejection when a domain is in an active state.
+  - Domain enumeration, state queries, and XML retrieval via observable state (no interaction spies).
+  - Stateless orphan discovery: identifying domains with `<onehost:instance>` metadata missing from the manifest.
+  - Complete domain deprovisioning (`undefine` with NVRAM cleanup and overlay unlinking).
+  - Strict hypervisor quiescence rejection when any managed domain is running or paused.
 
 ### Scenarios Covered
 1. **End-to-End Image & Instance Creation**: Manifest with an unbuilt base image plans both an image build action and instance creation; apply builds the image, creates real qcow2 backing chains, and defines the domain in Libvirt with metadata.
