@@ -11,17 +11,17 @@ use crate::hypervisor::traits::{
     BlockDeviceInfo, DiskSnapshotSpecification, DomainState, Hypervisor,
 };
 use crate::image::tag::ContentAddressedImageResolver;
-use crate::storage::traits::{StorageError, StorageManager};
+use crate::storage::{QemuImgStorage, StorageError};
 
 /// Engine orchestrating online and offline thin backup workflows.
-pub struct BackupEngine<'a, H: Hypervisor, S: StorageManager> {
+pub struct BackupEngine<'a, H: Hypervisor> {
     pub hypervisor: &'a H,
-    pub storage: &'a S,
+    pub storage: &'a QemuImgStorage,
 }
 
-impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
+impl<'a, H: Hypervisor> BackupEngine<'a, H> {
     /// Creates a new BackupEngine.
-    pub fn new(hypervisor: &'a H, storage: &'a S) -> Self {
+    pub fn new(hypervisor: &'a H, storage: &'a QemuImgStorage) -> Self {
         Self {
             hypervisor,
             storage,

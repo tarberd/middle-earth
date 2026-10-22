@@ -10,7 +10,7 @@ use crate::image::tag::{
 use serde::{Deserialize, Serialize};
 
 use crate::lifecycle::LifecycleError;
-use crate::storage::traits::{StorageError, StorageManager};
+use crate::storage::{QemuImgStorage, StorageError};
 
 /// Alert describing a dangling snapshot from an interrupted backup that needs recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,15 +92,15 @@ pub struct OnehostPlan {
 pub type TemplateResolver = Box<dyn Fn(&Path) -> Result<String, LifecycleError> + Send + Sync>;
 
 /// Pure, stateless planner calculating actions needed to reconcile manifest into reality.
-pub struct DomainLifecyclePlanner<'a, H: Hypervisor, S: StorageManager> {
+pub struct DomainLifecyclePlanner<'a, H: Hypervisor> {
     pub hypervisor: &'a H,
-    pub storage: &'a S,
+    pub storage: &'a QemuImgStorage,
     pub template_resolver: Option<TemplateResolver>,
 }
 
-impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
+impl<'a, H: Hypervisor> DomainLifecyclePlanner<'a, H> {
     /// Creates a new DomainLifecyclePlanner.
-    pub fn new(hypervisor: &'a H, storage: &'a S) -> Self {
+    pub fn new(hypervisor: &'a H, storage: &'a QemuImgStorage) -> Self {
         Self {
             hypervisor,
             storage,

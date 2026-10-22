@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::config::validation::ManifestValidationError;
 use crate::domain::element::DomainXmlParseError;
 use crate::hypervisor::traits::{DomainState, HypervisorError};
-use crate::storage::traits::StorageError;
+use crate::storage::StorageError;
 
 pub use engine::BackupEngine;
 pub use guard::{ActiveSnapshotInfo, SnapshotCleanupGuard};

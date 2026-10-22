@@ -7,7 +7,7 @@ use crate::image::tag::{
     ImageTagParseError, ImageTagSpecification,
 };
 use crate::process::traits::{ProcessError, ProcessRunner};
-use crate::storage::traits::{StorageError, StorageManager};
+use crate::storage::{QemuImgStorage, StorageError};
 
 /// Configuration options controlling the image build process.
 #[derive(Debug, Clone)]
@@ -88,15 +88,15 @@ pub enum ImageBuilderError {
 
 /// RAII scope guard ensuring ephemeral scratch build artifacts and temporary staging files
 /// are cleaned up on failure, error, or panic.
-struct BuildScratchGuard<'a, S: StorageManager> {
-    storage: &'a S,
+struct BuildScratchGuard<'a> {
+    storage: &'a QemuImgStorage,
     scratch_disk_path: PathBuf,
     temporary_master_path: Option<PathBuf>,
     armed: bool,
 }
 
-impl<'a, S: StorageManager> BuildScratchGuard<'a, S> {
-    fn new(storage: &'a S, scratch_disk_path: PathBuf) -> Self {
+impl<'a> BuildScratchGuard<'a> {
+    fn new(storage: &'a QemuImgStorage, scratch_disk_path: PathBuf) -> Self {
         Self {
             storage,
             scratch_disk_path,
@@ -114,7 +114,7 @@ impl<'a, S: StorageManager> BuildScratchGuard<'a, S> {
     }
 }
 
-impl<'a, S: StorageManager> Drop for BuildScratchGuard<'a, S> {
+impl<'a> Drop for BuildScratchGuard<'a> {
     fn drop(&mut self) {
         if self.armed {
             if let Some(ref temporary_master) = self.temporary_master_path
@@ -139,14 +139,14 @@ impl<'a, S: StorageManager> Drop for BuildScratchGuard<'a, S> {
 }
 
 /// Orchestrates unattended installation of Windows golden master images using headless QEMU, swtpm, and OEMDRV media.
-pub struct ImageBuilder<'a, S: StorageManager, P: ProcessRunner> {
-    pub storage: &'a S,
+pub struct ImageBuilder<'a, P: ProcessRunner> {
+    pub storage: &'a QemuImgStorage,
     pub runner: &'a P,
 }
 
-impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
+impl<'a, P: ProcessRunner> ImageBuilder<'a, P> {
     /// Creates a new ImageBuilder instance.
-    pub fn new(storage: &'a S, runner: &'a P) -> Self {
+    pub fn new(storage: &'a QemuImgStorage, runner: &'a P) -> Self {
         Self { storage, runner }
     }
 
@@ -200,6 +200,12 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
                 available_flavors: manifest.flavors.keys().cloned().collect(),
             }
         })?;
+
+        if !flavor_config.oemdrv_path.exists() {
+            return Err(ImageBuilderError::OemdrvNotFound {
+                path: flavor_config.oemdrv_path.clone(),
+            });
+        }
 
         let content_hash = self
             .storage

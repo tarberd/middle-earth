@@ -5,17 +5,17 @@ use crate::backup::model::{BackupManifest, RestoreOptions};
 use crate::config::model::OnehostManifest;
 use crate::domain::element::DomainXmlElement;
 use crate::hypervisor::traits::Hypervisor;
-use crate::storage::traits::StorageManager;
+use crate::storage::QemuImgStorage;
 
 /// Engine orchestrating single-command disaster recovery and instance restoration from backups.
-pub struct RestoreEngine<'a, H: Hypervisor, S: StorageManager> {
+pub struct RestoreEngine<'a, H: Hypervisor> {
     pub hypervisor: &'a H,
-    pub storage: &'a S,
+    pub storage: &'a QemuImgStorage,
 }
 
-impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
+impl<'a, H: Hypervisor> RestoreEngine<'a, H> {
     /// Creates a new RestoreEngine.
-    pub fn new(hypervisor: &'a H, storage: &'a S) -> Self {
+    pub fn new(hypervisor: &'a H, storage: &'a QemuImgStorage) -> Self {
         Self {
             hypervisor,
             storage,

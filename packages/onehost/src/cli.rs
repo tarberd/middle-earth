@@ -20,7 +20,7 @@ use crate::lifecycle::{
     DomainLifecyclePlanner, InstancePlanAction, LifecycleError, OnehostPlan,
 };
 use crate::process::traits::{ProcessError, ProcessRunner};
-use crate::storage::traits::{StorageError, StorageManager};
+use crate::storage::{QemuImgStorage, StorageError};
 use crate::xdg::XdgBaseDirectories;
 
 /// Command-line interface definition for the onehost tool.
@@ -357,10 +357,10 @@ pub fn format_plan_human_readable(plan: &OnehostPlan) -> String {
 }
 
 /// Collects live status reports across all instances declared in the manifest.
-pub fn collect_status_reports<H: Hypervisor, S: StorageManager>(
+pub fn collect_status_reports<H: Hypervisor>(
     manifest: &OnehostManifest,
     hypervisor: &H,
-    storage: &S,
+    storage: &QemuImgStorage,
     filter_instance: Option<&str>,
 ) -> Result<Vec<InstanceStatusReport>, CliError> {
     manifest
@@ -459,10 +459,10 @@ pub fn format_status_table(reports: &[InstanceStatusReport]) -> String {
 }
 
 /// Dispatches a parsed CLI command to the appropriate imperative lifecycle shell.
-pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
+pub fn dispatch<H: Hypervisor, P: ProcessRunner, W: Write>(
     cli: Cli,
     hypervisor: &H,
-    storage: &S,
+    storage: &QemuImgStorage,
     runner: &P,
     output: &mut W,
 ) -> Result<i32, CliError> {

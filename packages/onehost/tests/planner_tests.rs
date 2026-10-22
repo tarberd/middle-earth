@@ -1,40 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
-use onehost::config::loader::ManifestLoader;
+use onehost::config::model::{
+    FlavorConfiguration, InstanceConfiguration, OnehostManifest, StorageDirectoriesConfiguration,
+};
 use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{BlockDeviceInfo, DomainInfo, DomainState};
 use onehost::image::tag::FlavorResolutionError;
 use onehost::lifecycle::{
     DanglingSnapshotAlert, DomainLifecyclePlanner, InstancePlanAction, LifecycleError,
 };
-use onehost::storage::mock::{MockImageRecord, MockStorageManager};
-
-const SAMPLE_MANIFEST_JSON: &str = r#"{
-  "$schema": "https://middle-earth.internal/schemas/onehost.v1.json",
-  "version": "1.0",
-  "storage": {
-    "depot_store_dir": "/data/depot/virtualization/libvirt/store",
-    "depot_iso_dir": "/data/depot/virtualization/libvirt/iso",
-    "depot_backup_dir": "/data/depot/virtualization/libvirt/backup",
-    "nvram_dir": "/var/lib/libvirt/qemu/nvram",
-    "nvram_template": "/run/libvirt/nix-ovmf/edk2-i386-vars.fd",
-    "ovmf_code": "/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd"
-  },
-  "flavors": {
-    "looking-glass": {
-      "oemdrv_path": "/nix/store/ba6eafb712345678-oemdrv-looking-glass",
-      "extra_isos": {}
-    }
-  },
-  "instances": {
-    "win11-gollum": {
-      "uuid": "e5a7d620-8931-4bf6-98ec-7e44a30e8c45",
-      "template_xml": "/nix/store/7q8w9e12345678-win11-template.xml",
-      "image": "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
-      "pool": "default"
-    }
-  }
-}"#;
+use onehost::storage::QemuImgStorage;
 
 const SAMPLE_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
   <name>TEMPLATE-PLACEHOLDER</name>
@@ -53,43 +29,118 @@ const SAMPLE_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https://m
   </devices>
 </domain>"#;
 
-const DEFAULT_POOL_XML: &str = r#"<pool type='dir'>
-  <name>default</name>
-  <target>
-    <path>/var/lib/libvirt/images</path>
-  </target>
-</pool>"#;
-
-const BULK_DATA_POOL_XML: &str = r#"<pool type='dir'>
-  <name>bulk-data</name>
-  <target>
-    <path>/data/kvm/images</path>
-  </target>
-</pool>"#;
-
-const TEST_CONTENT_HASH: &str = "ba6eafb71234";
-
-fn create_test_manifest() -> onehost::config::model::OnehostManifest {
-    ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("should succeed")
+pub struct PlannerTestFixture {
+    pub temporary_directory: tempfile::TempDir,
+    pub manifest: OnehostManifest,
+    pub depot_store_dir: PathBuf,
+    pub nvram_dir: PathBuf,
+    pub pool_directory: PathBuf,
+    pub bulk_pool_directory: PathBuf,
+    pub content_hash: String,
+    pub storage: QemuImgStorage,
 }
 
-fn create_test_storage() -> MockStorageManager {
-    MockStorageManager::new().with_content_hash(
-        Path::new("/nix/store/ba6eafb712345678-oemdrv-looking-glass"),
-        TEST_CONTENT_HASH,
-    )
+impl PlannerTestFixture {
+    fn new() -> Self {
+        let temporary_directory = tempfile::tempdir().expect("create tempdir");
+        let temporary_path = temporary_directory.path();
+
+        let depot_store_dir = temporary_path.join("depot/store");
+        let depot_iso_dir = temporary_path.join("depot/iso");
+        let depot_backup_dir = temporary_path.join("depot/backup");
+        let nvram_dir = temporary_path.join("nvram");
+        let nvram_template = temporary_path.join("edk2-vars.fd");
+        let ovmf_code = temporary_path.join("edk2-code.fd");
+        let pool_directory = temporary_path.join("pool-default");
+        let bulk_pool_directory = temporary_path.join("pool-bulk");
+
+        std::fs::create_dir_all(&depot_store_dir).expect("create depot store");
+        std::fs::create_dir_all(&depot_iso_dir).expect("create depot iso");
+        std::fs::create_dir_all(&depot_backup_dir).expect("create depot backup");
+        std::fs::create_dir_all(&nvram_dir).expect("create nvram dir");
+        std::fs::create_dir_all(&pool_directory).expect("create pool dir");
+        std::fs::create_dir_all(&bulk_pool_directory).expect("create bulk pool dir");
+        std::fs::write(&nvram_template, b"NVRAM_TEMPLATE").expect("write nvram template");
+        std::fs::write(&ovmf_code, b"OVMF_CODE").expect("write ovmf code");
+
+        let oemdrv_path = temporary_path.join("oemdrv");
+        std::fs::write(&oemdrv_path, b"test-oemdrv-content").expect("write oemdrv");
+        let extra_isos = HashMap::new();
+        let content_hash =
+            onehost::storage::execute_compute_content_hash(&oemdrv_path, &extra_isos)
+                .expect("compute content hash");
+
+        let storage_config = StorageDirectoriesConfiguration::new(
+            depot_store_dir.clone(),
+            depot_iso_dir,
+            depot_backup_dir,
+            nvram_dir.clone(),
+            nvram_template,
+            ovmf_code,
+        );
+
+        let mut flavors = HashMap::new();
+        flavors.insert(
+            "looking-glass".to_string(),
+            FlavorConfiguration::new(oemdrv_path, extra_isos),
+        );
+
+        let mut instances = HashMap::new();
+        instances.insert(
+            "win11-gollum".to_string(),
+            InstanceConfiguration::new(
+                "e5a7d620-8931-4bf6-98ec-7e44a30e8c45"
+                    .parse()
+                    .expect("valid uuid"),
+                PathBuf::from("/nix/store/7q8w9e12345678-win11-template.xml"),
+                "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass"
+                    .parse()
+                    .expect("valid image tag"),
+                "default",
+            ),
+        );
+
+        let manifest = OnehostManifest::new("1.0", storage_config, flavors, instances)
+            .expect("manifest validation succeeds");
+
+        Self {
+            temporary_directory,
+            manifest,
+            depot_store_dir,
+            nvram_dir,
+            pool_directory,
+            bulk_pool_directory,
+            content_hash,
+            storage: QemuImgStorage::new(),
+        }
+    }
+
+    fn default_pool_xml(&self) -> String {
+        format!(
+            "<pool type='dir'><name>default</name><target><path>{}</path></target></pool>",
+            self.pool_directory.display()
+        )
+    }
+
+    fn bulk_pool_xml(&self) -> String {
+        format!(
+            "<pool type='dir'><name>bulk-data</name><target><path>{}</path></target></pool>",
+            self.bulk_pool_directory.display()
+        )
+    }
 }
 
 #[test]
 fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&fixture.manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     assert!(plan.dangling_snapshots.is_empty());
@@ -109,47 +160,55 @@ fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
             assert_eq!(target_pool, "default");
             assert_eq!(
                 overlay_path,
-                Path::new("/var/lib/libvirt/images/win11-gollum.qcow2")
+                &fixture.pool_directory.join("win11-gollum.qcow2")
             );
             assert_eq!(
                 base_cache_path,
-                Path::new(
-                    "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2"
-                )
+                &fixture.pool_directory.join(format!(
+                    "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+                    fixture.content_hash
+                ))
             );
             assert_eq!(
                 golden_master_path,
-                Path::new(
-                    "/data/depot/virtualization/libvirt/store/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2"
-                )
+                &fixture.depot_store_dir.join(format!(
+                    "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+                    fixture.content_hash
+                ))
             );
             assert_eq!(
                 nvram_path,
-                Path::new("/var/lib/libvirt/qemu/nvram/win11-gollum_VARS.fd")
+                &fixture.nvram_dir.join("win11-gollum_VARS.fd")
             );
             assert_eq!(
                 nvram_template_path,
-                Path::new("/run/libvirt/nix-ovmf/edk2-i386-vars.fd")
+                &fixture.manifest.storage.nvram_template
             );
             assert!(concrete_xml.contains("<name>win11-gollum</name>"));
             assert!(concrete_xml.contains("<uuid>e5a7d620-8931-4bf6-98ec-7e44a30e8c45</uuid>"));
-            assert!(concrete_xml.contains("/var/lib/libvirt/images/win11-gollum.qcow2"));
+            assert!(concrete_xml.contains(
+                &fixture
+                    .pool_directory
+                    .join("win11-gollum.qcow2")
+                    .to_string_lossy()
+                    .to_string()
+            ));
         }
-        other_action => unreachable!("expected Create action, but got: {:?}", other_action),
+        other_action => {
+            unreachable!("expected Create action, but got: {:?}", other_action);
+        }
     }
 }
 
 #[test]
 fn test_plan_emits_noop_when_live_state_matches_declared_state() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    // Get expected concrete XML from a preliminary plan
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&fixture.manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -163,32 +222,36 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
         autostart: true,
     };
 
+    let base_cache_path = fixture.pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        fixture.content_hash
+    ));
+    let overlay_path = fixture.pool_directory.join("win11-gollum.qcow2");
+    fixture
+        .storage
+        .create_empty_disk(&base_cache_path, 20 * 1024 * 1024)
+        .expect("create base");
+    fixture
+        .storage
+        .create_cow_overlay(&base_cache_path, &overlay_path)
+        .expect("create overlay");
+
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+        source_file: Some(overlay_path),
         device_type: "disk".to_string(),
     }];
-
-    let overlay_record = MockImageRecord {
-        backing_file: Some(PathBuf::from(
-            "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2",
-        )),
-        ..Default::default()
-    };
 
     let hypervisor = hypervisor
         .with_domain(domain_info, expected_concrete_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let storage = storage.with_image(
-        PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2"),
-        overlay_record,
-    );
-
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&fixture.manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     assert_eq!(
@@ -202,20 +265,18 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
 
 #[test]
 fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&fixture.manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
     };
 
-    // Simulate drifted live XML: memory increased to 32 GiB
     let drifted_live_xml = expected_concrete_xml.replace("16777216", "33554432");
 
     let domain_info = DomainInfo {
@@ -226,32 +287,36 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
         autostart: true,
     };
 
+    let base_cache_path = fixture.pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        fixture.content_hash
+    ));
+    let overlay_path = fixture.pool_directory.join("win11-gollum.qcow2");
+    fixture
+        .storage
+        .create_empty_disk(&base_cache_path, 20 * 1024 * 1024)
+        .expect("create base");
+    fixture
+        .storage
+        .create_cow_overlay(&base_cache_path, &overlay_path)
+        .expect("create overlay");
+
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+        source_file: Some(overlay_path),
         device_type: "disk".to_string(),
     }];
-
-    let overlay_record = MockImageRecord {
-        backing_file: Some(PathBuf::from(
-            "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2",
-        )),
-        ..Default::default()
-    };
 
     let hypervisor = hypervisor
         .with_domain(domain_info, drifted_live_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let storage = storage.with_image(
-        PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2"),
-        overlay_record,
-    );
-
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&fixture.manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     match &plan.actions[0] {
@@ -264,23 +329,21 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
             assert!(concrete_xml.contains("<memory unit=\"KiB\">16777216</memory>"));
             assert!(diff_summary.contains("Value mismatch"));
         }
-        other_action => unreachable!(
-            "expected UpdateDomainXml action, but got: {:?}",
-            other_action
-        ),
+        other_action => {
+            unreachable!("expected UpdateDomainXml action, but got: {other_action:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_emits_recreate_when_base_image_hash_changes() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&fixture.manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -294,33 +357,35 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
         autostart: true,
     };
 
+    let old_base_path = fixture.pool_directory.join(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-c001cafe1234.qcow2",
+    );
+    let overlay_path = fixture.pool_directory.join("win11-gollum.qcow2");
+    fixture
+        .storage
+        .create_empty_disk(&old_base_path, 20 * 1024 * 1024)
+        .expect("create old base");
+    fixture
+        .storage
+        .create_cow_overlay(&old_base_path, &overlay_path)
+        .expect("create overlay");
+
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+        source_file: Some(overlay_path),
         device_type: "disk".to_string(),
     }];
-
-    // Old backing file hash: c001cafe1234 instead of ba6eafb71234
-    let overlay_record = MockImageRecord {
-        backing_file: Some(PathBuf::from(
-            "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-c001cafe1234.qcow2",
-        )),
-        ..Default::default()
-    };
 
     let hypervisor = hypervisor
         .with_domain(domain_info, expected_concrete_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let storage = storage.with_image(
-        PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2"),
-        overlay_record,
-    );
-
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&fixture.manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     match &plan.actions[0] {
@@ -332,28 +397,31 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
         } => {
             assert_eq!(instance_name, "win11-gollum");
             assert_eq!(target_pool, "default");
-            assert!(reason.contains("ba6eafb71234"));
+            assert!(reason.contains(&fixture.content_hash));
             assert!(reason.contains("forces replacement"));
         }
-        other_action => unreachable!("expected Recreate action, but got: {:?}", other_action),
+        other_action => {
+            unreachable!("expected Recreate action, but got: {other_action:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical_hash() {
-    // Manifest specifies enterprise edition instead of pro
-    let manifest_json = SAMPLE_MANIFEST_JSON.replace(
-        "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
-        "ce863cb6-6967-4632-a567-eb965a6f2ea3/enterprise/en-us/looking-glass",
-    );
-    let manifest = ManifestLoader::load_from_json_string(&manifest_json).expect("should succeed");
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let mut manifest = fixture.manifest.clone();
+    if let Some(instance) = manifest.instances.get_mut("win11-gollum") {
+        instance.image = "ce863cb6-6967-4632-a567-eb965a6f2ea3/enterprise/en-us/looking-glass"
+            .parse()
+            .expect("image tag parsing");
+    }
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -367,33 +435,36 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
         autostart: true,
     };
 
+    let old_pro_base_path = fixture.pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        fixture.content_hash
+    ));
+    let overlay_path = fixture.pool_directory.join("win11-gollum.qcow2");
+    fixture
+        .storage
+        .create_empty_disk(&old_pro_base_path, 20 * 1024 * 1024)
+        .expect("create old pro base");
+    fixture
+        .storage
+        .create_cow_overlay(&old_pro_base_path, &overlay_path)
+        .expect("create overlay");
+
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+        source_file: Some(overlay_path),
         device_type: "disk".to_string(),
     }];
-
-    // Existing backing file has the old 'pro' release tuple, but identical content hash ba6eafb71234
-    let overlay_record = MockImageRecord {
-        backing_file: Some(PathBuf::from(
-            "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2",
-        )),
-        ..Default::default()
-    };
 
     let hypervisor = hypervisor
         .with_domain(domain_info, expected_concrete_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let storage = storage.with_image(
-        PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2"),
-        overlay_record,
-    );
-
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     match &plan.actions[0] {
@@ -406,31 +477,32 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
             assert_eq!(instance_name, "win11-gollum");
             assert_eq!(target_pool, "default");
             assert!(
-                reason.contains("ce863cb6-6967-4632-a567-eb965a6f2ea3-enterprise-en-us-looking-glass-ba6eafb71234.qcow2")
-                    || reason.contains("enterprise"),
+                reason.contains("enterprise"),
                 "reason did not mention expected new base image: {reason}"
             );
         }
-        other_action => unreachable!("expected Recreate action, but got: {:?}", other_action),
+        other_action => {
+            unreachable!("expected Recreate action, but got: {other_action:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash() {
-    // Manifest declares instance on 'bulk-data' pool
-    let manifest_json =
-        SAMPLE_MANIFEST_JSON.replace("\"pool\": \"default\"", "\"pool\": \"bulk-data\"");
-    let manifest = ManifestLoader::load_from_json_string(&manifest_json).expect("should succeed");
+    let fixture = PlannerTestFixture::new();
+    let mut manifest = fixture.manifest.clone();
+    if let Some(instance) = manifest.instances.get_mut("win11-gollum") {
+        instance.pool = "bulk-data".to_string();
+    }
 
     let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", DEFAULT_POOL_XML)
-        .with_pool_xml("bulk-data", BULK_DATA_POOL_XML);
-    let storage = create_test_storage();
+        .with_pool_xml("default", fixture.default_pool_xml())
+        .with_pool_xml("bulk-data", fixture.bulk_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -444,33 +516,36 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
         autostart: false,
     };
 
-    // Live domain is currently residing in /var/lib/libvirt/images/ (pool 'default')
+    let base_cache_path = fixture.pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        fixture.content_hash
+    ));
+    let overlay_path = fixture.pool_directory.join("win11-gollum.qcow2");
+    fixture
+        .storage
+        .create_empty_disk(&base_cache_path, 20 * 1024 * 1024)
+        .expect("create base");
+    fixture
+        .storage
+        .create_cow_overlay(&base_cache_path, &overlay_path)
+        .expect("create overlay");
+
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+        source_file: Some(overlay_path.clone()),
         device_type: "disk".to_string(),
     }];
-
-    let overlay_record = MockImageRecord {
-        backing_file: Some(PathBuf::from(
-            "/var/lib/libvirt/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2",
-        )),
-        ..Default::default()
-    };
 
     let hypervisor = hypervisor
         .with_domain(domain_info, expected_concrete_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let storage = storage.with_image(
-        PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2"),
-        overlay_record,
-    );
-
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.actions.len(), 1);
     match &plan.actions[0] {
@@ -487,44 +562,41 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
             assert_eq!(instance_name, "win11-gollum");
             assert_eq!(source_pool, "default");
             assert_eq!(target_pool, "bulk-data");
-            assert_eq!(
-                source_overlay_path,
-                Path::new("/var/lib/libvirt/images/win11-gollum.qcow2")
-            );
+            assert_eq!(source_overlay_path, &overlay_path);
             assert_eq!(
                 target_overlay_path,
-                Path::new("/data/kvm/images/win11-gollum.qcow2")
+                &fixture.bulk_pool_directory.join("win11-gollum.qcow2")
             );
             assert_eq!(
                 target_base_cache_path,
-                Path::new(
-                    "/data/kvm/images/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2"
-                )
+                &fixture.bulk_pool_directory.join(format!(
+                    "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+                    fixture.content_hash
+                ))
             );
             assert_eq!(
                 golden_master_path,
-                Path::new(
-                    "/data/depot/virtualization/libvirt/store/ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-ba6eafb71234.qcow2"
-                )
+                &fixture.depot_store_dir.join(format!(
+                    "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+                    fixture.content_hash
+                ))
             );
         }
-        other_action => unreachable!(
-            "expected RelocateStoragePool action, but got: {:?}",
-            other_action
-        ),
+        other_action => {
+            unreachable!("expected RelocateStoragePool action, but got: {other_action:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).expect("should succeed");
+    let initial_plan = planner.plan(&fixture.manifest).expect("initial plan");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -538,10 +610,10 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
         autostart: true,
     };
 
-    // Live domain is attached to a temporary backup snapshot file
+    let snap_path = fixture.pool_directory.join("win11-gollum.snap");
     let block_devices = vec![BlockDeviceInfo {
         target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.snap")),
+        source_file: Some(snap_path.clone()),
         device_type: "disk".to_string(),
     }];
 
@@ -549,10 +621,12 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
         .with_domain(domain_info, expected_concrete_xml)
         .with_block_devices("win11-gollum", block_devices);
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan = planner.plan(&manifest).expect("planning should succeed");
+    let plan = planner
+        .plan(&fixture.manifest)
+        .expect("planning should succeed");
 
     assert_eq!(plan.dangling_snapshots.len(), 1);
     assert_eq!(
@@ -560,31 +634,30 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
         DanglingSnapshotAlert {
             instance_name: "win11-gollum".to_string(),
             target_device: "sda".to_string(),
-            snapshot_path: PathBuf::from("/var/lib/libvirt/images/win11-gollum.snap"),
+            snapshot_path: snap_path,
         }
     );
 }
 
 #[test]
 fn test_plan_returns_error_when_flavor_not_registered() {
-    // bypass high-level loader validation to specifically verify planner behavior
-    let mut manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("should succeed");
+    let fixture = PlannerTestFixture::new();
+    let mut manifest = fixture.manifest.clone();
     if let Some(instance) = manifest.instances.get_mut("win11-gollum") {
         instance.image = "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/unregistered-flavor"
             .parse()
-            .expect("should succeed");
+            .expect("image tag parsing");
     }
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan_result = planner.plan(&manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.expect_err("should fail") {
+    match plan_result.expect_err("is error") {
         LifecycleError::FlavorResolutionError {
             source:
                 FlavorResolutionError::UnknownFlavor {
@@ -593,45 +666,47 @@ fn test_plan_returns_error_when_flavor_not_registered() {
         } => {
             assert_eq!(requested_flavor, "unregistered-flavor");
         }
-        other_error => unreachable!("expected FlavorResolutionError, but got: {:?}", other_error),
+        other_error => {
+            unreachable!("expected FlavorResolutionError, but got: {other_error:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_propagates_hypervisor_pool_resolution_error() {
-    let manifest = create_test_manifest();
-    // Hypervisor has NO pool XML configured, so pool resolution will fail
+    let fixture = PlannerTestFixture::new();
     let hypervisor = MockHypervisor::new();
-    let storage = create_test_storage();
 
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let plan_result = planner.plan(&manifest);
+    let plan_result = planner.plan(&fixture.manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.expect_err("should fail") {
+    match plan_result.expect_err("is error") {
         LifecycleError::HypervisorError { .. } => {}
-        other_error => unreachable!("expected HypervisorError, but got: {:?}", other_error),
+        other_error => {
+            unreachable!("expected HypervisorError, but got: {other_error:?}");
+        }
     }
 }
 
 #[test]
 fn test_plan_propagates_domain_synthesis_error_on_invalid_template() {
-    let manifest = create_test_manifest();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
-    let storage = create_test_storage();
+    let fixture = PlannerTestFixture::new();
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    // Template XML is missing the root <domain> tag
-    let planner = DomainLifecyclePlanner::new(&hypervisor, &storage).with_template_resolver(
+    let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage).with_template_resolver(
         |_| Ok("<invalid>Not a domain template</invalid>".to_string()),
     );
 
-    let plan_result = planner.plan(&manifest);
+    let plan_result = planner.plan(&fixture.manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.expect_err("should fail") {
+    match plan_result.expect_err("is error") {
         LifecycleError::DomainSynthesisError { .. } => {}
-        other_error => unreachable!("expected DomainSynthesisError, but got: {:?}", other_error),
+        other_error => {
+            unreachable!("expected DomainSynthesisError, but got: {other_error:?}");
+        }
     }
 }

@@ -13,7 +13,6 @@ use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{DomainLifecyclePlanner, InstancePlanAction};
 use onehost::storage::qemu_img::QemuImgStorage;
-use onehost::storage::traits::StorageManager;
 
 const SAMPLE_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
   <name>TEMPLATE</name>

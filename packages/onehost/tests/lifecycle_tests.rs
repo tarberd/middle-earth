@@ -8,7 +8,6 @@ use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use onehost::storage::qemu_img::QemuImgStorage;
-use onehost::storage::traits::StorageManager;
 
 const SAMPLE_MANIFEST_JSON: &str = r#"{
   "$schema": "https://middle-earth.internal/schemas/onehost.v1.json",

@@ -4,9 +4,9 @@
 
 **Blocked by:** 02: Physical Disk State Verification in Lifecycle and Disaster Recovery Tests
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Generic storage type parameter is removed from lifecycle appliers, destroyers, planners, backup engines, restore engines, and CLI entry points.
-- [ ] Storage trait is collapsed into the concrete QEMU storage manager.
-- [ ] In-memory mock storage manager and recorded storage action enums are completely removed from production sources.
-- [ ] Full test suite compiles cleanly and passes without warnings.
+- [x] Generic storage type parameter is removed from lifecycle appliers, destroyers, planners, backup engines, restore engines, and CLI entry points.
+- [x] Storage trait is collapsed into the concrete QEMU storage manager.
+- [x] In-memory mock storage manager and recorded storage action enums are completely removed from production sources.
+- [x] Full test suite compiles cleanly and passes without warnings.

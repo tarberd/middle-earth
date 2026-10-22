@@ -3,8 +3,7 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::tempdir;
 
-use onehost::storage::qemu_img::QemuImgStorage;
-use onehost::storage::traits::{StorageError, StorageManager};
+use onehost::storage::{QemuImgStorage, StorageError};
 
 fn create_real_qcow2_image(path: &std::path::Path, size_megabytes: u64) {
     let size_argument = format!("{size_megabytes}M");

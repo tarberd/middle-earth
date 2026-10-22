@@ -9,7 +9,6 @@ use onehost::config::model::InstanceUuid;
 use onehost::hypervisor::mock::{MockHypervisor, RecordedHypervisorAction};
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
 use onehost::storage::qemu_img::QemuImgStorage;
-use onehost::storage::traits::StorageManager;
 
 fn create_sample_domain_xml(
     instance_name: &str,

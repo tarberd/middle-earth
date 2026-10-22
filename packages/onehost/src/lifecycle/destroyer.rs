@@ -2,7 +2,7 @@ use crate::config::model::OnehostManifest;
 use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
 use crate::image::tag::ContentAddressedImageResolver;
 use crate::lifecycle::LifecycleError;
-use crate::storage::traits::StorageManager;
+use crate::storage::QemuImgStorage;
 
 /// Options controlling domain destruction.
 #[derive(Debug, Clone, Default)]
@@ -12,14 +12,14 @@ pub struct DestroyOptions {
 }
 
 /// Destroyer handling safe deprovisioning of managed domain instances.
-pub struct DomainLifecycleDestroyer<'a, H: Hypervisor, S: StorageManager> {
+pub struct DomainLifecycleDestroyer<'a, H: Hypervisor> {
     pub hypervisor: &'a H,
-    pub storage: &'a S,
+    pub storage: &'a QemuImgStorage,
 }
 
-impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
+impl<'a, H: Hypervisor> DomainLifecycleDestroyer<'a, H> {
     /// Creates a new DomainLifecycleDestroyer.
-    pub fn new(hypervisor: &'a H, storage: &'a S) -> Self {
+    pub fn new(hypervisor: &'a H, storage: &'a QemuImgStorage) -> Self {
         Self {
             hypervisor,
             storage,

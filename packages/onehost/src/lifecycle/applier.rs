@@ -1,17 +1,17 @@
 use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
 use crate::lifecycle::LifecycleError;
 use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
-use crate::storage::traits::{StorageError, StorageManager};
+use crate::storage::{QemuImgStorage, StorageError};
 
 /// Applier reconciling the execution plan against hypervisor and storage infrastructure.
-pub struct DomainLifecycleApplier<'a, H: Hypervisor, S: StorageManager> {
+pub struct DomainLifecycleApplier<'a, H: Hypervisor> {
     pub hypervisor: &'a H,
-    pub storage: &'a S,
+    pub storage: &'a QemuImgStorage,
 }
 
-impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
+impl<'a, H: Hypervisor> DomainLifecycleApplier<'a, H> {
     /// Creates a new DomainLifecycleApplier.
-    pub fn new(hypervisor: &'a H, storage: &'a S) -> Self {
+    pub fn new(hypervisor: &'a H, storage: &'a QemuImgStorage) -> Self {
         Self {
             hypervisor,
             storage,

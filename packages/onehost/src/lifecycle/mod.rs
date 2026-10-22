@@ -5,7 +5,7 @@ use crate::domain::diff::DomainXmlDiffError;
 use crate::domain::template::DomainTemplateSynthesisError;
 use crate::hypervisor::traits::HypervisorError;
 use crate::image::tag::{FlavorResolutionError, ImageTagParseError};
-use crate::storage::traits::StorageError;
+use crate::storage::StorageError;
 
 pub mod applier;
 pub mod destroyer;
