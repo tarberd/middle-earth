@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use onehost::hypervisor::{
-    parse_domblklist_output, parse_dominfo_output, parse_pool_target_path, BlockDeviceInfo,
-    DiskSnapshotSpecification, DomainInfo, DomainState, Hypervisor, HypervisorError,
-    MockHypervisor, RecordedHypervisorAction,
+    BlockDeviceInfo, DiskSnapshotSpecification, DomainInfo, DomainState, Hypervisor,
+    HypervisorError, MockHypervisor, RecordedHypervisorAction, parse_domblklist_output,
+    parse_dominfo_output, parse_pool_target_path,
 };
 
 const SAMPLE_POOL_XML: &str = r#"
@@ -68,14 +68,35 @@ fn test_parse_pool_target_path_missing_path() {
 
 #[test]
 fn test_domain_state_parsing() {
-    assert_eq!(DomainState::from_virsh_state("running"), DomainState::Running);
-    assert_eq!(DomainState::from_virsh_state("shut off"), DomainState::Shutoff);
-    assert_eq!(DomainState::from_virsh_state("shutoff"), DomainState::Shutoff);
+    assert_eq!(
+        DomainState::from_virsh_state("running"),
+        DomainState::Running
+    );
+    assert_eq!(
+        DomainState::from_virsh_state("shut off"),
+        DomainState::Shutoff
+    );
+    assert_eq!(
+        DomainState::from_virsh_state("shutoff"),
+        DomainState::Shutoff
+    );
     assert_eq!(DomainState::from_virsh_state("paused"), DomainState::Paused);
-    assert_eq!(DomainState::from_virsh_state("crashed"), DomainState::Crashed);
-    assert_eq!(DomainState::from_virsh_state("blocked"), DomainState::Blocked);
-    assert_eq!(DomainState::from_virsh_state("pmsuspended"), DomainState::Pmsuspended);
-    assert_eq!(DomainState::from_virsh_state("something-else"), DomainState::Unknown);
+    assert_eq!(
+        DomainState::from_virsh_state("crashed"),
+        DomainState::Crashed
+    );
+    assert_eq!(
+        DomainState::from_virsh_state("blocked"),
+        DomainState::Blocked
+    );
+    assert_eq!(
+        DomainState::from_virsh_state("pmsuspended"),
+        DomainState::Pmsuspended
+    );
+    assert_eq!(
+        DomainState::from_virsh_state("something-else"),
+        DomainState::Unknown
+    );
 }
 
 #[test]
@@ -93,41 +114,55 @@ fn test_mock_hypervisor_domain_lifecycle() {
     let hypervisor = MockHypervisor::new().with_domain(initial_info, domain_xml);
 
     // Verify initial query
-    let queried_info = hypervisor.domain_info("win11-gollum").expect("Domain should exist");
+    let queried_info = hypervisor
+        .domain_info("win11-gollum")
+        .expect("Domain should exist");
     assert_eq!(queried_info.state, DomainState::Shutoff);
     assert!(queried_info.autostart);
 
     // Boot VM
-    hypervisor.start_domain("win11-gollum").expect("Failed to start domain");
+    hypervisor
+        .start_domain("win11-gollum")
+        .expect("Failed to start domain");
     assert_eq!(
         hypervisor.domain_info("win11-gollum").unwrap().state,
         DomainState::Running
     );
 
     // Shutdown VM
-    hypervisor.shutdown_domain("win11-gollum").expect("Failed to shutdown domain");
+    hypervisor
+        .shutdown_domain("win11-gollum")
+        .expect("Failed to shutdown domain");
     assert_eq!(
         hypervisor.domain_info("win11-gollum").unwrap().state,
         DomainState::Shutoff
     );
 
     // Destroy VM
-    hypervisor.start_domain("win11-gollum").expect("Failed to restart domain");
-    hypervisor.destroy_domain("win11-gollum").expect("Failed to destroy domain");
+    hypervisor
+        .start_domain("win11-gollum")
+        .expect("Failed to restart domain");
+    hypervisor
+        .destroy_domain("win11-gollum")
+        .expect("Failed to destroy domain");
     assert_eq!(
         hypervisor.domain_info("win11-gollum").unwrap().state,
         DomainState::Shutoff
     );
 
     // Set autostart
-    hypervisor.set_autostart("win11-gollum", false).expect("Failed to set autostart");
+    hypervisor
+        .set_autostart("win11-gollum", false)
+        .expect("Failed to set autostart");
     assert!(!hypervisor.domain_info("win11-gollum").unwrap().autostart);
 
     // Verify recorded action log
     let actions = hypervisor.recorded_actions();
-    assert!(actions.contains(&RecordedHypervisorAction::DomainInfoRequested {
-        domain_name: "win11-gollum".to_string(),
-    }));
+    assert!(
+        actions.contains(&RecordedHypervisorAction::DomainInfoRequested {
+            domain_name: "win11-gollum".to_string(),
+        })
+    );
     assert!(actions.contains(&RecordedHypervisorAction::StartDomain {
         domain_name: "win11-gollum".to_string(),
     }));
@@ -149,16 +184,24 @@ fn test_mock_hypervisor_define_and_undefine() {
 
     let new_domain_xml = "<domain type='kvm'><name>win11-fresh</name><uuid>12345678-1234-1234-1234-123456789abc</uuid></domain>";
 
-    hypervisor.define_domain(new_domain_xml).expect("Failed to define domain");
+    hypervisor
+        .define_domain(new_domain_xml)
+        .expect("Failed to define domain");
 
-    let info = hypervisor.domain_info("win11-fresh").expect("Domain should be defined");
+    let info = hypervisor
+        .domain_info("win11-fresh")
+        .expect("Domain should be defined");
     assert_eq!(info.name, "win11-fresh");
     assert_eq!(info.state, DomainState::Shutoff);
 
-    let dumped_xml = hypervisor.dump_xml("win11-fresh", false).expect("Failed to dump XML");
+    let dumped_xml = hypervisor
+        .dump_xml("win11-fresh", false)
+        .expect("Failed to dump XML");
     assert_eq!(dumped_xml, new_domain_xml);
 
-    hypervisor.undefine_domain("win11-fresh", true).expect("Failed to undefine domain");
+    hypervisor
+        .undefine_domain("win11-fresh", true)
+        .expect("Failed to undefine domain");
     assert!(matches!(
         hypervisor.domain_info("win11-fresh"),
         Err(HypervisorError::DomainNotFound { .. })
@@ -175,14 +218,13 @@ fn test_mock_hypervisor_snapshots_and_blockcommit() {
         autostart: false,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, "<domain><name>win11-snap</name></domain>");
+    let hypervisor =
+        MockHypervisor::new().with_domain(domain_info, "<domain><name>win11-snap</name></domain>");
 
-    let disk_specifications = vec![
-        DiskSnapshotSpecification {
-            target_device: "sda".to_string(),
-            snapshot_file_path: PathBuf::from("/var/lib/libvirt/images/win11-snap.sda.snap"),
-        },
-    ];
+    let disk_specifications = vec![DiskSnapshotSpecification {
+        target_device: "sda".to_string(),
+        snapshot_file_path: PathBuf::from("/var/lib/libvirt/images/win11-snap.sda.snap"),
+    }];
 
     hypervisor
         .create_snapshot("win11-snap", "backup-2026", &disk_specifications, true)
@@ -220,10 +262,14 @@ fn test_mock_hypervisor_snapshots_and_blockcommit() {
 fn test_mock_hypervisor_pool_resolution_and_refresh() {
     let hypervisor = MockHypervisor::new().with_pool_xml("default", SAMPLE_POOL_XML);
 
-    let resolved_path = hypervisor.resolve_pool_path("default").expect("Failed to resolve pool path");
+    let resolved_path = hypervisor
+        .resolve_pool_path("default")
+        .expect("Failed to resolve pool path");
     assert_eq!(resolved_path, PathBuf::from("/var/lib/libvirt/images"));
 
-    hypervisor.pool_refresh("default").expect("Failed to refresh pool");
+    hypervisor
+        .pool_refresh("default")
+        .expect("Failed to refresh pool");
 
     let actions = hypervisor.recorded_actions();
     assert!(actions.contains(&RecordedHypervisorAction::PoolDumpXml {
@@ -253,23 +299,32 @@ fn test_virsh_parsing_domblklist() {
 
     assert_eq!(block_devices.len(), 3);
 
-    assert_eq!(block_devices[0], BlockDeviceInfo {
-        target_device: "sda".to_string(),
-        source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
-        device_type: "disk".to_string(),
-    });
+    assert_eq!(
+        block_devices[0],
+        BlockDeviceInfo {
+            target_device: "sda".to_string(),
+            source_file: Some(PathBuf::from("/var/lib/libvirt/images/win11-gollum.qcow2")),
+            device_type: "disk".to_string(),
+        }
+    );
 
-    assert_eq!(block_devices[1], BlockDeviceInfo {
-        target_device: "sdb".to_string(),
-        source_file: None,
-        device_type: "cdrom".to_string(),
-    });
+    assert_eq!(
+        block_devices[1],
+        BlockDeviceInfo {
+            target_device: "sdb".to_string(),
+            source_file: None,
+            device_type: "cdrom".to_string(),
+        }
+    );
 
-    assert_eq!(block_devices[2], BlockDeviceInfo {
-        target_device: "sdc".to_string(),
-        source_file: Some(PathBuf::from("/data/kvm/data.qcow2")),
-        device_type: "disk".to_string(),
-    });
+    assert_eq!(
+        block_devices[2],
+        BlockDeviceInfo {
+            target_device: "sdc".to_string(),
+            source_file: Some(PathBuf::from("/data/kvm/data.qcow2")),
+            device_type: "disk".to_string(),
+        }
+    );
 }
 
 #[test]

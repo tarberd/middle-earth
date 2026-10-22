@@ -30,8 +30,8 @@ fn test_round_trip_ast_invariance_complex_domain_xml() {
         .expect("Failed to parse original complex domain XML");
 
     let serialized_xml = original_ast.to_xml_string(0);
-    let reparsed_ast = DomainXmlElement::parse(&serialized_xml)
-        .expect("Failed to re-parse serialized domain XML");
+    let reparsed_ast =
+        DomainXmlElement::parse(&serialized_xml).expect("Failed to re-parse serialized domain XML");
 
     assert_eq!(
         original_ast, reparsed_ast,
@@ -99,11 +99,14 @@ fn test_builder_methods_functional_immutability() {
     });
 
     assert_eq!(
-        base.find_child_by_tag("name").and_then(|name_node| name_node.text_content.as_deref()),
+        base.find_child_by_tag("name")
+            .and_then(|name_node| name_node.text_content.as_deref()),
         Some("initial-name")
     );
     assert_eq!(
-        renamed.find_child_by_tag("name").and_then(|name_node| name_node.text_content.as_deref()),
+        renamed
+            .find_child_by_tag("name")
+            .and_then(|name_node| name_node.text_content.as_deref()),
         Some("renamed-vm")
     );
 
@@ -143,12 +146,17 @@ fn test_higher_order_query_combinators() {
     // has_attribute_value and has_matching_attribute
     assert!(domain.has_attribute_value("type", "kvm"));
     assert!(!domain.has_attribute_value("type", "qemu"));
-    assert!(domain.has_matching_attribute(|key, value| key.starts_with("xmlns:onehost") && value.contains("middle-earth")));
+    assert!(domain.has_matching_attribute(
+        |key, value| key.starts_with("xmlns:onehost") && value.contains("middle-earth")
+    ));
     assert!(!domain.has_matching_attribute(|key, _| key == "nonexistent"));
 
     // child_text
     assert_eq!(domain.child_text("name"), Some("win11-gollum"));
-    assert_eq!(domain.child_text("uuid"), Some("e5a7d620-8931-4bf6-98ec-7e44a30e8c45"));
+    assert_eq!(
+        domain.child_text("uuid"),
+        Some("e5a7d620-8931-4bf6-98ec-7e44a30e8c45")
+    );
     assert_eq!(domain.child_text("nonexistent"), None);
 
     // child_attribute
@@ -164,15 +172,23 @@ fn test_higher_order_query_combinators() {
         domain.path_text(&["os", "loader"]),
         Some("/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd")
     );
-    assert_eq!(domain.path_text(&["devices", "emulator"]), Some("/usr/bin/qemu-system-x86_64"));
+    assert_eq!(
+        domain.path_text(&["devices", "emulator"]),
+        Some("/usr/bin/qemu-system-x86_64")
+    );
     assert_eq!(domain.path_text(&["devices", "nonexistent"]), None);
 
     let sda_target = domain.find_path(&["devices", "disk", "target"]);
     assert!(sda_target.is_some());
-    assert_eq!(sda_target.and_then(|target| target.get_attribute("dev")), Some("sda"));
+    assert_eq!(
+        sda_target.and_then(|target| target.get_attribute("dev")),
+        Some("sda")
+    );
 
     // find_children
-    let devices = domain.find_child_by_tag("devices").expect("devices must exist");
+    let devices = domain
+        .find_child_by_tag("devices")
+        .expect("devices must exist");
     let disks: Vec<&DomainXmlElement> = devices.find_children("disk").collect();
     assert_eq!(disks.len(), 1);
     assert_eq!(disks[0].child_attribute("target", "dev"), Some("sda"));
@@ -184,4 +200,3 @@ fn test_higher_order_query_combinators() {
     let nones: Vec<&DomainXmlElement> = devices.find_children("nonexistent").collect();
     assert!(nones.is_empty());
 }
-

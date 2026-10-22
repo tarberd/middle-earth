@@ -1,15 +1,19 @@
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-use crate::backup::{BackupEngine, BackupError, BackupOptions, RestoreEngine, RestoreError, RestoreOptions};
+use crate::backup::{
+    BackupEngine, BackupError, BackupOptions, RestoreEngine, RestoreError, RestoreOptions,
+};
 use crate::config::loader::{ManifestLoadError, ManifestLoader};
 use crate::config::model::OnehostManifest;
 use crate::config::validation::ManifestValidationError;
 use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
-use crate::image::builder::{ImageBuildOptions, ImageBuildOutcome, ImageBuilder, ImageBuilderError};
+use crate::image::builder::{
+    ImageBuildOptions, ImageBuildOutcome, ImageBuilder, ImageBuilderError,
+};
 use crate::image::tag::{ImageTagParseError, ImageTagSpecification};
 use crate::lifecycle::{
     ApplyOptions, DestroyOptions, DomainLifecycleApplier, DomainLifecycleDestroyer,
@@ -77,10 +81,6 @@ pub struct ApplyArgs {
     #[arg(short = 'i', long)]
     pub instance: Option<String>,
 
-    /// Permit recreation of instance overlays when base image drift occurs
-    #[arg(long)]
-    pub allow_recreate: bool,
-
     /// Proceed with state mutations without interactive confirmation
     #[arg(short = 'y', long)]
     pub auto_approve: bool,
@@ -98,10 +98,6 @@ pub struct DestroyArgs {
     /// Immediately force power off (virsh destroy) instead of graceful ACPI shutdown
     #[arg(short, long)]
     pub force: bool,
-
-    /// Override prevent_destroy guardrail policy if declared on the instance
-    #[arg(long)]
-    pub allow_destroy_protected: bool,
 
     /// Skip confirmation prompt
     #[arg(short = 'y', long)]
@@ -154,7 +150,7 @@ pub enum ImageSubcommands {
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub struct ImageBuildArgs {
-    /// Image tag specification (<os>/<version>/<flavor>)
+    /// Canonical Release Tuple (<uup_id>/<edition>/<language>/<flavor>)
     pub tag: String,
 
     /// Force rebuild even if golden master already exists in depot store
@@ -203,7 +199,9 @@ pub struct InstanceStatusReport {
 /// Enumerates errors that can occur during CLI command execution.
 #[derive(Debug, Error)]
 pub enum CliError {
-    #[error("Manifest file not found at '{path}'. Please specify --manifest <PATH> or create onehost.json")]
+    #[error(
+        "Manifest file not found at '{path}'. Please specify --manifest <PATH> or create onehost.json"
+    )]
     ManifestNotFound { path: PathBuf },
 
     #[error("Failed to load manifest: {0}")]
@@ -246,11 +244,13 @@ pub enum CliError {
 /// Resolves the effective manifest path from explicit argument, current directory, or XDG config directory.
 pub fn resolve_manifest_path(explicit_path: Option<&Path>) -> Result<PathBuf, CliError> {
     match explicit_path {
-        Some(path) => (path.exists())
-            .then(|| path.to_path_buf())
-            .ok_or_else(|| CliError::ManifestNotFound {
-                path: path.to_path_buf(),
-            }),
+        Some(path) => {
+            (path.exists())
+                .then(|| path.to_path_buf())
+                .ok_or_else(|| CliError::ManifestNotFound {
+                    path: path.to_path_buf(),
+                })
+        }
         None => {
             let current_dir_manifest = PathBuf::from("onehost.json");
             if current_dir_manifest.exists() {
@@ -371,7 +371,7 @@ pub fn collect_status_reports<H: Hypervisor, S: StorageManager>(
         })
         .map(|(instance_name, instance_configuration)| {
             let domain_info = hypervisor.domain_info(instance_name).ok();
-            let effective_pool = instance_configuration.effective_pool(&manifest.storage)?;
+            let effective_pool = instance_configuration.effective_pool(instance_name)?;
             let pool_directory = hypervisor.resolve_pool_path(effective_pool)?;
             let overlay_path = pool_directory.join(format!("{instance_name}.qcow2"));
 
@@ -502,15 +502,15 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
                     .retain(|action| action.instance_name() == target_name);
             }
 
-            let apply_options = ApplyOptions {
-                allow_recreate: args.allow_recreate,
-                ..Default::default()
-            };
+            let apply_options = ApplyOptions::default();
 
             let applier = DomainLifecycleApplier::new(hypervisor, storage);
             applier.apply(&plan, &apply_options)?;
 
-            writeln!(output, "Apply complete! All planned actions successfully reconciled.")?;
+            writeln!(
+                output,
+                "Apply complete! All planned actions successfully reconciled."
+            )?;
 
             Ok(0)
         }
@@ -523,7 +523,6 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
             let destroy_options = DestroyOptions {
                 delete_disk: args.delete_disk,
                 force: args.force,
-                allow_destroy_protected: args.allow_destroy_protected,
             };
 
             destroyer.destroy(&args.instance, &manifest, &destroy_options)?;
@@ -605,7 +604,11 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
             };
 
             let restore_engine = RestoreEngine::new(hypervisor, storage);
-            restore_engine.restore_instance(&args.backup_dir, &restore_options, manifest.as_ref())?;
+            restore_engine.restore_instance(
+                &args.backup_dir,
+                &restore_options,
+                manifest.as_ref(),
+            )?;
 
             writeln!(
                 output,
@@ -664,7 +667,8 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
             let manifest_path = resolve_manifest_path(cli.manifest.as_deref())?;
             let manifest = ManifestLoader::load_from_path(&manifest_path)?;
 
-            let reports = collect_status_reports(&manifest, hypervisor, storage, args.instance.as_deref())?;
+            let reports =
+                collect_status_reports(&manifest, hypervisor, storage, args.instance.as_deref())?;
 
             if cli.json {
                 let serialized = serde_json::to_string_pretty(&reports)?;

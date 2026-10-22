@@ -50,14 +50,14 @@ fn test_synthesize_domain_xml_with_single_os_disk() {
         overlay_disk_path: Path::new("/var/lib/libvirt/images/win11-gollum.qcow2"),
         instance_nvram_path: Path::new("/var/lib/libvirt/qemu/nvram/win11-gollum_VARS.fd"),
         nvram_template_path: Some(Path::new("/run/libvirt/nix-ovmf/edk2-i386-vars.fd")),
-        ovmf_code_path: Some(Path::new("/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd")),
+        ovmf_code_path: Some(Path::new(
+            "/run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd",
+        )),
     };
 
-    let synthesized_xml = DomainTemplateEngine::synthesize_concrete_domain_xml(
-        SAMPLE_TEMPLATE_XML,
-        &parameters,
-    )
-    .unwrap();
+    let synthesized_xml =
+        DomainTemplateEngine::synthesize_concrete_domain_xml(SAMPLE_TEMPLATE_XML, &parameters)
+            .unwrap();
 
     // 1. Instance identity injected
     assert!(synthesized_xml.contains("<name>win11-gollum</name>"));
@@ -69,7 +69,10 @@ fn test_synthesize_domain_xml_with_single_os_disk() {
     assert!(synthesized_xml.contains("/var/lib/libvirt/qemu/nvram/win11-gollum_VARS.fd"));
 
     // 3. Managed OS Disk injected with driver and source
-    assert!(synthesized_xml.contains("<driver name='qemu' type='qcow2'/>") || synthesized_xml.contains("<driver name=\"qemu\" type=\"qcow2\"/>"));
+    assert!(
+        synthesized_xml.contains("<driver name='qemu' type='qcow2'/>")
+            || synthesized_xml.contains("<driver name=\"qemu\" type=\"qcow2\"/>")
+    );
     assert!(synthesized_xml.contains("/var/lib/libvirt/images/win11-gollum.qcow2"));
     assert!(synthesized_xml.contains("dev='sda'") || synthesized_xml.contains("dev=\"sda\""));
     assert!(synthesized_xml.contains("bus='sata'") || synthesized_xml.contains("bus=\"sata\""));
@@ -100,8 +103,12 @@ fn test_fails_when_no_disk_has_onehost_role() {
         ovmf_code_path: None,
     };
 
-    let result = DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_role, &parameters);
-    assert_eq!(result, Err(DomainTemplateSynthesisError::MissingDesignatedOsDisk));
+    let result =
+        DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_role, &parameters);
+    assert_eq!(
+        result,
+        Err(DomainTemplateSynthesisError::MissingDesignatedOsDisk)
+    );
 }
 
 #[test]
@@ -120,7 +127,8 @@ fn test_fails_when_multiple_disks_have_onehost_role() {
         ovmf_code_path: None,
     };
 
-    let result = DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_with_duplicate_role, &parameters);
+    let result =
+        DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_with_duplicate_role, &parameters);
     assert_eq!(
         result,
         Err(DomainTemplateSynthesisError::MultipleDesignatedOsDisksFound { count: 2 })
@@ -140,7 +148,10 @@ fn test_fails_on_malformed_xml() {
     };
 
     let result = DomainTemplateEngine::synthesize_concrete_domain_xml(malformed_xml, &parameters);
-    assert!(matches!(result, Err(DomainTemplateSynthesisError::XmlParseError(_))));
+    assert!(matches!(
+        result,
+        Err(DomainTemplateSynthesisError::XmlParseError(_))
+    ));
 }
 
 #[test]
@@ -156,7 +167,10 @@ fn test_fails_if_root_is_not_domain() {
     };
 
     let result = DomainTemplateEngine::synthesize_concrete_domain_xml(non_domain_xml, &parameters);
-    assert_eq!(result, Err(DomainTemplateSynthesisError::MissingRootDomainElement));
+    assert_eq!(
+        result,
+        Err(DomainTemplateSynthesisError::MissingRootDomainElement)
+    );
 }
 
 #[test]
@@ -171,13 +185,18 @@ fn test_fails_when_name_element_missing() {
         ovmf_code_path: None,
     };
 
-    let result = DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_name, &parameters);
-    assert_eq!(result, Err(DomainTemplateSynthesisError::MissingNameElement));
+    let result =
+        DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_name, &parameters);
+    assert_eq!(
+        result,
+        Err(DomainTemplateSynthesisError::MissingNameElement)
+    );
 }
 
 #[test]
 fn test_fails_when_uuid_element_missing() {
-    let xml_without_uuid = SAMPLE_TEMPLATE_XML.replace("<uuid>00000000-0000-0000-0000-000000000000</uuid>", "");
+    let xml_without_uuid =
+        SAMPLE_TEMPLATE_XML.replace("<uuid>00000000-0000-0000-0000-000000000000</uuid>", "");
     let parameters = DomainTemplateInjectionParameters {
         instance_name: "win11-gollum",
         instance_uuid: "e5a7d620-8931-4bf6-98ec-7e44a30e8c45",
@@ -187,7 +206,10 @@ fn test_fails_when_uuid_element_missing() {
         ovmf_code_path: None,
     };
 
-    let result = DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_uuid, &parameters);
-    assert_eq!(result, Err(DomainTemplateSynthesisError::MissingUuidElement));
+    let result =
+        DomainTemplateEngine::synthesize_concrete_domain_xml(&xml_without_uuid, &parameters);
+    assert_eq!(
+        result,
+        Err(DomainTemplateSynthesisError::MissingUuidElement)
+    );
 }
-

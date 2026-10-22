@@ -1,6 +1,6 @@
+use onehost::xdg::{XdgBaseDirectories, XdgDirectoryResolutionError};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use onehost::xdg::{XdgBaseDirectories, XdgDirectoryResolutionError};
 
 #[test]
 fn test_explicit_xdg_environment_variables_are_honored() {
@@ -27,10 +27,7 @@ fn test_explicit_xdg_environment_variables_are_honored() {
         resolver.cache_home().unwrap(),
         PathBuf::from("/custom/cache")
     );
-    assert_eq!(
-        resolver.data_home().unwrap(),
-        PathBuf::from("/custom/data")
-    );
+    assert_eq!(resolver.data_home().unwrap(), PathBuf::from("/custom/data"));
     assert_eq!(
         resolver.state_home().unwrap(),
         PathBuf::from("/custom/state")
@@ -201,11 +198,26 @@ fn test_ensure_application_directories_exist_creates_directories_on_filesystem()
     let runtime_directory = base_path.join("runtime");
 
     let environment_variables: HashMap<String, String> = [
-        ("XDG_CONFIG_HOME", configuration_directory.to_str().unwrap().to_string()),
-        ("XDG_CACHE_HOME", cache_directory.to_str().unwrap().to_string()),
-        ("XDG_DATA_HOME", data_directory.to_str().unwrap().to_string()),
-        ("XDG_STATE_HOME", state_directory.to_str().unwrap().to_string()),
-        ("XDG_RUNTIME_DIR", runtime_directory.to_str().unwrap().to_string()),
+        (
+            "XDG_CONFIG_HOME",
+            configuration_directory.to_str().unwrap().to_string(),
+        ),
+        (
+            "XDG_CACHE_HOME",
+            cache_directory.to_str().unwrap().to_string(),
+        ),
+        (
+            "XDG_DATA_HOME",
+            data_directory.to_str().unwrap().to_string(),
+        ),
+        (
+            "XDG_STATE_HOME",
+            state_directory.to_str().unwrap().to_string(),
+        ),
+        (
+            "XDG_RUNTIME_DIR",
+            runtime_directory.to_str().unwrap().to_string(),
+        ),
     ]
     .into_iter()
     .map(|(env_key, env_value)| (env_key.to_string(), env_value))

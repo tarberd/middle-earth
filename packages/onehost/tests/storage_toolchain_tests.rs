@@ -189,6 +189,9 @@ fn test_real_qemu_img_check_image_detects_corruption() {
             assert_eq!(path, corrupt_image_path);
             assert!(!details.is_empty());
         }
-        other_error => panic!("expected ImageCorruptionDetected, but got: {:?}", other_error),
+        other_error => panic!(
+            "expected ImageCorruptionDetected, but got: {:?}",
+            other_error
+        ),
     }
 }

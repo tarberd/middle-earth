@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::config::model::{ImageChangePolicy, InstanceConfiguration, OnehostManifest};
+use crate::config::model::{InstanceConfiguration, OnehostManifest};
 use crate::domain::diff::DomainXmlDiffer;
 use crate::domain::template::{DomainTemplateEngine, DomainTemplateInjectionParameters};
 use crate::hypervisor::traits::{Hypervisor, HypervisorError};
@@ -32,7 +32,6 @@ pub enum InstancePlanAction {
         golden_master_path: PathBuf,
         nvram_path: PathBuf,
         nvram_template_path: PathBuf,
-        autostart: bool,
     },
     UpdateDomainXml {
         instance_name: String,
@@ -42,8 +41,6 @@ pub enum InstancePlanAction {
     Recreate {
         instance_name: String,
         reason: String,
-        policy: ImageChangePolicy,
-        prevent_destroy: bool,
         concrete_xml: String,
         target_pool: String,
         overlay_path: PathBuf,
@@ -51,7 +48,6 @@ pub enum InstancePlanAction {
         golden_master_path: PathBuf,
         nvram_path: PathBuf,
         nvram_template_path: PathBuf,
-        autostart: bool,
     },
     RelocateStoragePool {
         instance_name: String,
@@ -66,7 +62,6 @@ pub enum InstancePlanAction {
     Delete {
         instance_name: String,
         target_pool: String,
-        prevent_destroy: bool,
     },
     NoOp {
         instance_name: String,
@@ -94,8 +89,7 @@ pub struct OnehostPlan {
 }
 
 /// Type alias for custom template content resolver function.
-pub type TemplateResolver =
-    Box<dyn Fn(&Path) -> Result<String, LifecycleError> + Send + Sync>;
+pub type TemplateResolver = Box<dyn Fn(&Path) -> Result<String, LifecycleError> + Send + Sync>;
 
 /// Pure, stateless planner calculating actions needed to reconcile manifest into reality.
 pub struct DomainLifecyclePlanner<'a, H: Hypervisor, S: StorageManager> {
@@ -135,16 +129,14 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
             })
             .collect::<Result<Vec<(InstancePlanAction, Vec<DanglingSnapshotAlert>)>, LifecycleError>>()?;
 
-        let (actions, dangling_snapshots) = planned_instances
-            .into_iter()
-            .fold(
-                (Vec::new(), Vec::new()),
-                |(mut accumulated_actions, mut accumulated_alerts), (action, alerts)| {
-                    accumulated_actions.push(action);
-                    accumulated_alerts.extend(alerts);
-                    (accumulated_actions, accumulated_alerts)
-                },
-            );
+        let (actions, dangling_snapshots) = planned_instances.into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut accumulated_actions, mut accumulated_alerts), (action, alerts)| {
+                accumulated_actions.push(action);
+                accumulated_alerts.extend(alerts);
+                (accumulated_actions, accumulated_alerts)
+            },
+        );
 
         Ok(OnehostPlan {
             actions,
@@ -158,22 +150,23 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
         instance_configuration: &InstanceConfiguration,
         manifest: &OnehostManifest,
     ) -> Result<(InstancePlanAction, Vec<DanglingSnapshotAlert>), LifecycleError> {
-        let effective_pool = instance_configuration
-            .effective_pool(&manifest.storage)?;
+        let effective_pool = instance_configuration.effective_pool(instance_name)?;
         let target_pool_directory = self.hypervisor.resolve_pool_path(effective_pool)?;
 
-        let flavor_metadata = manifest
+        let flavor_config = manifest
             .flavors
-            .get(&instance_configuration.image.flavor_name)
+            .get(&instance_configuration.image.flavor)
             .ok_or_else(|| FlavorResolutionError::UnknownFlavor {
-                requested_flavor: instance_configuration.image.flavor_name.clone(),
+                requested_flavor: instance_configuration.image.flavor.clone(),
                 available_flavors: manifest.flavors.keys().cloned().collect(),
             })?;
 
-        let derivation_metadata = FlavorDerivationMetadata::new(
-            flavor_metadata.oemdrv_path.clone(),
-            flavor_metadata.hash.clone(),
-        )?;
+        let content_hash = self
+            .storage
+            .compute_content_hash(&flavor_config.oemdrv_path, &flavor_config.extra_isos)?;
+
+        let derivation_metadata =
+            FlavorDerivationMetadata::new(flavor_config.oemdrv_path.clone(), content_hash)?;
 
         let golden_master_path = ContentAddressedImageResolver::resolve_depot_master_path(
             &manifest.storage.depot_store_dir,
@@ -200,7 +193,9 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
         // Read domain template XML via custom resolver or storage manager
         let template_xml_content = match &self.template_resolver {
             Some(resolver) => resolver(&instance_configuration.template_xml)?,
-            None => self.storage.read_file(&instance_configuration.template_xml)?,
+            None => self
+                .storage
+                .read_file(&instance_configuration.template_xml)?,
         };
 
         let injection_parameters = DomainTemplateInjectionParameters {
@@ -228,7 +223,6 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                     golden_master_path,
                     nvram_path,
                     nvram_template_path: manifest.storage.nvram_template.clone(),
-                    autostart: instance_configuration.autostart,
                 };
                 Ok((create_action, Vec::new()))
             }
@@ -264,20 +258,28 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                     .map(|active_disk_path| -> Result<Option<InstancePlanAction>, LifecycleError> {
                         match self.storage.inspect_image(active_disk_path) {
                             Ok(inspection_info) => {
-                                let expected_hash = &derivation_metadata.content_hash;
-                                let backing_matches_hash = inspection_info
+                                let expected_base_filename = ContentAddressedImageResolver::resolve_golden_master_filename(
+                                    &instance_configuration.image,
+                                    &derivation_metadata,
+                                );
+                                let backing_matches_base = inspection_info
                                     .backing_file
                                     .as_ref()
-                                    .is_some_and(|backing_file_path| backing_file_path.to_string_lossy().contains(expected_hash));
+                                    .is_some_and(|backing_file_path| {
+                                        backing_file_path
+                                            .file_name()
+                                            .and_then(|name| name.to_str())
+                                            .is_some_and(|name| name == expected_base_filename)
+                                            || backing_file_path == &base_cache_path
+                                            || backing_file_path == &golden_master_path
+                                    });
 
-                                let planned_action = if !backing_matches_hash {
+                                let planned_action = if !backing_matches_base {
                                     Some(InstancePlanAction::Recreate {
                                         instance_name: instance_name.to_string(),
                                         reason: format!(
-                                            "Base image changed to hash '{expected_hash}' (forces replacement)"
+                                            "Base image changed to '{expected_base_filename}' (forces replacement)"
                                         ),
-                                        policy: instance_configuration.lifecycle.on_image_change,
-                                        prevent_destroy: instance_configuration.lifecycle.prevent_destroy,
                                         concrete_xml: concrete_xml.clone(),
                                         target_pool: effective_pool.to_string(),
                                         overlay_path: overlay_path.clone(),
@@ -285,7 +287,6 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                                         golden_master_path: golden_master_path.clone(),
                                         nvram_path: nvram_path.clone(),
                                         nvram_template_path: manifest.storage.nvram_template.clone(),
-                                        autostart: instance_configuration.autostart,
                                     })
                                 } else {
                                     let active_disk_directory = active_disk_path.parent();

@@ -1,11 +1,12 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use onehost::storage::{
-    execute_cross_device_streaming_move, execute_safe_file_move, parse_qemu_img_info_json,
     MockImageRecord, MockStorageManager, QemuImgStorage, RecordedStorageAction, StorageError,
-    StorageManager,
+    StorageManager, execute_compute_content_hash, execute_cross_device_streaming_move,
+    execute_safe_file_move, parse_qemu_img_info_json,
 };
 
 const SAMPLE_QEMU_IMG_INFO_JSON: &str = r#"
@@ -41,8 +42,14 @@ fn test_execute_cross_device_streaming_move() {
     execute_cross_device_streaming_move(&source_path, &destination_path)
         .expect("Streaming move should succeed");
 
-    assert!(!source_path.exists(), "Source file must be unlinked after successful move");
-    assert!(destination_path.exists(), "Destination file must exist after move");
+    assert!(
+        !source_path.exists(),
+        "Source file must be unlinked after successful move"
+    );
+    assert!(
+        destination_path.exists(),
+        "Destination file must exist after move"
+    );
 
     let transferred_content = fs::read(&destination_path).expect("Failed to read moved file");
     assert_eq!(transferred_content, test_payload);
@@ -55,7 +62,10 @@ fn test_execute_cross_device_streaming_move_nonexistent_source() {
     let destination_path = destination_directory.path().join("destination.qcow2");
 
     let result = execute_cross_device_streaming_move(non_existent_source, &destination_path);
-    assert!(matches!(result, Err(StorageError::SourceFileNotFound { .. })));
+    assert!(matches!(
+        result,
+        Err(StorageError::SourceFileNotFound { .. })
+    ));
 }
 
 #[test]
@@ -64,7 +74,8 @@ fn test_execute_cross_device_streaming_move_nonexistent_destination_parent() {
     let source_path = source_directory.path().join("source.qcow2");
     fs::write(&source_path, b"dummy payload").expect("Failed to write source file");
 
-    let non_existent_destination = Path::new("/tmp/non_existent_parent_dir_xyz123/destination.qcow2");
+    let non_existent_destination =
+        Path::new("/tmp/non_existent_parent_dir_xyz123/destination.qcow2");
     let result = execute_cross_device_streaming_move(&source_path, non_existent_destination);
     assert!(matches!(
         result,
@@ -84,7 +95,9 @@ fn test_mock_storage_manager_overlay_creation_and_rebase() {
         .create_cow_overlay(&backing_path, &overlay_path)
         .expect("Overlay creation should succeed");
 
-    let inspected = storage.inspect_image(&overlay_path).expect("Inspection should succeed");
+    let inspected = storage
+        .inspect_image(&overlay_path)
+        .expect("Inspection should succeed");
     assert_eq!(inspected.format, "qcow2");
     assert_eq!(inspected.backing_file, Some(backing_path.clone()));
 
@@ -92,8 +105,13 @@ fn test_mock_storage_manager_overlay_creation_and_rebase() {
         .rebase_overlay(&overlay_path, &new_backing_path, true)
         .expect("Unsafe rebase should succeed");
 
-    let rebased_inspected = storage.inspect_image(&overlay_path).expect("Rebased inspection should succeed");
-    assert_eq!(rebased_inspected.backing_file, Some(new_backing_path.clone()));
+    let rebased_inspected = storage
+        .inspect_image(&overlay_path)
+        .expect("Rebased inspection should succeed");
+    assert_eq!(
+        rebased_inspected.backing_file,
+        Some(new_backing_path.clone())
+    );
 
     let actions = storage.recorded_actions();
     assert!(actions.contains(&RecordedStorageAction::CreateCowOverlay {
@@ -145,7 +163,10 @@ fn test_mock_storage_manager_image_inspection_and_check() {
 fn test_qemu_img_storage_copy_base_image_sets_readonly_permissions() {
     let temp_workspace = tempdir().expect("Failed to create temporary workspace");
     let depot_path = temp_workspace.path().join("depot-master.qcow2");
-    let pool_path = temp_workspace.path().join("pool").join("cached-master.qcow2");
+    let pool_path = temp_workspace
+        .path()
+        .join("pool")
+        .join("cached-master.qcow2");
 
     fs::write(&depot_path, b"GOLDEN_MASTER_READONLY_BITS").expect("Failed to write golden master");
 
@@ -169,7 +190,10 @@ fn test_qemu_img_storage_copy_base_image_sets_readonly_permissions() {
 fn test_qemu_img_initialize_nvram() {
     let temp_workspace = tempdir().expect("Failed to create temporary workspace");
     let template_path = temp_workspace.path().join("template_VARS.fd");
-    let destination_nvram = temp_workspace.path().join("nvram_dir").join("instance_VARS.fd");
+    let destination_nvram = temp_workspace
+        .path()
+        .join("nvram_dir")
+        .join("instance_VARS.fd");
 
     fs::write(&template_path, b"NVRAM_TEMPLATE_BITS").expect("Failed to write template NVRAM");
 
@@ -179,7 +203,10 @@ fn test_qemu_img_initialize_nvram() {
         .expect("NVRAM initialization should succeed");
 
     assert!(destination_nvram.exists());
-    assert_eq!(fs::read(&destination_nvram).unwrap(), b"NVRAM_TEMPLATE_BITS");
+    assert_eq!(
+        fs::read(&destination_nvram).unwrap(),
+        b"NVRAM_TEMPLATE_BITS"
+    );
 }
 
 #[test]
@@ -213,7 +240,10 @@ fn test_execute_safe_file_move_success() {
 
     assert!(!source_path.exists());
     assert!(destination_path.exists());
-    assert_eq!(fs::read(&destination_path).unwrap(), b"DIRECT_SAFE_MOVE_DATA");
+    assert_eq!(
+        fs::read(&destination_path).unwrap(),
+        b"DIRECT_SAFE_MOVE_DATA"
+    );
 }
 
 #[test]
@@ -230,24 +260,40 @@ fn test_mock_storage_manager_pure_in_memory_hermeticity() {
     storage
         .copy_base_image(&depot_path, &pool_path)
         .expect("In-memory copy should succeed");
-    assert!(!pool_path.exists(), "Mock must not write to host filesystem");
-    assert!(storage.recorded_actions().contains(&RecordedStorageAction::CopyBaseImage {
-        source_depot_path: depot_path.clone(),
-        destination_pool_path: pool_path.clone(),
-    }));
+    assert!(
+        !pool_path.exists(),
+        "Mock must not write to host filesystem"
+    );
+    assert!(
+        storage
+            .recorded_actions()
+            .contains(&RecordedStorageAction::CopyBaseImage {
+                source_depot_path: depot_path.clone(),
+                destination_pool_path: pool_path.clone(),
+            })
+    );
 
     // Initialize NVRAM (in-memory)
     storage
         .initialize_nvram(&nvram_template, &nvram_destination)
         .expect("In-memory NVRAM initialization should succeed");
-    assert!(!nvram_destination.exists(), "Mock must not write to host filesystem");
-    assert_eq!(storage.initialized_nvrams(), vec![(nvram_template.clone(), nvram_destination.clone())]);
+    assert!(
+        !nvram_destination.exists(),
+        "Mock must not write to host filesystem"
+    );
+    assert_eq!(
+        storage.initialized_nvrams(),
+        vec![(nvram_template.clone(), nvram_destination.clone())]
+    );
 
     // Restore thin backup (in-memory)
     storage
         .restore_thin_backup(&archive_path, &restored_overlay, Some(&pool_path))
         .expect("In-memory restore should succeed");
-    assert!(!restored_overlay.exists(), "Mock must not write to host filesystem");
+    assert!(
+        !restored_overlay.exists(),
+        "Mock must not write to host filesystem"
+    );
     assert!(storage.inspect_image(&restored_overlay).is_ok());
 
     // Delete image (in-memory)
@@ -282,7 +328,12 @@ fn test_mock_storage_manager_convert_thin_backup() {
     let backing_file = PathBuf::from("/var/lib/libvirt/images/win11-base.qcow2");
 
     storage
-        .convert_thin_backup(&source_disk, &destination_archive, Some(&backing_file), true)
+        .convert_thin_backup(
+            &source_disk,
+            &destination_archive,
+            Some(&backing_file),
+            true,
+        )
         .expect("Thin backup conversion should succeed");
 
     let actions = storage.recorded_actions();
@@ -293,3 +344,99 @@ fn test_mock_storage_manager_convert_thin_backup() {
         compress: true,
     }));
 }
+
+#[test]
+fn test_execute_compute_content_hash_streaming_and_deterministic_order() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let oemdrv_path = temp_dir.path().join("oemdrv.iso");
+    let virtio_path = temp_dir.path().join("virtio.iso");
+    let tools_path = temp_dir.path().join("tools.iso");
+
+    fs::write(&oemdrv_path, b"OEMDRV_PAYLOAD_CONTENT_DATA").expect("Failed to write oemdrv");
+    fs::write(&virtio_path, b"VIRTIO_DRIVER_DATA").expect("Failed to write virtio");
+    fs::write(&tools_path, b"GUEST_TOOLS_DATA").expect("Failed to write tools");
+
+    // Order 1: virtio then tools
+    let mut extra_isos_1 = HashMap::new();
+    extra_isos_1.insert("virtio".to_string(), virtio_path.clone());
+    extra_isos_1.insert("tools".to_string(), tools_path.clone());
+
+    // Order 2: tools then virtio
+    let mut extra_isos_2 = HashMap::new();
+    extra_isos_2.insert("tools".to_string(), tools_path.clone());
+    extra_isos_2.insert("virtio".to_string(), virtio_path.clone());
+
+    let hash_1 = execute_compute_content_hash(&oemdrv_path, &extra_isos_1)
+        .expect("Content hash calculation should succeed");
+    let hash_2 = execute_compute_content_hash(&oemdrv_path, &extra_isos_2)
+        .expect("Content hash calculation should succeed");
+
+    assert_eq!(
+        hash_1.len(),
+        12,
+        "Content hash must be exactly 12 characters"
+    );
+    assert_eq!(
+        hash_1, hash_2,
+        "Hash calculation must be deterministic regardless of map insertion order"
+    );
+
+    // Verify changing content changes hash
+    let modified_oemdrv_path = temp_dir.path().join("oemdrv_modified.iso");
+    fs::write(&modified_oemdrv_path, b"DIFFERENT_OEMDRV_PAYLOAD")
+        .expect("Failed to write modified oemdrv");
+    let hash_3 = execute_compute_content_hash(&modified_oemdrv_path, &extra_isos_1)
+        .expect("Content hash calculation should succeed");
+    assert_ne!(
+        hash_1, hash_3,
+        "Different content must produce different hash"
+    );
+
+    // Test with QemuImgStorage delegates cleanly
+    let qemu_storage = QemuImgStorage::new();
+    let qemu_hash = qemu_storage
+        .compute_content_hash(&oemdrv_path, &extra_isos_1)
+        .expect("QemuImgStorage compute_content_hash should succeed");
+    assert_eq!(hash_1, qemu_hash);
+}
+
+#[test]
+fn test_mock_storage_manager_compute_content_hash() {
+    let oemdrv_path = PathBuf::from("/nix/store/oemdrv");
+    let extra_isos = HashMap::new();
+
+    // Register an explicit content hash
+    let storage = MockStorageManager::new().with_content_hash(&oemdrv_path, "123456789abc");
+
+    let hash = storage
+        .compute_content_hash(&oemdrv_path, &extra_isos)
+        .expect("MockStorageManager compute_content_hash should succeed");
+    assert_eq!(hash, "123456789abc");
+}
+
+#[test]
+fn test_mock_storage_manager_compute_content_hash_unregistered_fallback() {
+    let oemdrv_path = PathBuf::from("/virtual/oemdrv.iso");
+    let mut extra_isos = HashMap::new();
+    extra_isos.insert("b_driver".to_string(), PathBuf::from("/virtual/b.iso"));
+    extra_isos.insert("a_driver".to_string(), PathBuf::from("/virtual/a.iso"));
+
+    let storage = MockStorageManager::new();
+    let hash_1 = storage
+        .compute_content_hash(&oemdrv_path, &extra_isos)
+        .expect("MockStorageManager fallback compute_content_hash should succeed");
+
+    assert_eq!(hash_1.len(), 12);
+
+    // Verify deterministic ordering of extra_isos
+    let mut extra_isos_reversed = HashMap::new();
+    extra_isos_reversed.insert("a_driver".to_string(), PathBuf::from("/virtual/a.iso"));
+    extra_isos_reversed.insert("b_driver".to_string(), PathBuf::from("/virtual/b.iso"));
+
+    let hash_2 = storage
+        .compute_content_hash(&oemdrv_path, &extra_isos_reversed)
+        .expect("MockStorageManager fallback compute_content_hash should succeed");
+
+    assert_eq!(hash_1, hash_2);
+}
+

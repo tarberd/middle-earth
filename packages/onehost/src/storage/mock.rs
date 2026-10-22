@@ -62,6 +62,10 @@ pub enum RecordedStorageAction {
     SetReadonly {
         file_path: PathBuf,
     },
+    ComputeContentHash {
+        oemdrv_path: PathBuf,
+        extra_isos: HashMap<String, PathBuf>,
+    },
 }
 
 /// In-memory representation of an image tracked by MockStorageManager.
@@ -96,6 +100,7 @@ pub struct MockStorageManagerState {
     pub initialized_nvrams: Vec<(PathBuf, PathBuf)>,
     pub injected_errors: HashMap<PathBuf, String>,
     pub files: HashMap<PathBuf, String>,
+    pub content_hashes: HashMap<PathBuf, String>,
 }
 
 /// In-memory mock implementing the StorageManager trait for hermetic testing.
@@ -144,6 +149,14 @@ impl MockStorageManager {
             locked_state
                 .injected_errors
                 .insert(path.into(), error_details.into());
+        }
+        self
+    }
+
+    /// Functional builder: registers a precomputed content hash for an OEMDRV path.
+    pub fn with_content_hash(self, path: impl Into<PathBuf>, hash: impl Into<String>) -> Self {
+        if let Ok(mut locked_state) = self.state.lock() {
+            locked_state.content_hashes.insert(path.into(), hash.into());
         }
         self
     }
@@ -198,7 +211,9 @@ impl StorageManager for MockStorageManager {
                 is_corrupted: false,
             };
 
-            locked_state.images.insert(overlay_path.to_path_buf(), record);
+            locked_state
+                .images
+                .insert(overlay_path.to_path_buf(), record);
             Ok(())
         }
     }
@@ -229,12 +244,11 @@ impl StorageManager for MockStorageManager {
                 stderr: error_details.clone(),
             })
         } else {
-            let image_record = locked_state
-                .images
-                .get_mut(overlay_path)
-                .ok_or_else(|| StorageError::SourceFileNotFound {
+            let image_record = locked_state.images.get_mut(overlay_path).ok_or_else(|| {
+                StorageError::SourceFileNotFound {
                     path: overlay_path.to_path_buf(),
-                })?;
+                }
+            })?;
 
             image_record.backing_file = Some(new_backing_file_path.to_path_buf());
             Ok(())
@@ -258,12 +272,11 @@ impl StorageManager for MockStorageManager {
                 details: error_details.clone(),
             })
         } else {
-            let image_record = locked_state
-                .images
-                .get(image_path)
-                .ok_or_else(|| StorageError::SourceFileNotFound {
+            let image_record = locked_state.images.get(image_path).ok_or_else(|| {
+                StorageError::SourceFileNotFound {
                     path: image_path.to_path_buf(),
-                })?;
+                }
+            })?;
 
             Ok(ImageInspectionInfo {
                 format: image_record.format.clone(),
@@ -286,12 +299,11 @@ impl StorageManager for MockStorageManager {
                 image_path: image_path.to_path_buf(),
             });
 
-        let image_record = locked_state
-            .images
-            .get(image_path)
-            .ok_or_else(|| StorageError::SourceFileNotFound {
+        let image_record = locked_state.images.get(image_path).ok_or_else(|| {
+            StorageError::SourceFileNotFound {
                 path: image_path.to_path_buf(),
-            })?;
+            }
+        })?;
 
         if let Some(error_details) = locked_state.injected_errors.get(image_path) {
             Err(StorageError::ImageCorruptionDetected {
@@ -325,9 +337,10 @@ impl StorageManager for MockStorageManager {
                 destination_pool_path: destination_pool_path.to_path_buf(),
             });
 
-        locked_state
-            .copied_base_images
-            .push((source_depot_path.to_path_buf(), destination_pool_path.to_path_buf()));
+        locked_state.copied_base_images.push((
+            source_depot_path.to_path_buf(),
+            destination_pool_path.to_path_buf(),
+        ));
 
         if let Some(source_record) = locked_state.images.get(source_depot_path).cloned() {
             locked_state
@@ -458,9 +471,10 @@ impl StorageManager for MockStorageManager {
                 destination_nvram_path: destination_nvram_path.to_path_buf(),
             });
 
-        locked_state
-            .initialized_nvrams
-            .push((template_path.to_path_buf(), destination_nvram_path.to_path_buf()));
+        locked_state.initialized_nvrams.push((
+            template_path.to_path_buf(),
+            destination_nvram_path.to_path_buf(),
+        ));
 
         Ok(())
     }
@@ -512,13 +526,11 @@ impl StorageManager for MockStorageManager {
                 source_path: source_path.to_path_buf(),
             });
 
-        locked_state
-            .files
-            .get(source_path)
-            .cloned()
-            .ok_or_else(|| StorageError::SourceFileNotFound {
+        locked_state.files.get(source_path).cloned().ok_or_else(|| {
+            StorageError::SourceFileNotFound {
                 path: source_path.to_path_buf(),
-            })
+            }
+        })
     }
 
     fn create_empty_disk(&self, disk_path: &Path, size_bytes: u64) -> Result<(), StorageError> {
@@ -563,5 +575,70 @@ impl StorageManager for MockStorageManager {
 
         Ok(())
     }
-}
 
+    fn compute_content_hash(
+        &self,
+        oemdrv_path: &Path,
+        extra_isos: &std::collections::HashMap<String, PathBuf>,
+    ) -> Result<String, StorageError> {
+        let mut locked_state = self
+            .state
+            .lock()
+            .map_err(|poison_error| std::io::Error::other(poison_error.to_string()))?;
+
+        locked_state
+            .recorded_actions
+            .push(RecordedStorageAction::ComputeContentHash {
+                oemdrv_path: oemdrv_path.to_path_buf(),
+                extra_isos: extra_isos.clone(),
+            });
+
+        if let Some(error_details) = locked_state.injected_errors.get(oemdrv_path) {
+            Err(StorageError::CommandExecutionFailed {
+                command: format!("sha256sum {}", oemdrv_path.display()),
+                exit_code: Some(1),
+                stderr: error_details.clone(),
+            })
+        } else if let Some(hash) = locked_state.content_hashes.get(oemdrv_path) {
+            Ok(hash.clone())
+        } else if locked_state.files.contains_key(oemdrv_path) {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            let oemdrv_data = locked_state.files.get(oemdrv_path).ok_or_else(|| {
+                StorageError::SourceFileNotFound {
+                    path: oemdrv_path.to_path_buf(),
+                }
+            })?;
+            hasher.update(oemdrv_data.as_bytes());
+
+            let sorted_isos: std::collections::BTreeMap<&String, &PathBuf> =
+                extra_isos.iter().collect();
+            sorted_isos.values().try_for_each(|iso_path| {
+                let iso_data = locked_state.files.get(*iso_path).ok_or_else(|| {
+                    StorageError::SourceFileNotFound {
+                        path: (*iso_path).clone(),
+                    }
+                })?;
+                hasher.update(iso_data.as_bytes());
+                Ok::<(), StorageError>(())
+            })?;
+            let full_hex = format!("{:x}", hasher.finalize());
+            Ok(full_hex[..12].to_string())
+        } else if oemdrv_path.is_file() && extra_isos.values().all(|path| path.is_file()) {
+            crate::storage::traits::execute_compute_content_hash(oemdrv_path, extra_isos)
+        } else {
+            use sha2::{Digest, Sha256};
+            let mut initial_hasher = Sha256::new();
+            initial_hasher.update(oemdrv_path.to_string_lossy().as_bytes());
+            let sorted_isos: std::collections::BTreeMap<&String, &PathBuf> =
+                extra_isos.iter().collect();
+            let hasher = sorted_isos.iter().fold(initial_hasher, |mut acc, (key, iso_path)| {
+                acc.update(key.as_bytes());
+                acc.update(iso_path.to_string_lossy().as_bytes());
+                acc
+            });
+            let full_hex = format!("{:x}", hasher.finalize());
+            Ok(full_hex[..12].to_string())
+        }
+    }
+}

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::backup::model::{BackupManifest, RestoreOptions};
 use crate::backup::RestoreError;
+use crate::backup::model::{BackupManifest, RestoreOptions};
 use crate::config::model::OnehostManifest;
 use crate::domain::element::DomainXmlElement;
 use crate::hypervisor::traits::Hypervisor;
@@ -57,7 +57,7 @@ impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
                     config
                         .instances
                         .get(&manifest.instance_name)
-                        .and_then(|instance| instance.effective_pool(&config.storage).ok())
+                        .and_then(|instance| instance.effective_pool(&manifest.instance_name).ok())
                 })
             })
             .ok_or(RestoreError::UnresolvedStoragePool)?;
@@ -71,10 +71,9 @@ impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
 
             let is_already_cached = self.storage.inspect_image(&base_cache_path).is_ok();
             if !is_already_cached {
-                let depot_store_directory = options
-                    .depot_store_dir
-                    .as_deref()
-                    .or_else(|| manifest_config.map(|config| config.storage.depot_store_dir.as_path()));
+                let depot_store_directory = options.depot_store_dir.as_deref().or_else(|| {
+                    manifest_config.map(|config| config.storage.depot_store_dir.as_path())
+                });
 
                 let depot_master_path = depot_store_directory
                     .map(|directory| directory.join(golden_master_filename))
@@ -83,11 +82,11 @@ impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
                     })?;
 
                 let depot_master_exists = self.storage.inspect_image(&depot_master_path).is_ok();
-                depot_master_exists
-                    .then_some(())
-                    .ok_or_else(|| RestoreError::BaseImageNotFound {
+                depot_master_exists.then_some(()).ok_or_else(|| {
+                    RestoreError::BaseImageNotFound {
                         path: depot_master_path.clone(),
-                    })?;
+                    }
+                })?;
 
                 self.storage
                     .copy_base_image(&depot_master_path, &base_cache_path)?;
@@ -114,11 +113,8 @@ impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
                 .as_ref()
                 .and(maybe_base_cache_path.as_deref());
 
-            self.storage.restore_thin_backup(
-                &archive_path,
-                &destination_overlay_path,
-                backing_path,
-            )
+            self.storage
+                .restore_thin_backup(&archive_path, &destination_overlay_path, backing_path)
         })?;
 
         let domain_xml = self

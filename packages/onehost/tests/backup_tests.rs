@@ -82,17 +82,16 @@ fn test_offline_backup_success() {
     let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
 
     let overlay_path = PathBuf::from(format!("/var/lib/libvirt/images/{instance_name}.qcow2"));
-    let storage = MockStorageManager::new()
-        .with_image(
-            overlay_path,
-            MockImageRecord {
-                format: "qcow2".to_string(),
-                virtual_size_bytes: 68_719_476_736,
-                actual_size_bytes: 1_234_567,
-                backing_file: Some(PathBuf::from("/data/depot/store/win11-base.qcow2")),
-                is_corrupted: false,
-            },
-        );
+    let storage = MockStorageManager::new().with_image(
+        overlay_path,
+        MockImageRecord {
+            format: "qcow2".to_string(),
+            virtual_size_bytes: 68_719_476_736,
+            actual_size_bytes: 1_234_567,
+            backing_file: Some(PathBuf::from("/data/depot/store/win11-base.qcow2")),
+            is_corrupted: false,
+        },
+    );
 
     let engine = BackupEngine::new(&hypervisor, &storage);
 
@@ -119,10 +118,7 @@ fn test_offline_backup_success() {
     assert_eq!(backup_manifest.disks.len(), 1);
     assert_eq!(backup_manifest.disks[0].target_device, "sda");
     assert_eq!(backup_manifest.disks[0].archive_filename, "sda.qcow2");
-    assert_eq!(
-        backup_manifest.disks[0].virtual_size_bytes,
-        68_719_476_736
-    );
+    assert_eq!(backup_manifest.disks[0].virtual_size_bytes, 68_719_476_736);
 
     let storage_actions = storage.recorded_actions();
     let has_convert_action = storage_actions.iter().any(|recorded_action| {
@@ -172,17 +168,16 @@ fn test_online_backup_vss_quiesced_success() {
     let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
 
     let overlay_path = PathBuf::from(format!("/var/lib/libvirt/images/{instance_name}.qcow2"));
-    let storage = MockStorageManager::new()
-        .with_image(
-            overlay_path,
-            MockImageRecord {
-                format: "qcow2".to_string(),
-                virtual_size_bytes: 68_719_476_736,
-                actual_size_bytes: 2_345_678,
-                backing_file: Some(PathBuf::from("/data/depot/store/win11-base.qcow2")),
-                is_corrupted: false,
-            },
-        );
+    let storage = MockStorageManager::new().with_image(
+        overlay_path,
+        MockImageRecord {
+            format: "qcow2".to_string(),
+            virtual_size_bytes: 68_719_476_736,
+            actual_size_bytes: 2_345_678,
+            backing_file: Some(PathBuf::from("/data/depot/store/win11-base.qcow2")),
+            is_corrupted: false,
+        },
+    );
 
     let engine = BackupEngine::new(&hypervisor, &storage);
 
@@ -262,17 +257,16 @@ fn test_online_backup_quiesce_fallback_to_crash_consistent() {
         .with_quiesce_failure(true);
 
     let overlay_path = PathBuf::from(format!("/var/lib/libvirt/images/{instance_name}.qcow2"));
-    let storage = MockStorageManager::new()
-        .with_image(
-            overlay_path,
-            MockImageRecord {
-                format: "qcow2".to_string(),
-                virtual_size_bytes: 68_719_476_736,
-                actual_size_bytes: 500_000,
-                backing_file: None,
-                is_corrupted: false,
-            },
-        );
+    let storage = MockStorageManager::new().with_image(
+        overlay_path,
+        MockImageRecord {
+            format: "qcow2".to_string(),
+            virtual_size_bytes: 68_719_476_736,
+            actual_size_bytes: 500_000,
+            backing_file: None,
+            is_corrupted: false,
+        },
+    );
 
     let engine = BackupEngine::new(&hypervisor, &storage);
 
@@ -437,15 +431,16 @@ fn test_multi_disk_atomic_snapshot_backup() {
     assert_eq!(backup_manifest.disks.len(), 2);
 
     let hypervisor_actions = hypervisor.recorded_actions();
-    let snapshot_action = hypervisor_actions.iter().find_map(|recorded_action| {
-        match recorded_action {
-            RecordedHypervisorAction::CreateSnapshot {
-                disk_specifications,
-                ..
-            } => Some(disk_specifications),
-            _ => None,
-        }
-    });
+    let snapshot_action =
+        hypervisor_actions
+            .iter()
+            .find_map(|recorded_action| match recorded_action {
+                RecordedHypervisorAction::CreateSnapshot {
+                    disk_specifications,
+                    ..
+                } => Some(disk_specifications),
+                _ => None,
+            });
 
     let snapshot_specs = snapshot_action.expect("CreateSnapshot should have been recorded");
     assert_eq!(
@@ -533,7 +528,9 @@ fn test_restore_engine_success() {
             archive_filename: "sda.qcow2".to_string(),
             virtual_size_bytes: 68_719_476_736,
             archive_size_bytes: 1_500_000,
-            backing_file: Some(PathBuf::from(format!("{pool_path}/{golden_master_filename}"))),
+            backing_file: Some(PathBuf::from(format!(
+                "{pool_path}/{golden_master_filename}"
+            ))),
         }],
         domain_xml_filename: "domain.xml".to_string(),
         nvram_filename: "nvram.fd".to_string(),
@@ -582,12 +579,12 @@ fn test_restore_engine_success() {
 
     let storage_actions = storage.recorded_actions();
     let has_copied_base = storage_actions.iter().any(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedStorageAction::CopyBaseImage { .. }
-        )
+        matches!(recorded_action, RecordedStorageAction::CopyBaseImage { .. })
     });
-    assert!(has_copied_base, "Base image should be copied to target pool cache");
+    assert!(
+        has_copied_base,
+        "Base image should be copied to target pool cache"
+    );
 
     let has_restored_thin = storage_actions.iter().any(|recorded_action| {
         matches!(
@@ -607,7 +604,10 @@ fn test_restore_engine_success() {
             if destination_nvram_path == &PathBuf::from(format!("/var/lib/libvirt/qemu/nvram/{instance_name}_VARS.fd"))
         )
     });
-    assert!(has_restored_nvram, "NVRAM should be restored to host path from domain XML");
+    assert!(
+        has_restored_nvram,
+        "NVRAM should be restored to host path from domain XML"
+    );
 
     let hypervisor_actions = hypervisor.recorded_actions();
     let has_defined_domain = hypervisor_actions.iter().any(|recorded_action| {
@@ -616,7 +616,10 @@ fn test_restore_engine_success() {
             RecordedHypervisorAction::DefineDomain { .. }
         )
     });
-    assert!(has_defined_domain, "Domain should be registered with hypervisor");
+    assert!(
+        has_defined_domain,
+        "Domain should be registered with hypervisor"
+    );
 
     let has_refreshed_pool = hypervisor_actions.iter().any(|recorded_action| {
         matches!(
@@ -625,7 +628,10 @@ fn test_restore_engine_success() {
             if refreshed_pool == pool_name
         )
     });
-    assert!(has_refreshed_pool, "Target storage pool should be refreshed in Libvirt");
+    assert!(
+        has_refreshed_pool,
+        "Target storage pool should be refreshed in Libvirt"
+    );
 }
 
 #[test]
@@ -678,7 +684,10 @@ fn test_restore_engine_rejects_already_existing_domain() {
     let restore_result = restore_engine.restore_instance(backup_directory, &options, None);
 
     assert!(
-        matches!(restore_result, Err(RestoreError::DomainAlreadyExists { .. })),
+        matches!(
+            restore_result,
+            Err(RestoreError::DomainAlreadyExists { .. })
+        ),
         "Restore must reject overwriting existing domain when allow_overwrite is false"
     );
 }
@@ -776,7 +785,9 @@ fn test_restore_engine_fails_when_base_image_not_found() {
             archive_filename: "sda.qcow2".to_string(),
             virtual_size_bytes: 68_719_476_736,
             archive_size_bytes: 1_000_000,
-            backing_file: Some(PathBuf::from("/var/lib/libvirt/images/missing-master.qcow2")),
+            backing_file: Some(PathBuf::from(
+                "/var/lib/libvirt/images/missing-master.qcow2",
+            )),
         }],
         domain_xml_filename: "domain.xml".to_string(),
         nvram_filename: "nvram.fd".to_string(),

@@ -5,10 +5,10 @@ use tempfile::tempdir;
 use onehost::config::loader::ManifestLoader;
 use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainState, Hypervisor};
+use onehost::lifecycle::LifecycleError;
 use onehost::lifecycle::applier::{ApplyOptions, DomainLifecycleApplier};
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{DomainLifecyclePlanner, InstancePlanAction};
-use onehost::lifecycle::LifecycleError;
 use onehost::storage::mock::{MockImageRecord, MockStorageManager};
 use onehost::storage::traits::StorageManager;
 
@@ -53,10 +53,12 @@ struct TestWorkspace {
     default_pool_directory: std::path::PathBuf,
     nvme_pool_directory: std::path::PathBuf,
     initial_golden_master_path: std::path::PathBuf,
+    oemdrv_path: std::path::PathBuf,
+    content_hash: String,
 }
 
 impl TestWorkspace {
-    fn new(on_image_change_policy: &str) -> Self {
+    fn new(_on_image_change_policy: &str) -> Self {
         let temporary_workspace_directory = tempdir().expect("create workspace tempdir");
         let workspace_root_path = temporary_workspace_directory.path();
 
@@ -84,8 +86,17 @@ impl TestWorkspace {
         let template_xml_path = workspace_root_path.join("win11-template.xml");
         std::fs::write(&template_xml_path, SAMPLE_TEMPLATE_XML).expect("write template xml");
 
-        let initial_master_path =
-            depot_store_directory.join("win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2");
+        let oemdrv_path = workspace_root_path.join("oemdrv");
+        std::fs::write(&oemdrv_path, b"OEMDRV_PAYLOAD").expect("write oemdrv");
+        let extra_isos = std::collections::HashMap::new();
+        let content_hash =
+            onehost::storage::execute_compute_content_hash(&oemdrv_path, &extra_isos)
+                .expect("compute content hash");
+
+        let initial_master_path = depot_store_directory.join(format!(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+            content_hash
+        ));
         std::fs::write(&initial_master_path, b"GOLDEN_MASTER_QCOW2").expect("write golden master");
 
         let manifest_content = format!(
@@ -98,26 +109,20 @@ impl TestWorkspace {
     "depot_backup_dir": "{}",
     "nvram_dir": "{}",
     "nvram_template": "{}",
-    "ovmf_code": "/run/libvirt/nix-ovmf/code.fd",
-    "default_pool": "default"
+    "ovmf_code": "/run/libvirt/nix-ovmf/code.fd"
   }},
   "flavors": {{
     "looking-glass": {{
-      "oemdrv_path": "/nix/store/ba6eafb71234-oemdrv-looking-glass",
-      "hash": "ba6eafb7"
+      "oemdrv_path": "{}",
+      "extra_isos": {{}}
     }}
   }},
   "instances": {{
     "win11-gollum": {{
       "uuid": "e5a7d620-8931-4bf6-98ec-7e44a30e8c45",
       "template_xml": "{}",
-      "image": "win11/26300.9457.pro.en-us/looking-glass",
-      "pool": "default",
-      "autostart": false,
-      "lifecycle": {{
-        "on_image_change": "{}",
-        "prevent_destroy": false
-      }}
+      "image": "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
+      "pool": "default"
     }}
   }}
 }}"#,
@@ -126,8 +131,8 @@ impl TestWorkspace {
             depot_backup_directory.display(),
             nvram_directory.display(),
             nvram_template_path.display(),
+            oemdrv_path.display(),
             template_xml_path.display(),
-            on_image_change_policy
         );
 
         let manifest_file_path = workspace_root_path.join("onehost.json");
@@ -142,6 +147,8 @@ impl TestWorkspace {
             default_pool_directory,
             nvme_pool_directory,
             initial_golden_master_path: initial_master_path,
+            oemdrv_path,
+            content_hash,
         }
     }
 
@@ -189,10 +196,11 @@ fn count_pool_refreshes(hypervisor: &MockHypervisor, pool_name: &str) -> usize {
 fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     let workspace = TestWorkspace::new("protect");
 
-    let hypervisor =
-        MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new()
-        .with_image(&workspace.initial_golden_master_path, MockImageRecord::default());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let storage = MockStorageManager::new().with_image(
+        &workspace.initial_golden_master_path,
+        MockImageRecord::default(),
+    );
 
     // 1. Load manifest from real disk path
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
@@ -232,7 +240,8 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     assert!(registered_xml.contains("<name>win11-gollum</name>"));
 
     let expected_overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
-    let expected_overlay_fragment = format!(r#"<source file="{}"/>"#, expected_overlay_path.display());
+    let expected_overlay_fragment =
+        format!(r#"<source file="{}"/>"#, expected_overlay_path.display());
     assert!(registered_xml.contains(&expected_overlay_fragment));
     assert!(!registered_xml.contains("onehost:role"));
     assert!(!registered_xml.contains("xmlns:onehost"));
@@ -240,9 +249,11 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     assert!(storage.inspect_image(&expected_overlay_path).is_ok());
 
     let nvram_target = workspace.nvram_directory.join("win11-gollum_VARS.fd");
-    assert!(storage
-        .initialized_nvrams()
-        .contains(&(manifest.storage.nvram_template.clone(), nvram_target)));
+    assert!(
+        storage
+            .initialized_nvrams()
+            .contains(&(manifest.storage.nvram_template.clone(), nvram_target))
+    );
 
     // 5. Assert IDEMPOTENCY: second plan emits NoOp
     let idempotent_plan = planner
@@ -262,10 +273,11 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
 fn test_end_to_end_template_drift_reconciliation_pipeline() {
     let workspace = TestWorkspace::new("protect");
 
-    let hypervisor =
-        MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new()
-        .with_image(&workspace.initial_golden_master_path, MockImageRecord::default());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let storage = MockStorageManager::new().with_image(
+        &workspace.initial_golden_master_path,
+        MockImageRecord::default(),
+    );
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -298,7 +310,10 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
             assert_eq!(instance_name, "win11-gollum");
             assert!(diff_summary.contains("vcpu"));
         }
-        other_action => panic!("expected UpdateDomainXml action, but got: {:?}", other_action),
+        other_action => panic!(
+            "expected UpdateDomainXml action, but got: {:?}",
+            other_action
+        ),
     }
 
     // 3. Apply reconciliation without recreating overlay
@@ -325,8 +340,10 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
         .with_pool_xml("default", workspace.default_pool_xml())
         .with_pool_xml("fast-nvme", workspace.nvme_pool_xml());
 
-    let storage = MockStorageManager::new()
-        .with_image(&workspace.initial_golden_master_path, MockImageRecord::default());
+    let storage = MockStorageManager::new().with_image(
+        &workspace.initial_golden_master_path,
+        MockImageRecord::default(),
+    );
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -351,9 +368,7 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("reload manifest");
 
     // 3. Plan detects pool relocation
-    let relocation_plan = planner
-        .plan(&relocated_manifest)
-        .expect("plan relocation");
+    let relocation_plan = planner.plan(&relocated_manifest).expect("plan relocation");
     assert_eq!(relocation_plan.actions.len(), 1);
 
     match &relocation_plan.actions[0] {
@@ -383,9 +398,10 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
     assert!(storage.inspect_image(&expected_new_overlay).is_ok());
 
     let rebased_inspection = storage.inspect_image(&expected_new_overlay).unwrap();
-    let expected_new_base = workspace
-        .nvme_pool_directory
-        .join("win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2");
+    let expected_new_base = workspace.nvme_pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        workspace.content_hash
+    ));
     assert_eq!(rebased_inspection.backing_file, Some(expected_new_base));
 
     // 6. Verify domain XML points to new disk
@@ -407,13 +423,14 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
 }
 
 #[test]
-fn test_end_to_end_policy_guardrail_recreate_rejection_and_override() {
+fn test_end_to_end_recreate_pipeline() {
     let workspace = TestWorkspace::new("protect");
 
-    let hypervisor =
-        MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new()
-        .with_image(&workspace.initial_golden_master_path, MockImageRecord::default());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let storage = MockStorageManager::new().with_image(
+        &workspace.initial_golden_master_path,
+        MockImageRecord::default(),
+    );
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -427,15 +444,19 @@ fn test_end_to_end_policy_guardrail_recreate_rejection_and_override() {
         .apply(&initial_plan, &ApplyOptions::default())
         .expect("initial apply");
 
-    // 1. Simulate base image hash change (drift from ba6eafb7 -> c1d2e3f4)
-    let modified_manifest_content = std::fs::read_to_string(&workspace.manifest_path)
-        .expect("read manifest")
-        .replace("ba6eafb7", "c1d2e3f4");
-    std::fs::write(&workspace.manifest_path, modified_manifest_content).expect("write manifest");
+    // 1. Simulate base image hash change by modifying oemdrv content
+    std::fs::write(&workspace.oemdrv_path, b"NEW_OEMDRV_PAYLOAD_CHANGED")
+        .expect("write new oemdrv");
+    let new_hash = onehost::storage::execute_compute_content_hash(
+        &workspace.oemdrv_path,
+        &std::collections::HashMap::new(),
+    )
+    .expect("compute new hash");
 
-    let new_golden_master = workspace
-        .depot_store_directory
-        .join("win11-26300.9457.pro.en-us-looking-glass-c1d2e3f4.qcow2");
+    let new_golden_master = workspace.depot_store_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        new_hash
+    ));
     std::fs::write(&new_golden_master, b"NEW_GOLDEN_MASTER").expect("write new golden master");
     storage
         .state
@@ -454,28 +475,11 @@ fn test_end_to_end_policy_guardrail_recreate_rejection_and_override() {
         InstancePlanAction::Recreate { .. }
     ));
 
-    // 3. Apply without allow_recreate aborts with LifecyclePolicyViolation
-    let abort_result = applier.apply(&recreate_plan, &ApplyOptions::default());
-    assert!(abort_result.is_err());
-    match abort_result.unwrap_err() {
-        LifecycleError::LifecyclePolicyViolation { instance_name, .. } => {
-            assert_eq!(instance_name, "win11-gollum");
-        }
-        other_error => panic!(
-            "expected LifecyclePolicyViolation, but got: {:?}",
-            other_error
-        ),
-    }
-
-    // 4. Apply with allow_recreate succeeds
-    let override_options = ApplyOptions {
-        allow_recreate: true,
-        ..Default::default()
-    };
-    let success_result = applier.apply(&recreate_plan, &override_options);
+    // 3. Apply recreate succeeds
+    let success_result = applier.apply(&recreate_plan, &ApplyOptions::default());
     assert!(success_result.is_ok());
 
-    // 5. Verify subsequent plan is NoOp
+    // 4. Verify subsequent plan is NoOp
     let final_plan = planner.plan(&drifted_manifest).expect("final plan");
     assert!(matches!(
         &final_plan.actions[0],
@@ -487,10 +491,11 @@ fn test_end_to_end_policy_guardrail_recreate_rejection_and_override() {
 fn test_end_to_end_destroyer_lifecycle_pipeline() {
     let workspace = TestWorkspace::new("protect");
 
-    let hypervisor =
-        MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new()
-        .with_image(&workspace.initial_golden_master_path, MockImageRecord::default());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let storage = MockStorageManager::new().with_image(
+        &workspace.initial_golden_master_path,
+        MockImageRecord::default(),
+    );
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 

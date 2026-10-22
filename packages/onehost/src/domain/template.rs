@@ -9,13 +9,19 @@ pub enum DomainTemplateSynthesisError {
     #[error("Failed to parse domain template XML: {0}")]
     XmlParseError(#[from] DomainXmlParseError),
 
-    #[error("Template XML root element must be <domain>, but found an alternative root or empty document")]
+    #[error(
+        "Template XML root element must be <domain>, but found an alternative root or empty document"
+    )]
     MissingRootDomainElement,
 
-    #[error("No <name> element found in template XML: expected a <name> element to inject instance identity")]
+    #[error(
+        "No <name> element found in template XML: expected a <name> element to inject instance identity"
+    )]
     MissingNameElement,
 
-    #[error("No <uuid> element found in template XML: expected a <uuid> element to inject instance UUID")]
+    #[error(
+        "No <uuid> element found in template XML: expected a <uuid> element to inject instance UUID"
+    )]
     MissingUuidElement,
 
     #[error(
@@ -138,9 +144,8 @@ impl DomainTemplateEngine {
                 if child.tag_name == "nvram" {
                     let base_nvram = child.with_replaced_text(rendered_nvram_path);
                     Some(match injection_parameters.nvram_template_path {
-                        Some(template_path) => {
-                            base_nvram.with_attribute("template", template_path.to_str().unwrap_or(""))
-                        }
+                        Some(template_path) => base_nvram
+                            .with_attribute("template", template_path.to_str().unwrap_or("")),
                         None => base_nvram,
                     })
                 } else {

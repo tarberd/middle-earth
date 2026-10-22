@@ -15,17 +15,12 @@ pub enum ManifestValidationError {
     },
 
     #[error("Field '{field_name}' must be an absolute path, but got relative path: {path}")]
-    RelativePathNotAllowed {
-        field_name: String,
-        path: PathBuf,
-    },
+    RelativePathNotAllowed { field_name: String, path: PathBuf },
 
     #[error("Field '{field_name}' must not be empty")]
     EmptyFieldNotAllowed { field_name: String },
 
-    #[error(
-        "Instance '{instance_name}' declares invalid RFC-4122 UUID '{raw_uuid}'"
-    )]
+    #[error("Instance '{instance_name}' declares invalid RFC-4122 UUID '{raw_uuid}'")]
     InvalidInstanceUuid {
         instance_name: String,
         raw_uuid: String,
@@ -40,21 +35,19 @@ pub enum ManifestValidationError {
         available_flavors: Vec<String>,
     },
 
-    #[error(
-        "Instance '{instance_name}' has no storage pool specified and storage.default_pool is unset (zero implicit defaults)"
-    )]
+    #[error("Instance '{instance_name}' has no storage pool specified (zero implicit defaults)")]
     MissingStoragePool { instance_name: String },
 }
 
 /// Validates an in-memory `OnehostManifest` according to strict declarative integrity invariants.
 pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValidationError> {
     // 1. Version enforcement (NO backwards compatibility)
-    (manifest.version == "1.0")
-        .then_some(())
-        .ok_or_else(|| ManifestValidationError::UnsupportedManifestVersion {
+    (manifest.version == "1.0").then_some(()).ok_or_else(|| {
+        ManifestValidationError::UnsupportedManifestVersion {
             supported_version: "1.0".to_string(),
             actual_version: manifest.version.clone(),
-        })?;
+        }
+    })?;
 
     // 2. Storage directory absolute path validation
     let storage = &manifest.storage;
@@ -66,17 +59,29 @@ pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValid
     validate_absolute_path("storage.ovmf_code", &storage.ovmf_code)?;
 
     // 3. Flavor validation
-    manifest.flavors.iter().try_for_each(|(flavor_name, flavor_config)| {
-        validate_absolute_path(
-            &format!("flavors.{flavor_name}.oemdrv_path"),
-            &flavor_config.oemdrv_path,
-        )?;
-        (!flavor_config.hash.trim().is_empty())
-            .then_some(())
-            .ok_or_else(|| ManifestValidationError::EmptyFieldNotAllowed {
-                field_name: format!("flavors.{flavor_name}.hash"),
-            })
-    })?;
+    manifest
+        .flavors
+        .iter()
+        .try_for_each(|(flavor_name, flavor_config)| {
+            validate_absolute_path(
+                &format!("flavors.{flavor_name}.oemdrv_path"),
+                &flavor_config.oemdrv_path,
+            )?;
+            flavor_config
+                .extra_isos
+                .iter()
+                .try_for_each(|(iso_key, iso_path)| {
+                    (!iso_key.trim().is_empty()).then_some(()).ok_or_else(|| {
+                        ManifestValidationError::EmptyFieldNotAllowed {
+                            field_name: format!("flavors.{flavor_name}.extra_isos key"),
+                        }
+                    })?;
+                    validate_absolute_path(
+                        &format!("flavors.{flavor_name}.extra_isos.{iso_key}"),
+                        iso_path,
+                    )
+                })
+        })?;
 
     // 4. Instance validation
     let available_flavors: Vec<String> = manifest
@@ -87,41 +92,42 @@ pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValid
         .into_iter()
         .collect();
 
-    manifest.instances.iter().try_for_each(|(instance_name, instance_config)| {
-        (!instance_name.trim().is_empty())
-            .then_some(())
-            .ok_or_else(|| ManifestValidationError::EmptyFieldNotAllowed {
-                field_name: "instance name key".to_string(),
-            })?;
+    manifest
+        .instances
+        .iter()
+        .try_for_each(|(instance_name, instance_config)| {
+            (!instance_name.trim().is_empty())
+                .then_some(())
+                .ok_or_else(|| ManifestValidationError::EmptyFieldNotAllowed {
+                    field_name: "instance name key".to_string(),
+                })?;
 
-        // Validate UUID syntax (8-4-4-4-12 hex characters)
-        validate_rfc4122_uuid(instance_name, &instance_config.uuid)?;
+            // Validate UUID syntax (8-4-4-4-12 hex characters)
+            validate_rfc4122_uuid(instance_name, &instance_config.uuid)?;
 
-        // Validate template XML path
-        validate_absolute_path(
-            &format!("instances.{instance_name}.template_xml"),
-            &instance_config.template_xml,
-        )?;
+            // Validate template XML path
+            validate_absolute_path(
+                &format!("instances.{instance_name}.template_xml"),
+                &instance_config.template_xml,
+            )?;
 
-        // Validate image flavor existence in flavors map
-        let referenced_flavor = &instance_config.image.flavor_name;
-        manifest.flavors.contains_key(referenced_flavor)
-            .then_some(())
-            .ok_or_else(|| ManifestValidationError::ReferencedFlavorNotFound {
-                instance_name: instance_name.clone(),
-                referenced_flavor: referenced_flavor.clone(),
-                available_flavors: available_flavors.clone(),
-            })?;
+            // Validate image flavor existence in flavors map
+            let referenced_flavor = &instance_config.image.flavor;
+            manifest
+                .flavors
+                .contains_key(referenced_flavor)
+                .then_some(())
+                .ok_or_else(|| ManifestValidationError::ReferencedFlavorNotFound {
+                    instance_name: instance_name.clone(),
+                    referenced_flavor: referenced_flavor.clone(),
+                    available_flavors: available_flavors.clone(),
+                })?;
 
-        // Validate storage pool resolution (zero implicit defaults)
-        instance_config
-            .effective_pool(storage)
-            .map_err(|_| ManifestValidationError::MissingStoragePool {
-                instance_name: instance_name.clone(),
-            })?;
+            // Validate storage pool resolution (zero implicit defaults)
+            instance_config.effective_pool(instance_name)?;
 
-        Ok(())
-    })?;
+            Ok(())
+        })?;
 
     Ok(())
 }
@@ -153,4 +159,3 @@ fn validate_rfc4122_uuid(
         })
     }
 }
-

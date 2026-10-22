@@ -1,12 +1,13 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ManifestValidationError;
-use crate::image::tag::{FlavorDerivationMetadata, FlavorResolutionError, ImageTagSpecification};
+use crate::image::tag::ImageTagSpecification;
 
 /// Root declarative manifest configuring all instances, flavors, and storage boundaries for `onehost`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OnehostManifest {
     #[serde(rename = "$schema", default)]
     pub schema: Option<String>,
@@ -40,6 +41,7 @@ impl OnehostManifest {
 
 /// Global storage directories and pool boundaries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StorageDirectoriesConfiguration {
     pub depot_store_dir: PathBuf,
     pub depot_iso_dir: PathBuf,
@@ -47,8 +49,6 @@ pub struct StorageDirectoriesConfiguration {
     pub nvram_dir: PathBuf,
     pub nvram_template: PathBuf,
     pub ovmf_code: PathBuf,
-    #[serde(default)]
-    pub default_pool: Option<String>,
 }
 
 impl StorageDirectoriesConfiguration {
@@ -59,7 +59,6 @@ impl StorageDirectoriesConfiguration {
         nvram_dir: PathBuf,
         nvram_template: PathBuf,
         ovmf_code: PathBuf,
-        default_pool: Option<String>,
     ) -> Self {
         Self {
             depot_store_dir,
@@ -68,28 +67,29 @@ impl StorageDirectoriesConfiguration {
             nvram_dir,
             nvram_template,
             ovmf_code,
-            default_pool,
         }
     }
 }
 
 /// Declarative configuration for an OEMDRV base image flavor derivation in Nix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlavorConfiguration {
     pub oemdrv_path: PathBuf,
-    pub hash: String,
+    #[serde(default)]
+    pub extra_isos: HashMap<String, PathBuf>,
 }
 
 impl FlavorConfiguration {
-    pub fn new(oemdrv_path: PathBuf, hash: impl Into<String>) -> Self {
+    pub fn new(oemdrv_path: impl Into<PathBuf>, extra_isos: HashMap<String, PathBuf>) -> Self {
         Self {
-            oemdrv_path,
-            hash: hash.into(),
+            oemdrv_path: oemdrv_path.into(),
+            extra_isos,
         }
     }
 
-    pub fn to_flavor_derivation_metadata(&self) -> Result<FlavorDerivationMetadata, FlavorResolutionError> {
-        FlavorDerivationMetadata::new(self.oemdrv_path.clone(), self.hash.clone())
+    pub fn new_simple(oemdrv_path: impl Into<PathBuf>) -> Self {
+        Self::new(oemdrv_path, HashMap::new())
     }
 }
 
@@ -120,9 +120,11 @@ impl InstanceUuid {
             && uuid_segments[2].len() == 4
             && uuid_segments[3].len() == 4
             && uuid_segments[4].len() == 12
-            && uuid_segments
-                .iter()
-                .all(|segment| segment.chars().all(|character| character.is_ascii_hexdigit()))
+            && uuid_segments.iter().all(|segment| {
+                segment
+                    .chars()
+                    .all(|character| character.is_ascii_hexdigit())
+            })
     }
 
     pub fn as_str(&self) -> &str {
@@ -210,17 +212,14 @@ impl PartialEq<InstanceUuid> for String {
     }
 }
 
-/// Declarative instance configuration specifying hardware template, base image, and lifecycle policies.
+/// Declarative instance configuration specifying hardware template, base image, and explicit storage pool.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InstanceConfiguration {
     pub uuid: InstanceUuid,
     pub template_xml: PathBuf,
     pub image: ImageTagSpecification,
-    #[serde(default)]
-    pub pool: Option<String>,
-    #[serde(default)]
-    pub autostart: bool,
-    pub lifecycle: InstanceLifecycleConfiguration,
+    pub pool: String,
 }
 
 impl InstanceConfiguration {
@@ -228,73 +227,33 @@ impl InstanceConfiguration {
         uuid: InstanceUuid,
         template_xml: PathBuf,
         image: ImageTagSpecification,
-        pool: Option<String>,
-        autostart: bool,
-        lifecycle: InstanceLifecycleConfiguration,
+        pool: impl Into<String>,
     ) -> Self {
         Self {
             uuid,
             template_xml,
             image,
-            pool,
-            autostart,
-            lifecycle,
+            pool: pool.into(),
         }
     }
 
-    pub fn with_pool(self, pool: Option<String>) -> Self {
+    pub fn with_pool(self, pool: impl Into<String>) -> Self {
         Self {
-            pool,
+            pool: pool.into(),
             ..self
         }
     }
 
-    /// Resolves the storage pool to use, checking instance-specific pool first,
-    /// then falling back to storage.default_pool.
-    /// Returns an error if neither is configured (zero implicit defaults).
-    pub fn effective_pool<'a>(
-        &'a self,
-        storage_configuration: &'a StorageDirectoriesConfiguration,
-    ) -> Result<&'a str, ManifestValidationError> {
-        self.pool
-            .as_deref()
-            .map(str::trim)
-            .filter(|pool| !pool.is_empty())
-            .or_else(|| {
-                storage_configuration
-                    .default_pool
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|default_pool| !default_pool.is_empty())
+    /// Resolves the declared storage pool to use.
+    /// Returns an error if the pool is empty (zero implicit defaults).
+    pub fn effective_pool<'a>(&'a self, instance_name: &str) -> Result<&'a str, ManifestValidationError> {
+        let trimmed = self.pool.trim();
+        if trimmed.is_empty() {
+            Err(ManifestValidationError::MissingStoragePool {
+                instance_name: instance_name.to_string(),
             })
-            .ok_or_else(|| ManifestValidationError::MissingStoragePool {
-                instance_name: self.uuid.to_string(),
-            })
-    }
-}
-
-/// Instance lifecycle policy governing replacement and destruction behaviors.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InstanceLifecycleConfiguration {
-    pub on_image_change: ImageChangePolicy,
-    pub prevent_destroy: bool,
-}
-
-impl InstanceLifecycleConfiguration {
-    pub fn new(on_image_change: ImageChangePolicy, prevent_destroy: bool) -> Self {
-        Self {
-            on_image_change,
-            prevent_destroy,
+        } else {
+            Ok(trimmed)
         }
     }
-}
-
-/// Policy applied when an instance's underlying base image hash changes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ImageChangePolicy {
-    /// Protects the instance overlay from replacement, requiring explicit CLI override.
-    Protect,
-    /// Treats the instance as ephemeral / cattle, permitting automatic overlay replacement.
-    Recreate,
 }

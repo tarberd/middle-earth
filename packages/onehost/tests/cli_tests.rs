@@ -3,17 +3,16 @@ use std::path::PathBuf;
 
 use onehost::backup::model::{BackupConsistencyLevel, BackupManifest, DiskBackupEntry};
 use onehost::cli::{
-    self, resolve_manifest_path, ApplyArgs, BackupArgs, Cli, Commands, DestroyArgs,
-    ImageBuildArgs, ImageCommand, ImageSubcommands, InstanceStatusReport, PlanArgs,
-    RestoreArgs, StatusArgs,
+    self, ApplyArgs, BackupArgs, Cli, Commands, DestroyArgs, ImageBuildArgs, ImageCommand,
+    ImageSubcommands, InstanceStatusReport, PlanArgs, RestoreArgs, StatusArgs,
+    resolve_manifest_path,
 };
 use onehost::config::model::{
-    FlavorConfiguration, ImageChangePolicy, InstanceConfiguration, InstanceLifecycleConfiguration,
-    OnehostManifest, StorageDirectoriesConfiguration,
+    FlavorConfiguration, InstanceConfiguration, OnehostManifest, StorageDirectoriesConfiguration,
 };
+use onehost::hypervisor::Hypervisor;
 use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
-use onehost::hypervisor::Hypervisor;
 use onehost::lifecycle::planner::OnehostPlan;
 use onehost::process::mock::MockProcessRunner;
 use onehost::storage::mock::{MockImageRecord, MockStorageManager, RecordedStorageAction};
@@ -24,6 +23,8 @@ struct CliTestFixture {
     template_xml_path: PathBuf,
     depot_store_directory: PathBuf,
     pool_directory: PathBuf,
+    oemdrv_path: PathBuf,
+    content_hash: String,
 }
 
 impl CliTestFixture {
@@ -67,14 +68,19 @@ impl CliTestFixture {
             nvram_directory,
             nvram_template,
             ovmf_code,
-            Some("default".to_string()),
         );
 
-        let oemdrv_path = PathBuf::from("/nix/store/11111111111111111111111111111111-oemdrv-looking-glass");
+        let oemdrv_path = temporary_path.join("oemdrv");
+        std::fs::write(&oemdrv_path, b"test-oemdrv-content").expect("write oemdrv");
+        let extra_isos = HashMap::new();
+        let content_hash =
+            onehost::storage::execute_compute_content_hash(&oemdrv_path, &extra_isos)
+                .expect("compute content hash");
+
         let mut flavors = HashMap::new();
         flavors.insert(
             "looking-glass".to_string(),
-            FlavorConfiguration::new(oemdrv_path, "ba6eafb7"),
+            FlavorConfiguration::new(oemdrv_path.clone(), extra_isos),
         );
 
         let mut instances = HashMap::new();
@@ -85,12 +91,10 @@ impl CliTestFixture {
                     .parse()
                     .expect("valid uuid"),
                 template_xml_path.clone(),
-                "win11/26300.9457.pro.en-us/looking-glass"
+                "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass"
                     .parse()
                     .expect("valid image tag"),
-                Some("default".to_string()),
-                false,
-                InstanceLifecycleConfiguration::new(ImageChangePolicy::Protect, false),
+                "default",
             ),
         );
 
@@ -107,12 +111,16 @@ impl CliTestFixture {
             template_xml_path,
             depot_store_directory,
             pool_directory,
+            oemdrv_path,
+            content_hash,
         }
     }
 
     fn golden_master_path(&self) -> PathBuf {
-        self.depot_store_directory
-            .join("win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2")
+        self.depot_store_directory.join(format!(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+            self.content_hash
+        ))
     }
 
     fn default_pool_xml(&self) -> String {
@@ -142,8 +150,7 @@ fn test_cli_plan_human_readable_output() {
     let fixture = CliTestFixture::new();
     let golden_master = fixture.golden_master_path();
 
-    let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let storage = MockStorageManager::new()
         .with_image(&golden_master, MockImageRecord::default())
@@ -174,8 +181,7 @@ fn test_cli_plan_json_output() {
     let fixture = CliTestFixture::new();
     let golden_master = fixture.golden_master_path();
 
-    let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let storage = MockStorageManager::new()
         .with_image(&golden_master, MockImageRecord::default())
@@ -206,8 +212,7 @@ fn test_cli_plan_filter_instance() {
     let fixture = CliTestFixture::new();
     let golden_master = fixture.golden_master_path();
 
-    let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let storage = MockStorageManager::new()
         .with_image(&golden_master, MockImageRecord::default())
@@ -240,8 +245,7 @@ fn test_cli_apply_reconciles_infrastructure() {
     let fixture = CliTestFixture::new();
     let golden_master = fixture.golden_master_path();
 
-    let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let storage = MockStorageManager::new()
         .with_image(&golden_master, MockImageRecord::default())
@@ -254,7 +258,6 @@ fn test_cli_apply_reconciles_infrastructure() {
         json: false,
         command: Commands::Apply(ApplyArgs {
             instance: None,
-            allow_recreate: false,
             auto_approve: true,
         }),
     };
@@ -295,7 +298,6 @@ fn test_cli_destroy_deprovisions_instance() {
             instance: "win-workstation".to_string(),
             delete_disk: true,
             force: true,
-            allow_destroy_protected: false,
             auto_approve: true,
         }),
     };
@@ -314,19 +316,25 @@ fn test_cli_destroy_deprovisions_instance() {
 
     // Verify disk deletion was recorded
     let recorded_actions = storage.recorded_actions();
-    assert!(recorded_actions
-        .iter()
-        .any(|action| matches!(action, RecordedStorageAction::DeleteImage { .. })));
+    assert!(
+        recorded_actions
+            .iter()
+            .any(|action| matches!(action, RecordedStorageAction::DeleteImage { .. }))
+    );
 }
 
 #[test]
 fn test_cli_backup_creates_staged_artifacts() {
     let fixture = CliTestFixture::new();
     let overlay_path = fixture.pool_directory.join("win-workstation.qcow2");
-    let domain_xml = fixture
-        .template_xml_content()
-        .replace("/dummy-template-disk.qcow2", &overlay_path.to_string_lossy());
-    let target_backup_directory = fixture.temporary_directory.path().join("test-backup-output");
+    let domain_xml = fixture.template_xml_content().replace(
+        "/dummy-template-disk.qcow2",
+        &overlay_path.to_string_lossy(),
+    );
+    let target_backup_directory = fixture
+        .temporary_directory
+        .path()
+        .join("test-backup-output");
 
     let hypervisor = MockHypervisor::new()
         .with_pool_xml("default", fixture.default_pool_xml())
@@ -374,11 +382,14 @@ fn test_cli_restore_restores_from_staged_directory() {
         timestamp: "20260927T000000Z".to_string(),
         consistency_level: BackupConsistencyLevel::CrashConsistent,
         storage_pool: Some("default".to_string()),
-        base_image_tag: Some("win11/26300.9457.pro.en-us/looking-glass".to_string()),
-        base_image_hash: Some("ba6eafb7".to_string()),
-        golden_master_filename: Some(
-            "win11-26300.9457.pro.en-us-looking-glass-ba6eafb7.qcow2".to_string(),
+        base_image_tag: Some(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass".to_string(),
         ),
+        base_image_hash: Some(fixture.content_hash.clone()),
+        golden_master_filename: Some(format!(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+            fixture.content_hash
+        )),
         disks: vec![DiskBackupEntry {
             target_device: "sda".to_string(),
             archive_filename: "sda.qcow2.thin".to_string(),
@@ -397,8 +408,7 @@ fn test_cli_restore_restores_from_staged_directory() {
     let backup_nvram_path = backup_stage_directory.join("nvram.fd");
     let backup_disk_path = backup_stage_directory.join("sda.qcow2.thin");
 
-    let hypervisor = MockHypervisor::new()
-        .with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let storage = MockStorageManager::new()
         .with_image(&golden_master, MockImageRecord::default())
@@ -479,7 +489,8 @@ fn test_cli_status_human_and_json() {
 
     assert_eq!(exit_json, 0);
     let json_text = String::from_utf8(json_buffer).expect("utf8 string");
-    let reports: Vec<InstanceStatusReport> = serde_json::from_str(&json_text).expect("parse json reports");
+    let reports: Vec<InstanceStatusReport> =
+        serde_json::from_str(&json_text).expect("parse json reports");
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].instance_name, "win-workstation");
     assert_eq!(reports[0].domain_state.as_deref(), Some("shutoff"));
@@ -492,6 +503,7 @@ fn test_cli_image_build_when_master_exists() {
 
     let hypervisor = MockHypervisor::new();
     let storage = MockStorageManager::new()
+        .with_content_hash(&fixture.oemdrv_path, &fixture.content_hash)
         .with_image(&golden_master, MockImageRecord::default());
     let runner = MockProcessRunner::new();
 
@@ -500,7 +512,7 @@ fn test_cli_image_build_when_master_exists() {
         json: false,
         command: Commands::Image(ImageCommand {
             action: ImageSubcommands::Build(ImageBuildArgs {
-                tag: "win11/26300.9457.pro.en-us/looking-glass".to_string(),
+                tag: "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass".to_string(),
                 force: false,
                 scratch_dir: None,
                 iso: None,
@@ -529,3 +541,70 @@ fn test_cli_manifest_not_found_returns_typed_error() {
     let error = result.expect_err("is error");
     assert!(matches!(error, cli::CliError::ManifestNotFound { .. }));
 }
+
+#[test]
+fn test_cli_rejects_removed_allow_recreate_flag() {
+    use clap::Parser;
+
+    let apply_with_legacy_flag = Cli::try_parse_from(["onehost", "apply", "--allow-recreate"]);
+    assert!(
+        apply_with_legacy_flag.is_err(),
+        "Expected --allow-recreate to be rejected on apply"
+    );
+
+    let plan_with_legacy_flag = Cli::try_parse_from(["onehost", "plan", "--allow-recreate"]);
+    assert!(
+        plan_with_legacy_flag.is_err(),
+        "Expected --allow-recreate to be rejected on plan"
+    );
+}
+
+#[test]
+fn test_cli_rejects_removed_allow_destroy_protected_flag() {
+    use clap::Parser;
+
+    let destroy_with_legacy_flag =
+        Cli::try_parse_from(["onehost", "destroy", "win11", "--allow-destroy-protected"]);
+    assert!(
+        destroy_with_legacy_flag.is_err(),
+        "Expected --allow-destroy-protected to be rejected on destroy"
+    );
+}
+
+#[test]
+fn test_cli_image_build_rejects_informal_build_tags() {
+    let fixture = CliTestFixture::new();
+    let hypervisor = MockHypervisor::new();
+    let storage = MockStorageManager::new();
+    let runner = MockProcessRunner::new();
+
+    let cli_args = Cli {
+        manifest: Some(fixture.manifest_path.clone()),
+        json: false,
+        command: Commands::Image(ImageCommand {
+            action: ImageSubcommands::Build(ImageBuildArgs {
+                tag: "win11/pro/en-us/looking-glass".to_string(),
+                force: false,
+                scratch_dir: None,
+                iso: None,
+                memory: 8192,
+                cpus: 8,
+            }),
+        }),
+    };
+
+    let mut output_buffer = Vec::new();
+    let result = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer);
+    assert!(result.is_err(), "Expected image build with informal tag to be rejected");
+    match result.unwrap_err() {
+        cli::CliError::TagError(onehost::image::tag::ImageTagParseError::InvalidUupId {
+            raw_tag,
+            uup_id,
+        }) => {
+            assert_eq!(raw_tag, "win11/pro/en-us/looking-glass");
+            assert_eq!(uup_id, "win11");
+        }
+        other => panic!("Expected TagError(InvalidUupId), got {:?}", other),
+    }
+}
+

@@ -53,21 +53,19 @@ pub enum ImageBuilderError {
     #[error("Flavor resolution error: {0}")]
     FlavorError(#[from] FlavorResolutionError),
 
-    #[error("Windows installation ISO not found in '{iso_directory}' for build version '{build_version}'")]
+    #[error(
+        "Windows installation ISO not found in '{iso_directory}' for release tuple '{release_tuple}'"
+    )]
     IsoNotFound {
         iso_directory: PathBuf,
-        build_version: String,
+        release_tuple: String,
     },
 
     #[error("OEMDRV derivation path '{path}' does not exist on host filesystem")]
-    OemdrvNotFound {
-        path: PathBuf,
-    },
+    OemdrvNotFound { path: PathBuf },
 
     #[error("TPM emulator (swtpm) failed: {details}")]
-    SwtpmError {
-        details: String,
-    },
+    SwtpmError { details: String },
 
     #[error("Headless QEMU installation VM failed with exit code {exit_code:?}: {stderr}")]
     QemuExecutionFailed {
@@ -76,10 +74,7 @@ pub enum ImageBuilderError {
     },
 
     #[error("Integrity check failed on staged golden master '{path}': {details}")]
-    PromotionIntegrityCheckFailed {
-        path: PathBuf,
-        details: String,
-    },
+    PromotionIntegrityCheckFailed { path: PathBuf, details: String },
 
     #[error("Storage error during image build: {0}")]
     StorageError(#[from] StorageError),
@@ -162,24 +157,30 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
         image_tag: &ImageTagSpecification,
         options: &ImageBuildOptions,
     ) -> Result<PathBuf, ImageBuilderError> {
+        let release_tuple = image_tag.release_tuple();
         if let Some(ref explicit_iso_path) = options.iso_path {
             let iso_exists = self.storage.inspect_image(explicit_iso_path).is_ok();
             (iso_exists)
                 .then(|| explicit_iso_path.clone())
                 .ok_or_else(|| ImageBuilderError::IsoNotFound {
-                    iso_directory: explicit_iso_path.parent().unwrap_or(Path::new("")).to_path_buf(),
-                    build_version: image_tag.build_version.clone(),
+                    iso_directory: explicit_iso_path
+                        .parent()
+                        .unwrap_or(Path::new(""))
+                        .to_path_buf(),
+                    release_tuple,
                 })
         } else {
-            let direct_iso_name = format!("win11-{}.iso", image_tag.build_version);
-            let candidate_path = manifest.storage.depot_iso_dir.join(direct_iso_name);
+            let candidate_path = ContentAddressedImageResolver::resolve_depot_iso_path(
+                &manifest.storage.depot_iso_dir,
+                image_tag,
+            );
 
             if self.storage.inspect_image(&candidate_path).is_ok() {
                 Ok(candidate_path)
             } else {
                 Err(ImageBuilderError::IsoNotFound {
                     iso_directory: manifest.storage.depot_iso_dir.clone(),
-                    build_version: image_tag.build_version.clone(),
+                    release_tuple,
                 })
             }
         }
@@ -193,18 +194,19 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
         options: &ImageBuildOptions,
     ) -> Result<ImageBuildOutcome, ImageBuilderError> {
         // 1. Resolve flavor derivation metadata and content hash
-        let flavor_config = manifest
-            .flavors
-            .get(&image_tag.flavor_name)
-            .ok_or_else(|| FlavorResolutionError::UnknownFlavor {
-                requested_flavor: image_tag.flavor_name.clone(),
+        let flavor_config = manifest.flavors.get(&image_tag.flavor).ok_or_else(|| {
+            FlavorResolutionError::UnknownFlavor {
+                requested_flavor: image_tag.flavor.clone(),
                 available_flavors: manifest.flavors.keys().cloned().collect(),
-            })?;
+            }
+        })?;
 
-        let flavor_metadata = FlavorDerivationMetadata::new(
-            flavor_config.oemdrv_path.clone(),
-            flavor_config.hash.clone(),
-        )?;
+        let content_hash = self
+            .storage
+            .compute_content_hash(&flavor_config.oemdrv_path, &flavor_config.extra_isos)?;
+
+        let flavor_metadata =
+            FlavorDerivationMetadata::new(flavor_config.oemdrv_path.clone(), content_hash)?;
 
         let golden_master_filename = ContentAddressedImageResolver::resolve_golden_master_filename(
             image_tag,
@@ -245,10 +247,11 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
                 None => {
                     let pid = std::process::id();
                     let tag_slug = format!(
-                        "{}-{}-{}-{}",
-                        image_tag.operating_system,
-                        image_tag.build_version,
-                        image_tag.flavor_name,
+                        "{}-{}-{}-{}-{}",
+                        image_tag.uup_id,
+                        image_tag.edition,
+                        image_tag.language,
+                        image_tag.flavor,
                         flavor_metadata.content_hash
                     );
                     std::env::temp_dir()
@@ -300,17 +303,17 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
                 "if=pflash,format=raw,readonly=on,file={}",
                 manifest.storage.ovmf_code.display()
             );
-            let ovmf_vars_argument = format!("if=pflash,format=raw,file={}", ovmf_vars_path.display());
-            let chardev_argument = format!(
-                "socket,id=chrtpm,path={}",
-                swtpm_socket_path.display()
-            );
+            let ovmf_vars_argument =
+                format!("if=pflash,format=raw,file={}", ovmf_vars_path.display());
+            let chardev_argument = format!("socket,id=chrtpm,path={}", swtpm_socket_path.display());
             let build_drive_argument = format!(
                 "file={},if=virtio,format=qcow2,cache=none",
                 scratch_disk_path.display()
             );
-            let win_iso_argument = format!("file={},media=cdrom,readonly=on", win_iso_path.display());
-            let oemdrv_iso_argument = format!("file={},media=cdrom,readonly=on", oemdrv_path.display());
+            let win_iso_argument =
+                format!("file={},media=cdrom,readonly=on", win_iso_path.display());
+            let oemdrv_iso_argument =
+                format!("file={},media=cdrom,readonly=on", oemdrv_path.display());
             let monitor_argument = format!("unix:{},server,nowait", monitor_socket_path.display());
 
             let qemu_arguments = [
@@ -357,12 +360,12 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
                 tracing::debug!(error = %kill_error, "Failed to kill swtpm handle after QEMU execution");
             }
 
-            (qemu_output.exit_code == 0)
-                .then_some(())
-                .ok_or(ImageBuilderError::QemuExecutionFailed {
+            (qemu_output.exit_code == 0).then_some(()).ok_or(
+                ImageBuilderError::QemuExecutionFailed {
                     exit_code: Some(qemu_output.exit_code),
                     stderr: qemu_output.stderr,
-                })?;
+                },
+            )?;
 
             // 10. Atomic Master Promotion Sequence
             let temporary_master_filename = format!("{golden_master_filename}.tmp");
@@ -388,10 +391,12 @@ impl<'a, S: StorageManager, P: ProcessRunner> ImageBuilder<'a, S, P> {
             // Verify image integrity before promotion
             self.storage
                 .check_image(&temporary_master_path)
-                .map_err(|corruption_error| ImageBuilderError::PromotionIntegrityCheckFailed {
-                    path: temporary_master_path.clone(),
-                    details: corruption_error.to_string(),
-                })?;
+                .map_err(
+                    |corruption_error| ImageBuilderError::PromotionIntegrityCheckFailed {
+                        path: temporary_master_path.clone(),
+                        details: corruption_error.to_string(),
+                    },
+                )?;
 
             // Atomically rename temporary staged image to final immutable golden master
             self.storage

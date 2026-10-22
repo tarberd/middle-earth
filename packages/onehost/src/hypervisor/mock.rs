@@ -87,30 +87,29 @@ fn extract_block_devices_from_domain_xml(domain_xml: &str) -> Vec<BlockDeviceInf
     DomainXmlElement::parse(domain_xml)
         .ok()
         .and_then(|parsed_root| {
-            parsed_root.find_child_by_tag("devices").map(|devices_node| {
-                devices_node
-                    .find_children("disk")
-                    .map(|child| {
-                        let target_device = child
-                            .child_attribute("target", "dev")
-                            .unwrap_or("sda")
-                            .to_string();
-                        let device_type = child
-                            .get_attribute("device")
-                            .unwrap_or("disk")
-                            .to_string();
-                        let source_file = child
-                            .child_attribute("source", "file")
-                            .map(PathBuf::from);
+            parsed_root
+                .find_child_by_tag("devices")
+                .map(|devices_node| {
+                    devices_node
+                        .find_children("disk")
+                        .map(|child| {
+                            let target_device = child
+                                .child_attribute("target", "dev")
+                                .unwrap_or("sda")
+                                .to_string();
+                            let device_type =
+                                child.get_attribute("device").unwrap_or("disk").to_string();
+                            let source_file =
+                                child.child_attribute("source", "file").map(PathBuf::from);
 
-                        BlockDeviceInfo {
-                            target_device,
-                            device_type,
-                            source_file,
-                        }
-                    })
-                    .collect()
-            })
+                            BlockDeviceInfo {
+                                target_device,
+                                device_type,
+                                source_file,
+                            }
+                        })
+                        .collect()
+                })
         })
         .unwrap_or_default()
 }
@@ -127,7 +126,9 @@ impl MockHypervisor {
         let raw_domain_xml = domain_xml.into();
         let extracted_devices = extract_block_devices_from_domain_xml(&raw_domain_xml);
         if let Ok(mut locked_state) = self.state.lock() {
-            locked_state.domains.insert(domain_name.clone(), domain_info);
+            locked_state
+                .domains
+                .insert(domain_name.clone(), domain_info);
             locked_state
                 .domain_xmls
                 .insert(domain_name.clone(), raw_domain_xml);
@@ -308,7 +309,9 @@ impl Hypervisor for MockHypervisor {
         };
 
         let extracted_devices = extract_block_devices_from_domain_xml(domain_xml);
-        locked_state.domains.insert(domain_name.clone(), defined_info);
+        locked_state
+            .domains
+            .insert(domain_name.clone(), defined_info);
         locked_state
             .domain_xmls
             .insert(domain_name.clone(), domain_xml.to_string());
@@ -365,12 +368,11 @@ impl Hypervisor for MockHypervisor {
                 domain_name: domain_name.to_string(),
             });
 
-        let domain_info = locked_state
-            .domains
-            .get_mut(domain_name)
-            .ok_or_else(|| HypervisorError::DomainNotFound {
+        let domain_info = locked_state.domains.get_mut(domain_name).ok_or_else(|| {
+            HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            })?;
+            }
+        })?;
 
         domain_info.state = DomainState::Running;
         Ok(())
@@ -388,12 +390,11 @@ impl Hypervisor for MockHypervisor {
                 domain_name: domain_name.to_string(),
             });
 
-        let domain_info = locked_state
-            .domains
-            .get_mut(domain_name)
-            .ok_or_else(|| HypervisorError::DomainNotFound {
+        let domain_info = locked_state.domains.get_mut(domain_name).ok_or_else(|| {
+            HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            })?;
+            }
+        })?;
 
         domain_info.state = DomainState::Shutoff;
         Ok(())
@@ -411,12 +412,11 @@ impl Hypervisor for MockHypervisor {
                 domain_name: domain_name.to_string(),
             });
 
-        let domain_info = locked_state
-            .domains
-            .get_mut(domain_name)
-            .ok_or_else(|| HypervisorError::DomainNotFound {
+        let domain_info = locked_state.domains.get_mut(domain_name).ok_or_else(|| {
+            HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            })?;
+            }
+        })?;
 
         domain_info.state = DomainState::Shutoff;
         Ok(())
@@ -475,9 +475,12 @@ impl Hypervisor for MockHypervisor {
 
         if quiesce && locked_state.fail_quiesce {
             Err(HypervisorError::CommandExecutionFailed {
-                command: format!("virsh snapshot-create-as {domain_name} {snapshot_name} --quiesce"),
+                command: format!(
+                    "virsh snapshot-create-as {domain_name} {snapshot_name} --quiesce"
+                ),
                 exit_code: Some(1),
-                stderr: "error: Guest agent is not responding: QEMU guest agent is not configured".to_string(),
+                stderr: "error: Guest agent is not responding: QEMU guest agent is not configured"
+                    .to_string(),
             })
         } else {
             locked_state
@@ -598,12 +601,11 @@ impl Hypervisor for MockHypervisor {
                 autostart,
             });
 
-        let domain_info = locked_state
-            .domains
-            .get_mut(domain_name)
-            .ok_or_else(|| HypervisorError::DomainNotFound {
+        let domain_info = locked_state.domains.get_mut(domain_name).ok_or_else(|| {
+            HypervisorError::DomainNotFound {
                 domain_name: domain_name.to_string(),
-            })?;
+            }
+        })?;
 
         domain_info.autostart = autostart;
         Ok(())

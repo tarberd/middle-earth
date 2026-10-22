@@ -61,9 +61,15 @@ impl VirshHypervisor {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
             let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
-            let command_line = format!("{} {}", self.virsh_executable_path.display(), arguments.join(" "));
+            let command_line = format!(
+                "{} {}",
+                self.virsh_executable_path.display(),
+                arguments.join(" ")
+            );
 
-            if stderr_text.contains("failed to get domain") || stderr_text.contains("Domain not found") {
+            if stderr_text.contains("failed to get domain")
+                || stderr_text.contains("Domain not found")
+            {
                 let domain_name = arguments
                     .iter()
                     .copied()
@@ -72,7 +78,9 @@ impl VirshHypervisor {
                 Err(HypervisorError::DomainNotFound {
                     domain_name: domain_name.to_string(),
                 })
-            } else if stderr_text.contains("failed to get pool") || stderr_text.contains("Storage pool not found") {
+            } else if stderr_text.contains("failed to get pool")
+                || stderr_text.contains("Storage pool not found")
+            {
                 let pool_name = arguments
                     .iter()
                     .copied()
@@ -150,8 +158,8 @@ pub fn parse_domblklist_output(raw_output: &str) -> Result<Vec<BlockDeviceInfo>,
             if columns.len() >= 3 {
                 let device_type = columns[1].to_string();
                 let target_device = columns[2].to_string();
-                let source_file = (columns.len() >= 4 && columns[3] != "-")
-                    .then(|| PathBuf::from(columns[3]));
+                let source_file =
+                    (columns.len() >= 4 && columns[3] != "-").then(|| PathBuf::from(columns[3]));
 
                 Some(BlockDeviceInfo {
                     target_device,
@@ -186,11 +194,13 @@ impl Hypervisor for VirshHypervisor {
         temp_file.write_all(domain_xml.as_bytes())?;
         temp_file.flush()?;
 
-        let temp_path = temp_file.path().to_str().ok_or_else(|| {
-            HypervisorError::OutputParseError {
-                details: "Temporary domain XML file path is invalid UTF-8".to_string(),
-            }
-        })?;
+        let temp_path =
+            temp_file
+                .path()
+                .to_str()
+                .ok_or_else(|| HypervisorError::OutputParseError {
+                    details: "Temporary domain XML file path is invalid UTF-8".to_string(),
+                })?;
 
         self.execute_command(&["define", temp_path])?;
         Ok(())
@@ -291,12 +301,9 @@ impl Hypervisor for VirshHypervisor {
         let rendered_base_path = base_path.map(|path| path.display().to_string());
         let rendered_top_path = top_path.map(|path| path.display().to_string());
 
-        let base_flag: Option<[&str; 2]> = rendered_base_path
-            .as_deref()
-            .map(|base| ["--base", base]);
-        let top_flag: Option<[&str; 2]> = rendered_top_path
-            .as_deref()
-            .map(|top| ["--top", top]);
+        let base_flag: Option<[&str; 2]> =
+            rendered_base_path.as_deref().map(|base| ["--base", base]);
+        let top_flag: Option<[&str; 2]> = rendered_top_path.as_deref().map(|top| ["--top", top]);
         let active_flag: Option<&str> = active.then_some("--active");
         let pivot_flag: Option<&str> = pivot.then_some("--pivot");
 

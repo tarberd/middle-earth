@@ -1,15 +1,11 @@
-use crate::config::model::ImageChangePolicy;
 use crate::hypervisor::traits::{DomainState, Hypervisor, HypervisorError};
-use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use crate::lifecycle::LifecycleError;
+use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use crate::storage::traits::{StorageError, StorageManager};
 
 /// Options controlling apply execution.
 #[derive(Debug, Clone, Default)]
-pub struct ApplyOptions {
-    pub allow_recreate: bool,
-    pub auto_approve: bool,
-}
+pub struct ApplyOptions {}
 
 /// Applier reconciling the execution plan against hypervisor and storage infrastructure.
 pub struct DomainLifecycleApplier<'a, H: Hypervisor, S: StorageManager> {
@@ -36,11 +32,11 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
     fn apply_action(
         &self,
         action: &InstancePlanAction,
-        options: &ApplyOptions,
+        _options: &ApplyOptions,
     ) -> Result<(), LifecycleError> {
         match action {
             InstancePlanAction::Create {
-                instance_name,
+                instance_name: _,
                 concrete_xml,
                 target_pool,
                 overlay_path,
@@ -48,13 +44,15 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 golden_master_path,
                 nvram_path,
                 nvram_template_path,
-                autostart,
             } => {
                 // Ensure base image is cached in target pool
                 self.storage
                     .inspect_image(base_cache_path)
                     .is_err()
-                    .then(|| self.storage.copy_base_image(golden_master_path, base_cache_path))
+                    .then(|| {
+                        self.storage
+                            .copy_base_image(golden_master_path, base_cache_path)
+                    })
                     .transpose()?;
 
                 // Create fresh CoW overlay
@@ -68,11 +66,6 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 // Define domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;
 
-                // Configure autostart if requested
-                autostart
-                    .then(|| self.hypervisor.set_autostart(instance_name, true))
-                    .transpose()?;
-
                 // Synchronize storage pool volume inventory
                 self.hypervisor.pool_refresh(target_pool)?;
                 Ok(())
@@ -85,9 +78,6 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
 
             InstancePlanAction::Recreate {
                 instance_name,
-                reason,
-                policy,
-                prevent_destroy,
                 concrete_xml,
                 target_pool,
                 overlay_path,
@@ -95,28 +85,8 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 golden_master_path,
                 nvram_path,
                 nvram_template_path,
-                autostart,
+                ..
             } => {
-                // Guardrail 1: prevent_destroy check
-                (!*prevent_destroy)
-                    .then_some(())
-                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
-                        instance_name: instance_name.clone(),
-                        details: format!(
-                            "Instance '{instance_name}' has prevent_destroy enabled; cannot recreate overlay ({reason})"
-                        ),
-                    })?;
-
-                // Guardrail 2: on_image_change policy check
-                (*policy != ImageChangePolicy::Protect || options.allow_recreate)
-                    .then_some(())
-                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
-                        instance_name: instance_name.clone(),
-                        details: format!(
-                            "Instance '{instance_name}' base image changed with policy 'protect'; recreation requires --allow-recreate flag ({reason})"
-                        ),
-                    })?;
-
                 // Graceful shutdown if running
                 self.hypervisor
                     .domain_info(instance_name)
@@ -140,7 +110,10 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 self.storage
                     .inspect_image(base_cache_path)
                     .is_err()
-                    .then(|| self.storage.copy_base_image(golden_master_path, base_cache_path))
+                    .then(|| {
+                        self.storage
+                            .copy_base_image(golden_master_path, base_cache_path)
+                    })
                     .transpose()?;
 
                 // Create fresh CoW overlay backed by new base image
@@ -153,11 +126,6 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
 
                 // Define updated domain in Libvirt
                 self.hypervisor.define_domain(concrete_xml)?;
-
-                // Re-configure autostart
-                autostart
-                    .then(|| self.hypervisor.set_autostart(instance_name, true))
-                    .transpose()?;
 
                 // Synchronize storage pool
                 self.hypervisor.pool_refresh(target_pool)?;
@@ -185,7 +153,10 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 self.storage
                     .inspect_image(target_base_cache_path)
                     .is_err()
-                    .then(|| self.storage.copy_base_image(golden_master_path, target_base_cache_path))
+                    .then(|| {
+                        self.storage
+                            .copy_base_image(golden_master_path, target_base_cache_path)
+                    })
                     .transpose()?;
 
                 // Safely move overlay disk across storage pools
@@ -208,17 +179,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
             InstancePlanAction::Delete {
                 instance_name,
                 target_pool,
-                prevent_destroy,
             } => {
-                (!*prevent_destroy)
-                    .then_some(())
-                    .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
-                        instance_name: instance_name.clone(),
-                        details: format!(
-                            "Instance '{instance_name}' has prevent_destroy enabled; cannot delete"
-                        ),
-                    })?;
-
                 self.hypervisor
                     .domain_info(instance_name)
                     .is_ok_and(|domain_info| domain_info.state == DomainState::Running)

@@ -1,15 +1,16 @@
 use std::path::{Path, PathBuf};
 
+use crate::backup::BackupError;
 use crate::backup::guard::{ActiveSnapshotInfo, SnapshotCleanupGuard};
 use crate::backup::model::{
     BackupConsistencyLevel, BackupManifest, BackupOptions, DiskBackupEntry,
 };
-use crate::backup::BackupError;
 use crate::config::model::{InstanceUuid, OnehostManifest};
 use crate::domain::element::DomainXmlElement;
 use crate::hypervisor::traits::{
     BlockDeviceInfo, DiskSnapshotSpecification, DomainState, Hypervisor,
 };
+use crate::image::tag::ContentAddressedImageResolver;
 use crate::storage::traits::{StorageError, StorageManager};
 
 /// Engine orchestrating online and offline thin backup workflows.
@@ -56,11 +57,9 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
                 target_backup_directory,
                 options,
             ),
-            DomainState::Shutoff => self.perform_offline_backup(
-                &disk_devices,
-                target_backup_directory,
-                options,
-            ),
+            DomainState::Shutoff => {
+                self.perform_offline_backup(&disk_devices, target_backup_directory, options)
+            }
             unsupported_state => Err(BackupError::UnsupportedDomainState {
                 instance_name: instance_name.to_string(),
                 state: unsupported_state,
@@ -74,11 +73,12 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
 
         let parsed_domain = DomainXmlElement::parse(&raw_domain_xml)?;
 
-        let raw_instance_uuid = parsed_domain
-            .path_text(&["uuid"])
-            .ok_or_else(|| BackupError::MissingInstanceUuid {
-                instance_name: instance_name.to_string(),
-            })?;
+        let raw_instance_uuid =
+            parsed_domain
+                .path_text(&["uuid"])
+                .ok_or_else(|| BackupError::MissingInstanceUuid {
+                    instance_name: instance_name.to_string(),
+                })?;
         let instance_uuid = InstanceUuid::parse(raw_instance_uuid)?;
 
         let nvram_source_path = parsed_domain
@@ -93,27 +93,30 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
             &target_backup_directory.join("nvram.fd"),
         )?;
 
-        let instance_declaration = manifest_config
-            .and_then(|config| config.instances.get(instance_name));
+        let instance_declaration =
+            manifest_config.and_then(|config| config.instances.get(instance_name));
 
         let base_image_tag = instance_declaration.map(|declaration| declaration.image.to_string());
         let base_image_hash = instance_declaration.and_then(|declaration| {
             manifest_config.and_then(|config| {
                 config
                     .flavors
-                    .get(&declaration.image.flavor_name)
-                    .map(|flavor| flavor.hash.clone())
+                    .get(&declaration.image.flavor)
+                    .and_then(|flavor| {
+                        self.storage
+                            .compute_content_hash(&flavor.oemdrv_path, &flavor.extra_isos)
+                            .ok()
+                    })
             })
         });
 
         let golden_master_filename = match (instance_declaration, &base_image_hash) {
-            (Some(declaration), Some(hash)) => Some(format!(
-                "{}-{}-{}-{}.qcow2",
-                declaration.image.operating_system,
-                declaration.image.build_version,
-                declaration.image.flavor_name,
-                hash
-            )),
+            (Some(declaration), Some(hash)) => Some(
+                ContentAddressedImageResolver::resolve_base_image_filename(
+                    &declaration.image,
+                    hash,
+                ),
+            ),
             _ => disk_entries
                 .iter()
                 .find_map(|disk| disk.backing_file.as_ref())
@@ -122,14 +125,8 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
                 .map(ToString::to_string),
         };
 
-        let storage_pool = instance_declaration.and_then(|declaration| {
-            manifest_config.and_then(|config| {
-                declaration
-                    .effective_pool(&config.storage)
-                    .ok()
-                    .map(ToString::to_string)
-            })
-        });
+        let storage_pool = instance_declaration
+            .and_then(|declaration| declaration.effective_pool(instance_name).ok().map(ToString::to_string));
 
         let timestamp = options
             .timestamp
@@ -151,8 +148,10 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
         };
 
         let manifest_json = serde_json::to_string_pretty(&manifest)?;
-        self.storage
-            .write_file(&target_backup_directory.join("manifest.json"), &manifest_json)?;
+        self.storage.write_file(
+            &target_backup_directory.join("manifest.json"),
+            &manifest_json,
+        )?;
 
         Ok(manifest)
     }

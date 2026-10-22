@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::domain::element::DomainXmlElement;
@@ -95,17 +95,16 @@ pub enum HypervisorError {
 
 /// Helper function to parse the physical filesystem target path from Libvirt storage pool XML.
 pub fn parse_pool_target_path(pool_xml: &str) -> Result<PathBuf, HypervisorError> {
-    let pool_root = DomainXmlElement::parse(pool_xml).map_err(|error| {
-        HypervisorError::OutputParseError {
+    let pool_root =
+        DomainXmlElement::parse(pool_xml).map_err(|error| HypervisorError::OutputParseError {
             details: format!("Failed to parse storage pool XML: {error}"),
+        })?;
+
+    let pool_target_path = pool_root.path_text(&["target", "path"]).ok_or_else(|| {
+        HypervisorError::MissingPoolPathElement {
+            details: "No <target><path> child found in storage pool XML".to_string(),
         }
     })?;
-
-    let pool_target_path = pool_root
-        .path_text(&["target", "path"])
-        .ok_or_else(|| HypervisorError::MissingPoolPathElement {
-            details: "No <target><path> child found in storage pool XML".to_string(),
-        })?;
 
     Ok(PathBuf::from(pool_target_path))
 }
@@ -122,7 +121,11 @@ pub trait Hypervisor: Send + Sync {
     fn define_domain(&self, domain_xml: &str) -> Result<(), HypervisorError>;
 
     /// Undefines a domain, optionally unlinking its NVRAM file.
-    fn undefine_domain(&self, domain_name: &str, cleanup_nvram: bool) -> Result<(), HypervisorError>;
+    fn undefine_domain(
+        &self,
+        domain_name: &str,
+        cleanup_nvram: bool,
+    ) -> Result<(), HypervisorError>;
 
     /// Powers on / boots a shut off domain.
     fn start_domain(&self, domain_name: &str) -> Result<(), HypervisorError>;
@@ -134,7 +137,10 @@ pub trait Hypervisor: Send + Sync {
     fn destroy_domain(&self, domain_name: &str) -> Result<(), HypervisorError>;
 
     /// Lists block devices attached to a domain.
-    fn list_block_devices(&self, domain_name: &str) -> Result<Vec<BlockDeviceInfo>, HypervisorError>;
+    fn list_block_devices(
+        &self,
+        domain_name: &str,
+    ) -> Result<Vec<BlockDeviceInfo>, HypervisorError>;
 
     /// Creates an atomic live disk snapshot across one or more disks, optionally with guest agent quiescing.
     fn create_snapshot(
@@ -175,14 +181,14 @@ pub trait Hypervisor: Send + Sync {
     fn list_storage_pools(&self) -> Result<Vec<String>, HypervisorError>;
 
     /// Resolves the storage pool name whose target path matches `target_path`.
-    fn resolve_pool_name_by_path(&self, target_path: &Path) -> Result<Option<String>, HypervisorError> {
-        let matched_pool = self
-            .list_storage_pools()?
-            .into_iter()
-            .find(|pool_name| {
-                self.resolve_pool_path(pool_name)
-                    .is_ok_and(|pool_path| pool_path == target_path)
-            });
+    fn resolve_pool_name_by_path(
+        &self,
+        target_path: &Path,
+    ) -> Result<Option<String>, HypervisorError> {
+        let matched_pool = self.list_storage_pools()?.into_iter().find(|pool_name| {
+            self.resolve_pool_path(pool_name)
+                .is_ok_and(|pool_path| pool_path == target_path)
+        });
 
         Ok(matched_pool)
     }

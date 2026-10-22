@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::config::model::OnehostManifest;
-use crate::config::validation::{validate_manifest, ManifestValidationError};
+use crate::config::validation::{ManifestValidationError, validate_manifest};
 use crate::xdg::{XdgBaseDirectories, XdgDirectoryResolutionError};
 
 /// Enumerates errors that can occur when loading and validating a manifest file.
@@ -40,19 +40,17 @@ pub struct ManifestLoader;
 impl ManifestLoader {
     /// Loads, parses, and strictly validates a manifest from a filesystem path.
     pub fn load_from_path(manifest_path: &Path) -> Result<OnehostManifest, ManifestLoadError> {
-        manifest_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| ManifestLoadError::ManifestNotFound {
+        manifest_path.exists().then_some(()).ok_or_else(|| {
+            ManifestLoadError::ManifestNotFound {
                 path: manifest_path.to_path_buf(),
-            })?;
-
-        let json_content = fs::read_to_string(manifest_path).map_err(|source| {
-            ManifestLoadError::IoError {
-                path: manifest_path.to_path_buf(),
-                source,
             }
         })?;
+
+        let json_content =
+            fs::read_to_string(manifest_path).map_err(|source| ManifestLoadError::IoError {
+                path: manifest_path.to_path_buf(),
+                source,
+            })?;
 
         Self::load_from_json_string(&json_content)
     }

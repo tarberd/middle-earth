@@ -1,9 +1,10 @@
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use serde::Deserialize;
 
 use crate::storage::traits::{
-    execute_safe_file_move, ImageInspectionInfo, StorageError, StorageManager,
+    ImageInspectionInfo, StorageError, StorageManager, execute_compute_content_hash,
+    execute_safe_file_move,
 };
 
 /// Production implementation of StorageManager backed by the `qemu-img` command-line utility.
@@ -90,28 +91,29 @@ impl StorageManager for QemuImgStorage {
         backing_file_path: &Path,
         overlay_path: &Path,
     ) -> Result<(), StorageError> {
-        backing_file_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| StorageError::SourceFileNotFound {
+        backing_file_path.exists().then_some(()).ok_or_else(|| {
+            StorageError::SourceFileNotFound {
                 path: backing_file_path.to_path_buf(),
-            })?;
+            }
+        })?;
 
         if let Some(destination_parent) = overlay_path.parent() {
             std::fs::create_dir_all(destination_parent)?;
         }
 
-        let rendered_backing_path = backing_file_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Backing file path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_backing_path =
+            backing_file_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Backing file path contains invalid UTF-8".to_string(),
+                })?;
 
-        let rendered_overlay_path = overlay_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Overlay file path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_overlay_path =
+            overlay_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Overlay file path contains invalid UTF-8".to_string(),
+                })?;
 
         self.execute_command(&[
             "create",
@@ -140,23 +142,31 @@ impl StorageManager for QemuImgStorage {
                 path: overlay_path.to_path_buf(),
             })?;
 
-        let rendered_backing_path = new_backing_file_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "New backing file path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_backing_path =
+            new_backing_file_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "New backing file path contains invalid UTF-8".to_string(),
+                })?;
 
-        let rendered_overlay_path = overlay_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Overlay path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_overlay_path =
+            overlay_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Overlay path contains invalid UTF-8".to_string(),
+                })?;
 
         let unsafe_flag = unsafe_mode.then_some("-u");
         let arguments: Vec<&str> = ["rebase"]
             .into_iter()
             .chain(unsafe_flag)
-            .chain(["-b", rendered_backing_path, "-F", "qcow2", rendered_overlay_path])
+            .chain([
+                "-b",
+                rendered_backing_path,
+                "-F",
+                "qcow2",
+                rendered_overlay_path,
+            ])
             .collect();
 
         self.execute_command(&arguments)?;
@@ -171,11 +181,12 @@ impl StorageManager for QemuImgStorage {
                 path: image_path.to_path_buf(),
             })?;
 
-        let rendered_image_path = image_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Image path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_image_path =
+            image_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Image path contains invalid UTF-8".to_string(),
+                })?;
 
         let raw_json = self.execute_command(&["info", "--output=json", rendered_image_path])?;
         parse_qemu_img_info_json(&raw_json)
@@ -189,11 +200,12 @@ impl StorageManager for QemuImgStorage {
                 path: image_path.to_path_buf(),
             })?;
 
-        let rendered_image_path = image_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Image path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_image_path =
+            image_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Image path contains invalid UTF-8".to_string(),
+                })?;
 
         self.execute_command(&["check", rendered_image_path])
             .map(|_| ())
@@ -208,12 +220,11 @@ impl StorageManager for QemuImgStorage {
         source_depot_path: &Path,
         destination_pool_path: &Path,
     ) -> Result<(), StorageError> {
-        source_depot_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| StorageError::SourceFileNotFound {
+        source_depot_path.exists().then_some(()).ok_or_else(|| {
+            StorageError::SourceFileNotFound {
                 path: source_depot_path.to_path_buf(),
-            })?;
+            }
+        })?;
 
         if let Some(destination_parent) = destination_pool_path.parent() {
             std::fs::create_dir_all(destination_parent)?;
@@ -238,22 +249,22 @@ impl StorageManager for QemuImgStorage {
         backing_file_path: Option<&Path>,
         compress: bool,
     ) -> Result<(), StorageError> {
-        source_disk_path
-            .exists()
-            .then_some(())
-            .ok_or_else(|| StorageError::SourceFileNotFound {
+        source_disk_path.exists().then_some(()).ok_or_else(|| {
+            StorageError::SourceFileNotFound {
                 path: source_disk_path.to_path_buf(),
-            })?;
+            }
+        })?;
 
         if let Some(destination_parent) = destination_archive_path.parent() {
             std::fs::create_dir_all(destination_parent)?;
         }
 
-        let rendered_source_path = source_disk_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Source disk path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_source_path =
+            source_disk_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Source disk path contains invalid UTF-8".to_string(),
+                })?;
 
         let rendered_destination_path = destination_archive_path.to_str().ok_or_else(|| {
             StorageError::InspectionParseError {
@@ -264,14 +275,16 @@ impl StorageManager for QemuImgStorage {
         let compress_flag = compress.then_some("-c");
         let rendered_backing_file = backing_file_path
             .map(|backing_file| {
-                backing_file.to_str().ok_or_else(|| StorageError::InspectionParseError {
-                    details: "Backing file path contains invalid UTF-8".to_string(),
-                })
+                backing_file
+                    .to_str()
+                    .ok_or_else(|| StorageError::InspectionParseError {
+                        details: "Backing file path contains invalid UTF-8".to_string(),
+                    })
             })
             .transpose()?;
 
-        let backing_flag_arguments = rendered_backing_file
-            .map(|rendered_backing| ["-B", rendered_backing, "-F", "qcow2"]);
+        let backing_flag_arguments =
+            rendered_backing_file.map(|rendered_backing| ["-B", rendered_backing, "-F", "qcow2"]);
 
         let arguments: Vec<&str> = ["convert", "-U", "-O", "qcow2"]
             .into_iter()
@@ -301,11 +314,12 @@ impl StorageManager for QemuImgStorage {
             std::fs::create_dir_all(destination_parent)?;
         }
 
-        let rendered_archive_path = archive_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Archive path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_archive_path =
+            archive_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Archive path contains invalid UTF-8".to_string(),
+                })?;
 
         let rendered_destination_path = destination_overlay_path.to_str().ok_or_else(|| {
             StorageError::InspectionParseError {
@@ -315,14 +329,16 @@ impl StorageManager for QemuImgStorage {
 
         let rendered_backing_file = backing_file_path
             .map(|backing_file| {
-                backing_file.to_str().ok_or_else(|| StorageError::InspectionParseError {
-                    details: "Backing file path contains invalid UTF-8".to_string(),
-                })
+                backing_file
+                    .to_str()
+                    .ok_or_else(|| StorageError::InspectionParseError {
+                        details: "Backing file path contains invalid UTF-8".to_string(),
+                    })
             })
             .transpose()?;
 
-        let backing_flag_arguments = rendered_backing_file
-            .map(|rendered_backing| ["-B", rendered_backing, "-F", "qcow2"]);
+        let backing_flag_arguments =
+            rendered_backing_file.map(|rendered_backing| ["-B", rendered_backing, "-F", "qcow2"]);
 
         let arguments: Vec<&str> = ["convert", "-O", "qcow2"]
             .into_iter()
@@ -393,21 +409,16 @@ impl StorageManager for QemuImgStorage {
             std::fs::create_dir_all(destination_parent)?;
         }
 
-        let rendered_disk_path = disk_path.to_str().ok_or_else(|| {
-            StorageError::InspectionParseError {
-                details: "Disk path contains invalid UTF-8".to_string(),
-            }
-        })?;
+        let rendered_disk_path =
+            disk_path
+                .to_str()
+                .ok_or_else(|| StorageError::InspectionParseError {
+                    details: "Disk path contains invalid UTF-8".to_string(),
+                })?;
 
         let size_argument = size_bytes.to_string();
 
-        self.execute_command(&[
-            "create",
-            "-f",
-            "qcow2",
-            rendered_disk_path,
-            &size_argument,
-        ])?;
+        self.execute_command(&["create", "-f", "qcow2", rendered_disk_path, &size_argument])?;
 
         Ok(())
     }
@@ -429,5 +440,12 @@ impl StorageManager for QemuImgStorage {
 
         Ok(())
     }
-}
 
+    fn compute_content_hash(
+        &self,
+        oemdrv_path: &Path,
+        extra_isos: &std::collections::HashMap<String, PathBuf>,
+    ) -> Result<String, StorageError> {
+        execute_compute_content_hash(oemdrv_path, extra_isos)
+    }
+}

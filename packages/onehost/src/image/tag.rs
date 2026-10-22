@@ -1,8 +1,8 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 /// Enumerates errors that can occur while parsing an image tag specification.
@@ -17,13 +17,17 @@ pub enum ImageTagParseError {
         actual_segments: usize,
     },
 
-    #[error(
-        "Invalid image tag format '{raw_tag}': segment at index {segment_index} is empty"
-    )]
+    #[error("Invalid image tag format '{raw_tag}': segment at index {segment_index} is empty")]
     EmptySegment {
         raw_tag: String,
         segment_index: usize,
     },
+
+    #[error("Invalid image tag format '{raw_tag}': UUP ID '{uup_id}' is not a valid RFC-4122 UUID")]
+    InvalidUupId { raw_tag: String, uup_id: String },
+
+    #[error("Invalid image tag format '{raw_tag}': language '{language}' is not a valid BCP-47 language tag")]
+    InvalidLanguage { raw_tag: String, language: String },
 }
 
 /// Enumerates errors that can occur during content-addressed flavor resolution.
@@ -37,59 +41,99 @@ pub enum FlavorResolutionError {
         available_flavors: Vec<String>,
     },
 
-    #[error(
-        "Nix store path for flavor must be an absolute path, but got relative path: {path}"
-    )]
+    #[error("Nix store path for flavor must be an absolute path, but got relative path: {path}")]
     RelativeNixStorePathNotAllowed { path: PathBuf },
 
     #[error("Content hash for flavor derivation cannot be empty")]
     EmptyContentHash,
 }
 
-/// Represents a parsed image tag specification: `<operating_system>/<build_version>/<flavor_name>`.
-/// Example: `win11/26300.9457.pro.en-us/looking-glass`.
+/// Helper function to validate if a string conforms to RFC-4122 8-4-4-4-12 hex syntax.
+pub fn is_valid_rfc4122(raw_uuid: &str) -> bool {
+    crate::config::model::InstanceUuid::is_valid_rfc4122(raw_uuid)
+}
+
+/// Helper function to validate if a string conforms to BCP-47 language tag syntax.
+pub fn is_valid_bcp47(tag: &str) -> bool {
+    let subtags: Vec<&str> = tag.split('-').collect();
+    if subtags.is_empty() {
+        return false;
+    }
+    let primary = subtags[0];
+    if !(primary.len() == 2 || primary.len() == 3)
+        || !primary.chars().all(|character| character.is_ascii_alphabetic())
+    {
+        return false;
+    }
+    subtags.iter().skip(1).all(|subtag| {
+        subtag.len() >= 2
+            && subtag.len() <= 8
+            && subtag.chars().all(|character| character.is_ascii_alphanumeric())
+    })
+}
+
+/// Canonical Release Tuple and flavor specification: `<uup_id>/<edition>/<language>/<flavor>`.
+/// Example: `ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageTagSpecification {
-    pub operating_system: String,
-    pub build_version: String,
-    pub flavor_name: String,
+    pub uup_id: String,
+    pub edition: String,
+    pub language: String,
+    pub flavor: String,
 }
 
 impl ImageTagSpecification {
     /// Constructs a new `ImageTagSpecification` from verified segments.
     pub fn new(
-        operating_system: impl Into<String>,
-        build_version: impl Into<String>,
-        flavor_name: impl Into<String>,
+        uup_id: impl Into<String>,
+        edition: impl Into<String>,
+        language: impl Into<String>,
+        flavor: impl Into<String>,
     ) -> Result<Self, ImageTagParseError> {
-        let operating_system = operating_system.into();
-        let build_version = build_version.into();
-        let flavor_name = flavor_name.into();
+        let uup_id = uup_id.into().trim().to_ascii_lowercase();
+        let edition = edition.into().trim().to_ascii_lowercase();
+        let language = language.into().trim().to_ascii_lowercase();
+        let flavor = flavor.into().trim().to_string();
 
-        let raw_tag = format!("{operating_system}/{build_version}/{flavor_name}");
+        let raw_tag = format!("{uup_id}/{edition}/{language}/{flavor}");
 
-        if operating_system.trim().is_empty() {
+        if uup_id.is_empty() {
             Err(ImageTagParseError::EmptySegment {
                 raw_tag,
                 segment_index: 0,
             })
-        } else if build_version.trim().is_empty() {
+        } else if !is_valid_rfc4122(&uup_id) {
+            Err(ImageTagParseError::InvalidUupId { raw_tag, uup_id })
+        } else if edition.is_empty() {
             Err(ImageTagParseError::EmptySegment {
                 raw_tag,
                 segment_index: 1,
             })
-        } else if flavor_name.trim().is_empty() {
+        } else if language.is_empty() {
             Err(ImageTagParseError::EmptySegment {
                 raw_tag,
                 segment_index: 2,
             })
+        } else if !is_valid_bcp47(&language) {
+            Err(ImageTagParseError::InvalidLanguage { raw_tag, language })
+        } else if flavor.is_empty() {
+            Err(ImageTagParseError::EmptySegment {
+                raw_tag,
+                segment_index: 3,
+            })
         } else {
             Ok(Self {
-                operating_system,
-                build_version,
-                flavor_name,
+                uup_id,
+                edition,
+                language,
+                flavor,
             })
         }
+    }
+
+    /// Canonical Release Tuple `<uup_id>-<edition>-<language>` without flavor or content hash.
+    pub fn release_tuple(&self) -> String {
+        format!("{}-{}-{}", self.uup_id, self.edition, self.language)
     }
 }
 
@@ -99,32 +143,14 @@ impl FromStr for ImageTagSpecification {
     fn from_str(raw_tag: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = raw_tag.split('/').collect();
 
-        if segments.len() != 3 {
+        if segments.len() != 4 {
             Err(ImageTagParseError::InvalidSegmentCount {
                 raw_tag: raw_tag.to_string(),
-                expected_segments: 3,
+                expected_segments: 4,
                 actual_segments: segments.len(),
             })
         } else {
-            segments
-                .iter()
-                .enumerate()
-                .try_for_each(|(segment_index, segment)| {
-                    if segment.trim().is_empty() {
-                        Err(ImageTagParseError::EmptySegment {
-                            raw_tag: raw_tag.to_string(),
-                            segment_index,
-                        })
-                    } else {
-                        Ok(())
-                    }
-                })?;
-
-            Ok(Self {
-                operating_system: segments[0].to_string(),
-                build_version: segments[1].to_string(),
-                flavor_name: segments[2].to_string(),
-            })
+            Self::new(segments[0], segments[1], segments[2], segments[3])
         }
     }
 }
@@ -133,10 +159,18 @@ impl fmt::Display for ImageTagSpecification {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "{}/{}/{}",
-            self.operating_system, self.build_version, self.flavor_name
+            "{}/{}/{}/{}",
+            self.uup_id, self.edition, self.language, self.flavor
         )
     }
+}
+
+#[derive(Serialize)]
+struct StructuredImageTagRef<'a> {
+    uup_id: &'a str,
+    edition: &'a str,
+    language: &'a str,
+    flavor: &'a str,
 }
 
 impl Serialize for ImageTagSpecification {
@@ -144,8 +178,30 @@ impl Serialize for ImageTagSpecification {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        StructuredImageTagRef {
+            uup_id: &self.uup_id,
+            edition: &self.edition,
+            language: &self.language,
+            flavor: &self.flavor,
+        }
+        .serialize(serializer)
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredImageTag {
+    uup_id: String,
+    edition: String,
+    language: String,
+    flavor: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ImageTagRepresentation {
+    Structured(StructuredImageTag),
+    String(String),
 }
 
 impl<'de> Deserialize<'de> for ImageTagSpecification {
@@ -153,8 +209,18 @@ impl<'de> Deserialize<'de> for ImageTagSpecification {
     where
         D: Deserializer<'de>,
     {
-        let unparsed_tag = String::deserialize(deserializer)?;
-        Self::from_str(&unparsed_tag).map_err(serde::de::Error::custom)
+        let representation = ImageTagRepresentation::deserialize(deserializer)?;
+        match representation {
+            ImageTagRepresentation::String(tag_str) => {
+                Self::from_str(&tag_str).map_err(serde::de::Error::custom)
+            }
+            ImageTagRepresentation::Structured(StructuredImageTag {
+                uup_id,
+                edition,
+                language,
+                flavor,
+            }) => Self::new(uup_id, edition, language, flavor).map_err(serde::de::Error::custom),
+        }
     }
 }
 
@@ -196,35 +262,56 @@ impl ContentAddressedImageResolver {
         image_tag: &ImageTagSpecification,
         flavor_registry: &'a HashMap<String, FlavorDerivationMetadata>,
     ) -> Result<&'a FlavorDerivationMetadata, FlavorResolutionError> {
-        flavor_registry
-            .get(&image_tag.flavor_name)
-            .ok_or_else(|| {
-                let available_flavors: Vec<String> = flavor_registry
-                    .keys()
-                    .cloned()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                FlavorResolutionError::UnknownFlavor {
-                    requested_flavor: image_tag.flavor_name.clone(),
-                    available_flavors,
-                }
-            })
+        flavor_registry.get(&image_tag.flavor).ok_or_else(|| {
+            let available_flavors: Vec<String> = flavor_registry
+                .keys()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            FlavorResolutionError::UnknownFlavor {
+                requested_flavor: image_tag.flavor.clone(),
+                available_flavors,
+            }
+        })
     }
 
     /// Generates the canonical filename for a golden master QCOW2 image:
-    /// `${operating_system}-${build_version}-${flavor_name}-${content_hash}.qcow2`
+    /// `${uup_id}-${edition}-${language}-${flavor}-${content_hash}.qcow2`
     pub fn resolve_golden_master_filename(
         image_tag: &ImageTagSpecification,
         flavor_metadata: &FlavorDerivationMetadata,
     ) -> String {
+        Self::resolve_base_image_filename(image_tag, &flavor_metadata.content_hash)
+    }
+
+    /// Generates the canonical base image filename from an image tag and content hash:
+    /// `${uup_id}-${edition}-${language}-${flavor}-${content_hash}.qcow2`
+    pub fn resolve_base_image_filename(
+        image_tag: &ImageTagSpecification,
+        content_hash: &str,
+    ) -> String {
         format!(
-            "{}-{}-{}-{}.qcow2",
-            image_tag.operating_system,
-            image_tag.build_version,
-            image_tag.flavor_name,
-            flavor_metadata.content_hash
+            "{}-{}-{}.qcow2",
+            image_tag.release_tuple(),
+            image_tag.flavor,
+            content_hash
         )
+    }
+
+    /// Generates the canonical filename for a raw installation ISO:
+    /// `${uup_id}-${edition}-${language}.iso`
+    pub fn resolve_iso_filename(image_tag: &ImageTagSpecification) -> String {
+        format!("{}.iso", image_tag.release_tuple())
+    }
+
+    /// Resolves the absolute path to the raw installation ISO in the depot ISO directory:
+    /// `<depot_iso_directory>/${iso_filename}`
+    pub fn resolve_depot_iso_path(
+        depot_iso_directory: &Path,
+        image_tag: &ImageTagSpecification,
+    ) -> PathBuf {
+        depot_iso_directory.join(Self::resolve_iso_filename(image_tag))
     }
 
     /// Resolves the absolute path to the golden master in the depot store directory:

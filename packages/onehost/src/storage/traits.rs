@@ -32,10 +32,7 @@ pub enum StorageError {
     },
 
     #[error("Image integrity check failed for '{path}': {details}")]
-    ImageCorruptionDetected {
-        path: PathBuf,
-        details: String,
-    },
+    ImageCorruptionDetected { path: PathBuf, details: String },
 
     #[error("I/O error during storage operation: {source}")]
     IoError {
@@ -56,25 +53,26 @@ pub fn execute_cross_device_streaming_move(
             path: source_path.to_path_buf(),
         })?;
 
-    let destination_parent = destination_path.parent().ok_or_else(|| {
+    let destination_parent =
+        destination_path
+            .parent()
+            .ok_or_else(|| StorageError::DestinationDirectoryNotFound {
+                path: destination_path.to_path_buf(),
+            })?;
+
+    destination_parent.exists().then_some(()).ok_or_else(|| {
         StorageError::DestinationDirectoryNotFound {
-            path: destination_path.to_path_buf(),
+            path: destination_parent.to_path_buf(),
         }
     })?;
-
-    destination_parent
-        .exists()
-        .then_some(())
-        .ok_or_else(|| StorageError::DestinationDirectoryNotFound {
-            path: destination_parent.to_path_buf(),
-        })?;
 
     let file_name = destination_path
         .file_name()
         .and_then(|raw_name| raw_name.to_str())
         .unwrap_or("file");
 
-    let temporary_staging_path = destination_parent.join(format!(".{file_name}.transfer_{}", std::process::id()));
+    let temporary_staging_path =
+        destination_parent.join(format!(".{file_name}.transfer_{}", std::process::id()));
 
     // Streaming copy from source to temporary staging file
     let mut source_file = File::open(source_path)?;
@@ -112,8 +110,8 @@ pub fn execute_safe_file_move(
     match fs::rename(source_path, destination_path) {
         Ok(()) => Ok(()),
         Err(error) => {
-            let is_cross_device = error.kind() == io::ErrorKind::CrossesDevices
-                || error.raw_os_error() == Some(18); // 18 is EXDEV on Linux
+            let is_cross_device =
+                error.kind() == io::ErrorKind::CrossesDevices || error.raw_os_error() == Some(18); // 18 is EXDEV on Linux
 
             if is_cross_device {
                 execute_cross_device_streaming_move(source_path, destination_path)
@@ -201,5 +199,63 @@ pub trait StorageManager: Send + Sync {
 
     /// Sets strict read-only permissions (0444) on a file.
     fn set_readonly(&self, file_path: &Path) -> Result<(), StorageError>;
+
+    /// Computes the dynamic SHA-256 Content Hash across OEMDRV and alphabetically sorted extra ISOs,
+    /// returning the first 12 hexadecimal characters.
+    fn compute_content_hash(
+        &self,
+        oemdrv_path: &Path,
+        extra_isos: &std::collections::HashMap<String, PathBuf>,
+    ) -> Result<String, StorageError>;
 }
 
+/// Computes a streaming SHA-256 Content Hash across OEMDRV and alphabetically sorted extra ISOs,
+/// returning the first 12 hexadecimal characters.
+pub fn execute_compute_content_hash(
+    oemdrv_path: &Path,
+    extra_isos: &std::collections::HashMap<String, PathBuf>,
+) -> Result<String, StorageError> {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    stream_file_to_hasher(oemdrv_path, &mut hasher)?;
+
+    let sorted_isos: std::collections::BTreeMap<&str, &PathBuf> = extra_isos
+        .iter()
+        .map(|(key, path)| (key.as_str(), path))
+        .collect();
+
+    sorted_isos
+        .values()
+        .try_for_each(|iso_path| stream_file_to_hasher(iso_path, &mut hasher))?;
+
+    let full_hex = format!("{:x}", sha2::Digest::finalize(hasher));
+    Ok(full_hex[..12].to_string())
+}
+
+struct HasherWriter<'a>(&'a mut sha2::Sha256);
+
+impl std::io::Write for HasherWriter<'_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        use sha2::Digest;
+        self.0.update(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn stream_file_to_hasher(path: &Path, hasher: &mut sha2::Sha256) -> Result<(), StorageError> {
+    path.exists()
+        .then_some(())
+        .ok_or_else(|| StorageError::SourceFileNotFound {
+            path: path.to_path_buf(),
+        })?;
+
+    let mut file = File::open(path)?;
+    let mut writer = HasherWriter(hasher);
+    io::copy(&mut file, &mut writer)?;
+    Ok(())
+}

@@ -64,9 +64,7 @@ pub enum LifecycleError {
     },
 
     #[error("Instance '{instance_name}' is not declared in manifest")]
-    InstanceNotDeclared {
-        instance_name: String,
-    },
+    InstanceNotDeclared { instance_name: String },
 
     #[error("Manifest validation error: {source}")]
     ManifestValidationError {
@@ -75,9 +73,7 @@ pub enum LifecycleError {
     },
 
     #[error("Configuration error: {details}")]
-    ConfigurationError {
-        details: String,
-    },
+    ConfigurationError { details: String },
 
     #[error("I/O error during lifecycle management: {source}")]
     IoError {

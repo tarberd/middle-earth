@@ -5,16 +5,22 @@ use thiserror::Error;
 /// Enumerates all errors that can occur during XDG base directory resolution.
 #[derive(Debug, Error)]
 pub enum XdgDirectoryResolutionError {
-    #[error("Environment variable '{variable_name}' must be an absolute path, but got relative path: {provided_path}")]
+    #[error(
+        "Environment variable '{variable_name}' must be an absolute path, but got relative path: {provided_path}"
+    )]
     RelativePathNotAllowed {
         variable_name: String,
         provided_path: PathBuf,
     },
 
-    #[error("Cannot resolve fallback for '{fallback_target}': the $HOME environment variable is not set")]
+    #[error(
+        "Cannot resolve fallback for '{fallback_target}': the $HOME environment variable is not set"
+    )]
     MissingHomeDirectory { fallback_target: String },
 
-    #[error("XDG_RUNTIME_DIR environment variable is not set and no secure user runtime directory could be determined")]
+    #[error(
+        "XDG_RUNTIME_DIR environment variable is not set and no secure user runtime directory could be determined"
+    )]
     MissingRuntimeDirectory,
 
     #[error("Failed to create application directory at '{path}': {source}")]
@@ -80,7 +86,8 @@ impl XdgBaseDirectories {
 
     /// Returns the application configuration directory: `$XDG_CONFIG_HOME/onehost`.
     pub fn onehost_configuration_directory(&self) -> Result<PathBuf, XdgDirectoryResolutionError> {
-        self.configuration_home().map(|directory| directory.join("onehost"))
+        self.configuration_home()
+            .map(|directory| directory.join("onehost"))
     }
 
     /// Returns the application cache directory: `$XDG_CACHE_HOME/onehost`.
@@ -100,7 +107,8 @@ impl XdgBaseDirectories {
 
     /// Returns the application runtime directory: `$XDG_RUNTIME_DIR/onehost`.
     pub fn onehost_runtime_directory(&self) -> Result<PathBuf, XdgDirectoryResolutionError> {
-        self.runtime_directory().map(|directory| directory.join("onehost"))
+        self.runtime_directory()
+            .map(|directory| directory.join("onehost"))
     }
 
     /// Creates all application directories on the filesystem if they do not already exist.

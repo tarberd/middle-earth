@@ -9,7 +9,6 @@ use crate::storage::traits::StorageManager;
 pub struct DestroyOptions {
     pub force: bool,
     pub delete_disk: bool,
-    pub allow_destroy_protected: bool,
 }
 
 /// Destroyer handling safe deprovisioning of managed domain instances.
@@ -27,32 +26,20 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleDestroyer<'a, H, S> {
         }
     }
 
-    /// Destroys a specified managed domain instance adhering strictly to lifecycle guardrails.
+    /// Destroys a specified managed domain instance.
     pub fn destroy(
         &self,
         instance_name: &str,
         manifest: &OnehostManifest,
         options: &DestroyOptions,
     ) -> Result<(), LifecycleError> {
-        let instance_configuration = manifest
-            .instances
-            .get(instance_name)
-            .ok_or_else(|| LifecycleError::InstanceNotDeclared {
+        let instance_configuration = manifest.instances.get(instance_name).ok_or_else(|| {
+            LifecycleError::InstanceNotDeclared {
                 instance_name: instance_name.to_string(),
-            })?;
+            }
+        })?;
 
-        // Lifecycle guardrail: prevent_destroy check
-        (!instance_configuration.lifecycle.prevent_destroy || options.allow_destroy_protected)
-            .then_some(())
-            .ok_or_else(|| LifecycleError::LifecyclePolicyViolation {
-                instance_name: instance_name.to_string(),
-                details: format!(
-                    "Instance '{instance_name}' has prevent_destroy enabled; destruction aborted. Use --allow-destroy-protected to override."
-                ),
-            })?;
-
-        let effective_pool = instance_configuration
-            .effective_pool(&manifest.storage)?;
+        let effective_pool = instance_configuration.effective_pool(instance_name)?;
         let target_pool_directory = self.hypervisor.resolve_pool_path(effective_pool)?;
 
         // Stop running VM

@@ -37,14 +37,18 @@ impl ProcessHandle for SystemProcessHandle {
 
     fn kill(&mut self) -> Result<(), ProcessError> {
         if let Some(mut active_child) = self.child_process.take() {
-            active_child.kill().map_err(|io_error| ProcessError::IoError {
-                program: format!("pid-{}", self.process_identifier),
-                source: io_error,
-            })?;
-            active_child.wait().map_err(|io_error| ProcessError::IoError {
-                program: format!("pid-{}", self.process_identifier),
-                source: io_error,
-            })?;
+            active_child
+                .kill()
+                .map_err(|io_error| ProcessError::IoError {
+                    program: format!("pid-{}", self.process_identifier),
+                    source: io_error,
+                })?;
+            active_child
+                .wait()
+                .map_err(|io_error| ProcessError::IoError {
+                    program: format!("pid-{}", self.process_identifier),
+                    source: io_error,
+                })?;
         }
         Ok(())
     }
@@ -63,22 +67,23 @@ impl SystemProcessRunner {
 
 impl ProcessRunner for SystemProcessRunner {
     fn execute(&self, program: &str, arguments: &[&str]) -> Result<ProcessOutput, ProcessError> {
-        let command_output = Command::new(program)
-            .args(arguments)
-            .output()
-            .map_err(|io_error| {
-                if io_error.kind() == ErrorKind::NotFound {
-                    ProcessError::ProgramNotFound {
-                        program: program.to_string(),
-                        source: io_error,
+        let command_output =
+            Command::new(program)
+                .args(arguments)
+                .output()
+                .map_err(|io_error| {
+                    if io_error.kind() == ErrorKind::NotFound {
+                        ProcessError::ProgramNotFound {
+                            program: program.to_string(),
+                            source: io_error,
+                        }
+                    } else {
+                        ProcessError::IoError {
+                            program: program.to_string(),
+                            source: io_error,
+                        }
                     }
-                } else {
-                    ProcessError::IoError {
-                        program: program.to_string(),
-                        source: io_error,
-                    }
-                }
-            })?;
+                })?;
 
         let exit_code = command_output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&command_output.stdout).to_string();

@@ -68,7 +68,10 @@ impl DomainXmlDiffResult {
         if !self.has_drift {
             "No semantic drift detected between declared and live Domain XML.".to_string()
         } else {
-            let header = format!("Detected {} semantic difference(s):\n", self.differences.len());
+            let header = format!(
+                "Detected {} semantic difference(s):\n",
+                self.differences.len()
+            );
             let diff_lines: String = self
                 .differences
                 .iter()
@@ -176,10 +179,9 @@ impl DomainXmlNormalizer {
         let live_without_alias = live_without_id.without_child_tag_recursive("alias");
 
         // 3. Remove dynamic <seclabel> from live if synthesized has none
-        let synth_has_dynamic_seclabel = synth_without_alias
-            .children
-            .iter()
-            .any(|child| child.tag_name == "seclabel" && child.get_attribute("type") == Some("dynamic"));
+        let synth_has_dynamic_seclabel = synth_without_alias.children.iter().any(|child| {
+            child.tag_name == "seclabel" && child.get_attribute("type") == Some("dynamic")
+        });
 
         let live_without_seclabel = if !synth_has_dynamic_seclabel {
             live_without_alias.transform_children(|child| {
@@ -229,7 +231,9 @@ impl DomainXmlNormalizer {
             if child.tag_name == "devices" {
                 Some(child.transform_children(|live_device| {
                     let live_key = Self::compute_device_identity_key(&live_device);
-                    let matching_synth = synth_device_keys.iter().find(|(key, _, _)| key == &live_key);
+                    let matching_synth = synth_device_keys
+                        .iter()
+                        .find(|(key, _, _)| key == &live_key);
 
                     if let Some((_, has_address, has_mac)) = matching_synth {
                         let without_address = if !has_address {
@@ -244,17 +248,18 @@ impl DomainXmlNormalizer {
                             live_device
                         };
 
-                        let reconciled_device = if without_address.tag_name == "interface" && !has_mac {
-                            without_address.transform_children(|device_child| {
-                                if device_child.tag_name == "mac" {
-                                    None
-                                } else {
-                                    Some(device_child)
-                                }
-                            })
-                        } else {
-                            without_address
-                        };
+                        let reconciled_device =
+                            if without_address.tag_name == "interface" && !has_mac {
+                                without_address.transform_children(|device_child| {
+                                    if device_child.tag_name == "mac" {
+                                        None
+                                    } else {
+                                        Some(device_child)
+                                    }
+                                })
+                            } else {
+                                without_address
+                            };
 
                         Some(reconciled_device)
                     } else {
@@ -291,7 +296,10 @@ impl DomainXmlNormalizer {
             "controller" => {
                 let controller_type = element.get_attribute("type").unwrap_or("");
                 let controller_index = element.get_attribute("index").unwrap_or("");
-                format!("controller[type={},index={}]", controller_type, controller_index)
+                format!(
+                    "controller[type={},index={}]",
+                    controller_type, controller_index
+                )
             }
             "hostdev" => {
                 let hostdev_type = element.get_attribute("type").unwrap_or("");
@@ -411,7 +419,9 @@ impl DomainXmlNormalizer {
 
         text_content
             .into_iter()
-            .fold(normalized_node, |accumulated_node, text| accumulated_node.with_replaced_text(text))
+            .fold(normalized_node, |accumulated_node, text| {
+                accumulated_node.with_replaced_text(text)
+            })
     }
 }
 
@@ -442,12 +452,14 @@ impl DomainXmlDiffer {
         let (normalized_synthesized, normalized_live) =
             DomainXmlNormalizer::normalize_domain_trees(synthesized_root, live_root);
 
-        let differences = Self::calculate_differences(&normalized_synthesized, &normalized_live, "");
+        let differences =
+            Self::calculate_differences(&normalized_synthesized, &normalized_live, "");
 
         let normalized_synthesized_xml = normalized_synthesized.to_xml_string(0);
         let normalized_live_xml = normalized_live.to_xml_string(0);
 
-        let has_drift = !differences.is_empty() || normalized_synthesized_xml != normalized_live_xml;
+        let has_drift =
+            !differences.is_empty() || normalized_synthesized_xml != normalized_live_xml;
 
         Ok(DomainXmlDiffResult {
             has_drift,
@@ -469,38 +481,46 @@ impl DomainXmlDiffer {
         };
 
         // 1. Attribute differences (pure functional iterator chaining)
-        let missing_and_mismatched_attributes = synthesized
-            .attributes
-            .iter()
-            .filter_map(|(attribute_key, expected_value)| match live.get_attribute(attribute_key) {
-                Some(actual_value) if expected_value != actual_value => {
-                    Some(DomainXmlDifference::AttributeMismatch {
-                        element_path: current_path.clone(),
-                        attribute_name: attribute_key.clone(),
-                        expected: expected_value.clone(),
-                        actual: actual_value.to_string(),
-                    })
-                }
-                None => Some(DomainXmlDifference::MissingAttribute {
-                    element_path: current_path.clone(),
-                    attribute_name: attribute_key.clone(),
-                    expected: expected_value.clone(),
-                }),
-                _ => None,
-            });
+        let missing_and_mismatched_attributes =
+            synthesized
+                .attributes
+                .iter()
+                .filter_map(|(attribute_key, expected_value)| {
+                    match live.get_attribute(attribute_key) {
+                        Some(actual_value) if expected_value != actual_value => {
+                            Some(DomainXmlDifference::AttributeMismatch {
+                                element_path: current_path.clone(),
+                                attribute_name: attribute_key.clone(),
+                                expected: expected_value.clone(),
+                                actual: actual_value.to_string(),
+                            })
+                        }
+                        None => Some(DomainXmlDifference::MissingAttribute {
+                            element_path: current_path.clone(),
+                            attribute_name: attribute_key.clone(),
+                            expected: expected_value.clone(),
+                        }),
+                        _ => None,
+                    }
+                });
 
         let unexpected_attributes = live
             .attributes
             .iter()
             .filter(|(attribute_key, _)| synthesized.get_attribute(attribute_key).is_none())
-            .map(|(attribute_key, actual_value)| DomainXmlDifference::UnexpectedAttribute {
-                element_path: current_path.clone(),
-                attribute_name: attribute_key.clone(),
-                actual: actual_value.clone(),
-            });
+            .map(
+                |(attribute_key, actual_value)| DomainXmlDifference::UnexpectedAttribute {
+                    element_path: current_path.clone(),
+                    attribute_name: attribute_key.clone(),
+                    actual: actual_value.clone(),
+                },
+            );
 
         // 2. Text content difference
-        let text_difference = match (synthesized.text_content.as_deref(), live.text_content.as_deref()) {
+        let text_difference = match (
+            synthesized.text_content.as_deref(),
+            live.text_content.as_deref(),
+        ) {
             (Some(expected_text), Some(actual_text)) if expected_text != actual_text => {
                 Some(DomainXmlDifference::TextContentMismatch {
                     element_path: current_path.clone(),
@@ -523,21 +543,24 @@ impl DomainXmlDiffer {
 
         // 3. Child differences using semantic identity keys
         let (matched_live_children, child_differences) = synthesized.children.iter().fold(
-            (Vec::<&DomainXmlElement>::new(), Vec::<DomainXmlDifference>::new()),
+            (
+                Vec::<&DomainXmlElement>::new(),
+                Vec::<DomainXmlDifference>::new(),
+            ),
             |(matched_children, accumulated_differences), synthesized_child| {
                 let key = DomainXmlNormalizer::compute_device_identity_key(synthesized_child);
-                let matching_live = live
-                    .children
-                    .iter()
-                    .find(|live_child| {
-                        !matched_children.contains(live_child)
-                            && DomainXmlNormalizer::compute_device_identity_key(live_child) == key
-                    });
+                let matching_live = live.children.iter().find(|live_child| {
+                    !matched_children.contains(live_child)
+                        && DomainXmlNormalizer::compute_device_identity_key(live_child) == key
+                });
 
                 match matching_live {
                     Some(live_child) => {
-                        let child_sub_differences =
-                            Self::calculate_differences(synthesized_child, live_child, &current_path);
+                        let child_sub_differences = Self::calculate_differences(
+                            synthesized_child,
+                            live_child,
+                            &current_path,
+                        );
                         let updated_matched: Vec<&DomainXmlElement> = matched_children
                             .into_iter()
                             .chain(std::iter::once(live_child))

@@ -1,6 +1,4 @@
-use onehost::domain::diff::{
-    DomainXmlDiffError, DomainXmlDifference, DomainXmlDiffer,
-};
+use onehost::domain::diff::{DomainXmlDiffError, DomainXmlDiffer, DomainXmlDifference};
 
 const BASE_SYNTHESIZED_XML: &str = r#"<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
   <name>win11-gollum</name>
@@ -135,20 +133,25 @@ fn test_explicit_pci_address_drift_is_detected_when_in_synthesized() {
         "<target dev='sda' bus='sata'/>\n      <address type='drive' controller='0' bus='0' target='0' unit='1'/>",
     );
 
-    let diff_result =
-        DomainXmlDiffer::compare_domain_xmls(&synthesized_with_address, &live_with_different_address)
-            .expect("Diff comparison failed");
+    let diff_result = DomainXmlDiffer::compare_domain_xmls(
+        &synthesized_with_address,
+        &live_with_different_address,
+    )
+    .expect("Diff comparison failed");
 
     assert!(diff_result.has_drift);
-    let has_unit_difference = diff_result.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::AttributeMismatch {
-            attribute_name,
-            expected,
-            actual,
-            ..
-        } => attribute_name == "unit" && expected == "0" && actual == "1",
-        _ => false,
-    });
+    let has_unit_difference = diff_result
+        .differences
+        .iter()
+        .any(|difference| match difference {
+            DomainXmlDifference::AttributeMismatch {
+                attribute_name,
+                expected,
+                actual,
+                ..
+            } => attribute_name == "unit" && expected == "0" && actual == "1",
+            _ => false,
+        });
     assert!(has_unit_difference);
 }
 
@@ -184,15 +187,22 @@ fn test_explicit_mac_drift_is_detected_when_in_synthesized() {
             .expect("Diff comparison failed");
 
     assert!(diff_result.has_drift);
-    let has_mac_difference = diff_result.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::AttributeMismatch {
-            attribute_name,
-            expected,
-            actual,
-            ..
-        } => attribute_name == "address" && expected == "52:54:00:aa:bb:cc" && actual == "52:54:00:12:34:56",
-        _ => false,
-    });
+    let has_mac_difference = diff_result
+        .differences
+        .iter()
+        .any(|difference| match difference {
+            DomainXmlDifference::AttributeMismatch {
+                attribute_name,
+                expected,
+                actual,
+                ..
+            } => {
+                attribute_name == "address"
+                    && expected == "52:54:00:aa:bb:cc"
+                    && actual == "52:54:00:12:34:56"
+            }
+            _ => false,
+        });
     assert!(has_mac_difference);
 }
 
@@ -214,8 +224,14 @@ fn test_dynamic_seclabel_is_normalized_out() {
 #[test]
 fn test_vcpu_and_memory_drift_are_detected() {
     let synthesized_with_more_resources = BASE_SYNTHESIZED_XML
-        .replace("<vcpu placement='static'>16</vcpu>", "<vcpu placement='static'>32</vcpu>")
-        .replace("<memory unit='KiB'>16777216</memory>", "<memory unit='KiB'>33554432</memory>");
+        .replace(
+            "<vcpu placement='static'>16</vcpu>",
+            "<vcpu placement='static'>32</vcpu>",
+        )
+        .replace(
+            "<memory unit='KiB'>16777216</memory>",
+            "<memory unit='KiB'>33554432</memory>",
+        );
 
     let diff_result = DomainXmlDiffer::compare_domain_xmls(
         &synthesized_with_more_resources,
@@ -225,24 +241,30 @@ fn test_vcpu_and_memory_drift_are_detected() {
 
     assert!(diff_result.has_drift);
 
-    let vcpu_drift = diff_result.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::TextContentMismatch {
-            element_path,
-            expected,
-            actual,
-        } => element_path == "/domain/vcpu" && expected == "32" && actual == "16",
-        _ => false,
-    });
+    let vcpu_drift = diff_result
+        .differences
+        .iter()
+        .any(|difference| match difference {
+            DomainXmlDifference::TextContentMismatch {
+                element_path,
+                expected,
+                actual,
+            } => element_path == "/domain/vcpu" && expected == "32" && actual == "16",
+            _ => false,
+        });
     assert!(vcpu_drift);
 
-    let memory_drift = diff_result.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::TextContentMismatch {
-            element_path,
-            expected,
-            actual,
-        } => element_path == "/domain/memory" && expected == "33554432" && actual == "16777216",
-        _ => false,
-    });
+    let memory_drift = diff_result
+        .differences
+        .iter()
+        .any(|difference| match difference {
+            DomainXmlDifference::TextContentMismatch {
+                element_path,
+                expected,
+                actual,
+            } => element_path == "/domain/memory" && expected == "33554432" && actual == "16777216",
+            _ => false,
+        });
     assert!(memory_drift);
 }
 
@@ -259,35 +281,41 @@ fn test_added_and_removed_disks_are_detected() {
     );
 
     // 1. Missing disk in live
-    let diff_result_missing = DomainXmlDiffer::compare_domain_xmls(
-        &synthesized_with_second_disk,
-        BASE_SYNTHESIZED_XML,
-    )
-    .expect("Diff comparison failed");
+    let diff_result_missing =
+        DomainXmlDiffer::compare_domain_xmls(&synthesized_with_second_disk, BASE_SYNTHESIZED_XML)
+            .expect("Diff comparison failed");
 
     assert!(diff_result_missing.has_drift);
-    let reports_missing_disk = diff_result_missing.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::MissingChildElement { parent_path, expected_child } => {
-            parent_path == "/domain/devices" && expected_child.contains("dev=\"sdb\"")
-        }
-        _ => false,
-    });
+    let reports_missing_disk =
+        diff_result_missing
+            .differences
+            .iter()
+            .any(|difference| match difference {
+                DomainXmlDifference::MissingChildElement {
+                    parent_path,
+                    expected_child,
+                } => parent_path == "/domain/devices" && expected_child.contains("dev=\"sdb\""),
+                _ => false,
+            });
     assert!(reports_missing_disk);
 
     // 2. Unexpected disk in live
-    let diff_result_unexpected = DomainXmlDiffer::compare_domain_xmls(
-        BASE_SYNTHESIZED_XML,
-        &synthesized_with_second_disk,
-    )
-    .expect("Diff comparison failed");
+    let diff_result_unexpected =
+        DomainXmlDiffer::compare_domain_xmls(BASE_SYNTHESIZED_XML, &synthesized_with_second_disk)
+            .expect("Diff comparison failed");
 
     assert!(diff_result_unexpected.has_drift);
-    let reports_unexpected_disk = diff_result_unexpected.differences.iter().any(|difference| match difference {
-        DomainXmlDifference::UnexpectedChildElement { parent_path, actual_child } => {
-            parent_path == "/domain/devices" && actual_child.contains("dev=\"sdb\"")
-        }
-        _ => false,
-    });
+    let reports_unexpected_disk =
+        diff_result_unexpected
+            .differences
+            .iter()
+            .any(|difference| match difference {
+                DomainXmlDifference::UnexpectedChildElement {
+                    parent_path,
+                    actual_child,
+                } => parent_path == "/domain/devices" && actual_child.contains("dev=\"sdb\""),
+                _ => false,
+            });
     assert!(reports_unexpected_disk);
 }
 
@@ -298,11 +326,9 @@ fn test_attribute_ordering_and_quote_differences_are_normalized() {
         "<disk device=\"disk\" type=\"file\">",
     );
 
-    let diff_result = DomainXmlDiffer::compare_domain_xmls(
-        BASE_SYNTHESIZED_XML,
-        &reordered_attributes_xml,
-    )
-    .expect("Diff comparison failed");
+    let diff_result =
+        DomainXmlDiffer::compare_domain_xmls(BASE_SYNTHESIZED_XML, &reordered_attributes_xml)
+            .expect("Diff comparison failed");
 
     assert!(!diff_result.has_drift);
     assert!(diff_result.differences.is_empty());
@@ -313,8 +339,15 @@ fn test_malformed_xml_returns_error() {
     let malformed_xml = "<domain><name>unclosed";
 
     let result = DomainXmlDiffer::compare_domain_xmls(BASE_SYNTHESIZED_XML, malformed_xml);
-    assert!(matches!(result, Err(DomainXmlDiffError::LiveXmlParseError(_))));
+    assert!(matches!(
+        result,
+        Err(DomainXmlDiffError::LiveXmlParseError(_))
+    ));
 
-    let result_synthesized = DomainXmlDiffer::compare_domain_xmls(malformed_xml, BASE_SYNTHESIZED_XML);
-    assert!(matches!(result_synthesized, Err(DomainXmlDiffError::SynthesizedXmlParseError(_))));
+    let result_synthesized =
+        DomainXmlDiffer::compare_domain_xmls(malformed_xml, BASE_SYNTHESIZED_XML);
+    assert!(matches!(
+        result_synthesized,
+        Err(DomainXmlDiffError::SynthesizedXmlParseError(_))
+    ));
 }

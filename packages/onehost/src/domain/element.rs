@@ -78,9 +78,9 @@ impl DomainXmlElement {
 
     /// Resolves a nested child element following a sequence of tag names.
     pub fn find_path<'a>(&'a self, tag_path: &[&str]) -> Option<&'a DomainXmlElement> {
-        tag_path
-            .iter()
-            .try_fold(self, |current_node, &tag| current_node.find_child_by_tag(tag))
+        tag_path.iter().try_fold(self, |current_node, &tag| {
+            current_node.find_child_by_tag(tag)
+        })
     }
 
     /// Resolves text content at a nested path of tag names.
@@ -91,7 +91,9 @@ impl DomainXmlElement {
 
     /// Returns an iterator yielding all children with the specified tag name.
     pub fn find_children<'a>(&'a self, tag: &'a str) -> impl Iterator<Item = &'a DomainXmlElement> {
-        self.children.iter().filter(move |child| child.tag_name == tag)
+        self.children
+            .iter()
+            .filter(move |child| child.tag_name == tag)
     }
 
     /// Functional builder: returns a new element with an additional attribute.
@@ -194,11 +196,8 @@ impl DomainXmlElement {
     where
         F: Fn(DomainXmlElement) -> Option<DomainXmlElement>,
     {
-        let new_children: Vec<DomainXmlElement> = self
-            .children
-            .into_iter()
-            .filter_map(transform_fn)
-            .collect();
+        let new_children: Vec<DomainXmlElement> =
+            self.children.into_iter().filter_map(transform_fn).collect();
 
         Self {
             children: new_children,
@@ -233,9 +232,10 @@ impl DomainXmlElement {
                 Self::verify_eof(reader, event_buffer)?;
                 Ok(root)
             }
-            Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
-                Self::parse_document_root(reader, event_buffer)
-            }
+            Ok(Event::Comment(_))
+            | Ok(Event::Decl(_))
+            | Ok(Event::DocType(_))
+            | Ok(Event::PI(_)) => Self::parse_document_root(reader, event_buffer),
             Ok(Event::Eof) => Err(DomainXmlParseError::EmptyContent),
             Err(error) => Err(DomainXmlParseError::XmlParserError {
                 message: error.to_string(),
@@ -348,10 +348,7 @@ impl DomainXmlElement {
         match reader.read_event_into(event_buffer) {
             Ok(Event::Start(child_start)) => {
                 let owned_start = child_start.into_owned();
-                Some(
-                    Self::parse_start_tag(owned_start, reader, event_buffer)
-                        .map(BodyItem::Child),
-                )
+                Some(Self::parse_start_tag(owned_start, reader, event_buffer).map(BodyItem::Child))
             }
             Ok(Event::Empty(child_empty)) => {
                 let owned_empty = child_empty.into_owned();
@@ -385,11 +382,12 @@ impl DomainXmlElement {
             }
             Ok(Event::End(end_event)) => {
                 let end_name = end_event.name();
-                let parsed_end_tag = std::str::from_utf8(end_name.as_ref())
-                    .map_err(|utf8_error| DomainXmlParseError::InvalidUtf8 {
+                let parsed_end_tag = std::str::from_utf8(end_name.as_ref()).map_err(|utf8_error| {
+                    DomainXmlParseError::InvalidUtf8 {
                         field_name: "closing tag".to_string(),
                         details: utf8_error.to_string(),
-                    });
+                    }
+                });
                 match parsed_end_tag {
                     Ok(end_tag) if end_tag == expected_tag => None,
                     Ok(end_tag) => Some(Err(DomainXmlParseError::MismatchedClosingTag {
@@ -402,9 +400,10 @@ impl DomainXmlElement {
             Ok(Event::Eof) => Some(Err(DomainXmlParseError::UnclosedTag {
                 expected_tag: expected_tag.to_string(),
             })),
-            Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::DocType(_)) | Ok(Event::PI(_)) => {
-                Self::next_body_item(expected_tag, reader, event_buffer)
-            }
+            Ok(Event::Comment(_))
+            | Ok(Event::Decl(_))
+            | Ok(Event::DocType(_))
+            | Ok(Event::PI(_)) => Self::next_body_item(expected_tag, reader, event_buffer),
             Err(error) => Some(Err(DomainXmlParseError::XmlParserError {
                 message: error.to_string(),
             })),
@@ -422,15 +421,17 @@ impl DomainXmlElement {
 
         let parsed_items = items?;
 
-        let (children, text_fragments): (Vec<DomainXmlElement>, Vec<String>) = parsed_items
-            .into_iter()
-            .fold((Vec::new(), Vec::new()), |(mut accumulated_children, mut accumulated_text), item| {
-                match item {
-                    BodyItem::Child(child) => accumulated_children.push(child),
-                    BodyItem::Text(text) => accumulated_text.push(text),
-                }
-                (accumulated_children, accumulated_text)
-            });
+        let (children, text_fragments): (Vec<DomainXmlElement>, Vec<String>) =
+            parsed_items.into_iter().fold(
+                (Vec::new(), Vec::new()),
+                |(mut accumulated_children, mut accumulated_text), item| {
+                    match item {
+                        BodyItem::Child(child) => accumulated_children.push(child),
+                        BodyItem::Text(text) => accumulated_text.push(text),
+                    }
+                    (accumulated_children, accumulated_text)
+                },
+            );
 
         let text_content = Some(text_fragments.concat()).filter(|text| !text.is_empty());
 
