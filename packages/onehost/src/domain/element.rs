@@ -251,7 +251,6 @@ impl DomainXmlElement {
         event_buffer.clear();
         match reader.read_event_into(event_buffer) {
             Ok(Event::Eof) => Ok(()),
-            Ok(Event::Comment(_)) | Ok(Event::PI(_)) => Self::verify_eof(reader, event_buffer),
             Ok(Event::Start(_)) | Ok(Event::Empty(_)) => {
                 Err(DomainXmlParseError::MultipleRootElements)
             }

@@ -12,6 +12,7 @@ mkFlakeModule {
   public = [
     ./apps
     ./packages
+    ./devShells
     ./nixosConfigurations
     ./formatter.nix
   ];

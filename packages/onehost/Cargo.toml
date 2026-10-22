@@ -12,3 +12,10 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 tempfile = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha2 = "0.10"
+
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+needless_for_each = "warn"
+match_same_arms = "warn"
