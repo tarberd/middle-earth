@@ -1,0 +1,3 @@
+# Removal of Redundant Lifecycle Guardrails in Favor of Plan Confirmation
+
+Onehost eliminates instance-level lifecycle guardrails (`lifecycle.prevent_destroy` and `lifecycle.on_image_change`) along with CLI override flags (`--allow-recreate`, `--allow-destroy-protected`). In declarative infrastructure reconciliation, plan inspection and interactive confirmation serve as the authoritative safety boundary. If an instance overlay must be recreated due to base image drift or purged as an orphan, the planner explicitly renders these destructive actions in the execution plan for operator review prior to execution.

@@ -1,0 +1,3 @@
+# Arbitrary ISO Mounting in Onehost Manifest for Base Image Provisioning
+
+To support diverse operating system flavors and driver requirements without hardcoding guest-specific media in Rust, `onehost.json` manifests declare arbitrary ISOs (`extra_isos: HashMap<String, PathBuf>`) per flavor. During headless QEMU base image builds, onehost verifies the existence of these media and mounts them as read-only CD-ROM drives in deterministic alphabetical order. This decouples onehost from specific hypervisor drivers (such as `virtio-win.iso`) or third-party installation packages, keeping the builder engine generic.

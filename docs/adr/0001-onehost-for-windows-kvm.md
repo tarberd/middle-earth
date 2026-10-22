@@ -1,0 +1,3 @@
+# Use Standalone Onehost Tool for Windows KVM Lifecycle Instead of OpenTofu Provider
+
+While Incus containers in this repository are provisioned using OpenTofu and Terranix, Windows KVM virtual machines are managed through a dedicated Rust CLI (`onehost`). Windows virtualization on Gandalf requires specialized capabilities—content-addressed OEMDRV unattended installation ISOs, Looking Glass IVSHMEM devices, Intel Arc SR-IOV Virtual Function lifecycle management, and offline/online QEMU guest agent backups—which are poorly supported and awkward to represent in generic Terraform libvirt providers. Onehost provides OpenTofu-style declarative reconciliation (`plan`, `apply`, `destroy`) natively tailored to Nix derivations and Windows workstation virtualization.

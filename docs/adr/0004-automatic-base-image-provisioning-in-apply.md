@@ -1,0 +1,3 @@
+# Automatic Base Image Provisioning During Onehost Apply
+
+To provide a fully declarative workflow akin to infrastructure-as-code reconciliation, `onehost apply` automatically detects and builds missing base images before provisioning instance overlays. Rather than requiring users to manually run `onehost image build` before applying configuration, the planner identifies unbuilt images and schedules image creation as an upstream prerequisite step. Because all build inputs (OEMDRV path, extra ISOs, and Windows ISO locations) are fully declared in the manifest, `onehost apply` can hermetically construct the Base Image on demand.

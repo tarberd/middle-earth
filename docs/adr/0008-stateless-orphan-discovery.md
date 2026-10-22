@@ -1,0 +1,3 @@
+# Stateless Orphan Domain Discovery via Libvirt Metadata
+
+To discover and purge virtual machines removed from `onehost.json` without introducing an external state file (such as `terraform.tfstate`), onehost embeds a custom `<metadata><onehost:instance xmlns:onehost="https://middle-earth.internal/onehost" managed="true"/></metadata>` block into every defined domain XML. During planning, onehost queries libvirt for all existing domains, inspects their metadata, and identifies any tagged domain absent from the current manifest. Orphan domains are completely deprovisioned by undefining the domain, removing NVRAM variables, and deleting their copy-on-write overlay disks.

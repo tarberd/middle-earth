@@ -1,0 +1,3 @@
+# Internalized UUP ISO Fetching Engine in Onehost
+
+Onehost natively manages the retrieval and generation of Windows installation media when missing from the depot ISO cache. Rather than requiring users to manually generate ISO files or delegating to an external manifest-configured script path, onehost packages the UUP dump download toolchain (including `aria2`, `wimlib`, and `cabextract`) directly into its runtime dependencies. When an unbuilt release tuple is encountered, onehost autonomously downloads and converts the official Microsoft update packages into `<uup_id>-<edition>-<language>.iso`.
