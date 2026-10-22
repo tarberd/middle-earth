@@ -125,7 +125,10 @@ fn test_mock_hypervisor_domain_lifecycle() {
         .start_domain("win11-gollum")
         .expect("Failed to start domain");
     assert_eq!(
-        hypervisor.domain_info("win11-gollum").unwrap().state,
+        hypervisor
+            .domain_info("win11-gollum")
+            .expect("domain info")
+            .state,
         DomainState::Running
     );
 
@@ -134,7 +137,10 @@ fn test_mock_hypervisor_domain_lifecycle() {
         .shutdown_domain("win11-gollum")
         .expect("Failed to shutdown domain");
     assert_eq!(
-        hypervisor.domain_info("win11-gollum").unwrap().state,
+        hypervisor
+            .domain_info("win11-gollum")
+            .expect("domain info")
+            .state,
         DomainState::Shutoff
     );
 
@@ -146,7 +152,10 @@ fn test_mock_hypervisor_domain_lifecycle() {
         .destroy_domain("win11-gollum")
         .expect("Failed to destroy domain");
     assert_eq!(
-        hypervisor.domain_info("win11-gollum").unwrap().state,
+        hypervisor
+            .domain_info("win11-gollum")
+            .expect("domain info")
+            .state,
         DomainState::Shutoff
     );
 
@@ -154,7 +163,12 @@ fn test_mock_hypervisor_domain_lifecycle() {
     hypervisor
         .set_autostart("win11-gollum", false)
         .expect("Failed to set autostart");
-    assert!(!hypervisor.domain_info("win11-gollum").unwrap().autostart);
+    assert!(
+        !hypervisor
+            .domain_info("win11-gollum")
+            .expect("domain info")
+            .autostart
+    );
 
     // Verify recorded action log
     let actions = hypervisor.recorded_actions();

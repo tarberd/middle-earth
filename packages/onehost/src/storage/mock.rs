@@ -579,7 +579,7 @@ impl StorageManager for MockStorageManager {
     fn compute_content_hash(
         &self,
         oemdrv_path: &Path,
-        extra_isos: &std::collections::HashMap<String, PathBuf>,
+        extra_isos: &HashMap<String, PathBuf>,
     ) -> Result<String, StorageError> {
         let mut locked_state = self
             .state
@@ -613,14 +613,14 @@ impl StorageManager for MockStorageManager {
 
             let sorted_isos: std::collections::BTreeMap<&String, &PathBuf> =
                 extra_isos.iter().collect();
-            sorted_isos.values().try_for_each(|iso_path| {
+            let hasher = sorted_isos.values().try_fold(hasher, |mut acc, iso_path| {
                 let iso_data = locked_state.files.get(*iso_path).ok_or_else(|| {
                     StorageError::SourceFileNotFound {
                         path: (*iso_path).clone(),
                     }
                 })?;
-                hasher.update(iso_data.as_bytes());
-                Ok::<(), StorageError>(())
+                acc.update(iso_data.as_bytes());
+                Ok::<Sha256, StorageError>(acc)
             })?;
             let full_hex = format!("{:x}", hasher.finalize());
             Ok(full_hex[..12].to_string())

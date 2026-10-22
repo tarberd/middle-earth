@@ -122,7 +122,7 @@ impl XdgBaseDirectories {
         ]
         .into_iter()
         .filter(|directory| !directory.exists())
-        .try_for_each(|directory| {
+        .try_fold((), |(), directory| {
             fs::create_dir_all(&directory).map_err(|source| {
                 XdgDirectoryResolutionError::DirectoryCreationFailed {
                     path: directory,

@@ -16,7 +16,7 @@ use crate::image::builder::{
 };
 use crate::image::tag::{ImageTagParseError, ImageTagSpecification};
 use crate::lifecycle::{
-    ApplyOptions, DestroyOptions, DomainLifecycleApplier, DomainLifecycleDestroyer,
+    DestroyOptions, DomainLifecycleApplier, DomainLifecycleDestroyer,
     DomainLifecyclePlanner, InstancePlanAction, LifecycleError, OnehostPlan,
 };
 use crate::process::traits::{ProcessError, ProcessRunner};
@@ -366,7 +366,7 @@ pub fn collect_status_reports<H: Hypervisor, S: StorageManager>(
     manifest
         .instances
         .iter()
-        .filter(|(instance_name, _instance_configuration)| {
+        .filter(|(instance_name, _)| {
             filter_instance.is_none_or(|target_name| instance_name.as_str() == target_name)
         })
         .map(|(instance_name, instance_configuration)| {
@@ -502,10 +502,8 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
                     .retain(|action| action.instance_name() == target_name);
             }
 
-            let apply_options = ApplyOptions::default();
-
             let applier = DomainLifecycleApplier::new(hypervisor, storage);
-            applier.apply(&plan, &apply_options)?;
+            applier.apply(&plan)?;
 
             writeln!(
                 output,
@@ -598,8 +596,12 @@ pub fn dispatch<H: Hypervisor, S: StorageManager, P: ProcessRunner, W: Write>(
 
             let restore_options = RestoreOptions {
                 target_pool: args.pool,
-                depot_store_dir: None,
-                nvram_dir: None,
+                depot_store_dir: manifest
+                    .as_ref()
+                    .map(|manifest| manifest.storage.depot_store_dir.clone()),
+                nvram_dir: manifest
+                    .as_ref()
+                    .map(|manifest| manifest.storage.nvram_dir.clone()),
                 allow_overwrite: args.allow_overwrite,
             };
 

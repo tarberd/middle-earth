@@ -62,7 +62,7 @@ pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValid
     manifest
         .flavors
         .iter()
-        .try_for_each(|(flavor_name, flavor_config)| {
+        .try_fold((), |(), (flavor_name, flavor_config)| {
             validate_absolute_path(
                 &format!("flavors.{flavor_name}.oemdrv_path"),
                 &flavor_config.oemdrv_path,
@@ -70,7 +70,7 @@ pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValid
             flavor_config
                 .extra_isos
                 .iter()
-                .try_for_each(|(iso_key, iso_path)| {
+                .try_fold((), |(), (iso_key, iso_path)| {
                     (!iso_key.trim().is_empty()).then_some(()).ok_or_else(|| {
                         ManifestValidationError::EmptyFieldNotAllowed {
                             field_name: format!("flavors.{flavor_name}.extra_isos key"),
@@ -95,7 +95,7 @@ pub fn validate_manifest(manifest: &OnehostManifest) -> Result<(), ManifestValid
     manifest
         .instances
         .iter()
-        .try_for_each(|(instance_name, instance_config)| {
+        .try_fold((), |(), (instance_name, instance_config)| {
             (!instance_name.trim().is_empty())
                 .then_some(())
                 .ok_or_else(|| ManifestValidationError::EmptyFieldNotAllowed {

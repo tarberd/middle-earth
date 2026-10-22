@@ -491,6 +491,17 @@ impl Hypervisor for MockHypervisor {
                     domain_name: domain_name.to_string(),
                 })?;
 
+            disk_specifications
+                .iter()
+                .filter(|spec| {
+                    spec.snapshot_file_path
+                        .parent()
+                        .is_some_and(|parent| parent.exists())
+                })
+                .fold((), |(), spec| {
+                    let _ = std::fs::File::create(&spec.snapshot_file_path);
+                });
+
             Ok(())
         }
     }

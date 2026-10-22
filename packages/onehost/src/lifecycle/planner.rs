@@ -227,7 +227,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecyclePlanner<'a, H, S> {
                 Ok((create_action, Vec::new()))
             }
             Err(hypervisor_failure) => Err(LifecycleError::from(hypervisor_failure)),
-            Ok(_domain_info) => {
+            Ok(_) => {
                 let attached_devices = self.hypervisor.list_block_devices(instance_name)?;
 
                 let dangling_snapshot_alerts: Vec<DanglingSnapshotAlert> = attached_devices

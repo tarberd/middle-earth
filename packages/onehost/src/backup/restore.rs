@@ -97,7 +97,7 @@ impl<'a, H: Hypervisor, S: StorageManager> RestoreEngine<'a, H, S> {
             None
         };
 
-        manifest.disks.iter().try_for_each(|disk_entry| {
+        manifest.disks.iter().try_fold((), |(), disk_entry| {
             let archive_path = backup_directory.join(&disk_entry.archive_filename);
             let destination_overlay_path = if disk_entry.target_device == "sda" {
                 pool_directory_path.join(format!("{}.qcow2", manifest.instance_name))

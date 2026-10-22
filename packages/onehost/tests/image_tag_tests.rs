@@ -10,7 +10,7 @@ use onehost::image::tag::{
 #[test]
 fn test_parse_valid_canonical_release_tuple() {
     let raw_tag = "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass";
-    let parsed_tag = ImageTagSpecification::from_str(raw_tag).unwrap();
+    let parsed_tag = ImageTagSpecification::from_str(raw_tag).expect("valid tag parse");
 
     assert_eq!(parsed_tag.uup_id, "ce863cb6-6967-4632-a567-eb965a6f2ea3");
     assert_eq!(parsed_tag.edition, "pro");
@@ -22,7 +22,7 @@ fn test_parse_valid_canonical_release_tuple() {
 #[test]
 fn test_parse_normalizes_case_and_whitespace() {
     let raw_tag = "  CE863CB6-6967-4632-A567-EB965A6F2EA3 / Pro / EN-US / looking-glass ";
-    let parsed_tag = ImageTagSpecification::from_str(raw_tag).unwrap();
+    let parsed_tag = ImageTagSpecification::from_str(raw_tag).expect("normalized tag parse");
 
     assert_eq!(parsed_tag.uup_id, "ce863cb6-6967-4632-a567-eb965a6f2ea3");
     assert_eq!(parsed_tag.edition, "pro");
@@ -37,27 +37,28 @@ fn test_parse_normalizes_case_and_whitespace() {
 #[test]
 fn test_rejects_legacy_informal_build_strings() {
     // Legacy 3-part tag (os/build_version/flavor) must be rejected
-    match ImageTagSpecification::from_str("win11/26300.9457.pro.en-us/looking-glass") {
-        Err(ImageTagParseError::InvalidSegmentCount {
-            raw_tag,
-            expected_segments,
-            actual_segments,
-        }) => {
-            assert_eq!(raw_tag, "win11/26300.9457.pro.en-us/looking-glass");
-            assert_eq!(expected_segments, 4);
-            assert_eq!(actual_segments, 3);
+    let segment_error =
+        ImageTagSpecification::from_str("win11/26300.9457.pro.en-us/looking-glass")
+            .expect_err("Expected InvalidSegmentCount error");
+    assert_eq!(
+        segment_error,
+        ImageTagParseError::InvalidSegmentCount {
+            raw_tag: "win11/26300.9457.pro.en-us/looking-glass".to_string(),
+            expected_segments: 4,
+            actual_segments: 3,
         }
-        other => panic!("Expected InvalidSegmentCount error, got {:?}", other),
-    }
+    );
 
     // Informal 4-part tag with non-UUID in first segment must be rejected
-    match ImageTagSpecification::from_str("win11/pro/en-us/looking-glass") {
-        Err(ImageTagParseError::InvalidUupId { raw_tag, uup_id }) => {
-            assert_eq!(raw_tag, "win11/pro/en-us/looking-glass");
-            assert_eq!(uup_id, "win11");
+    let uup_error = ImageTagSpecification::from_str("win11/pro/en-us/looking-glass")
+        .expect_err("Expected InvalidUupId error");
+    assert_eq!(
+        uup_error,
+        ImageTagParseError::InvalidUupId {
+            raw_tag: "win11/pro/en-us/looking-glass".to_string(),
+            uup_id: "win11".to_string(),
         }
-        other => panic!("Expected InvalidUupId error, got {:?}", other),
-    }
+    );
 }
 
 #[test]
@@ -113,14 +114,16 @@ fn test_parse_malformed_tags_are_strictly_rejected() {
 #[test]
 fn test_serde_json_roundtrip_from_string() {
     let raw_tag = "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass";
-    let tag = ImageTagSpecification::from_str(raw_tag).unwrap();
+    let tag = ImageTagSpecification::from_str(raw_tag).expect("parse tag");
 
-    let json_serialized = serde_json::to_string(&tag).unwrap();
-    let tag_deserialized: ImageTagSpecification = serde_json::from_str(&json_serialized).unwrap();
+    let json_serialized = serde_json::to_string(&tag).expect("serialize json");
+    let tag_deserialized: ImageTagSpecification =
+        serde_json::from_str(&json_serialized).expect("deserialize json");
     assert_eq!(tag, tag_deserialized);
 
     // Verify it serializes as a structured JSON object
-    let parsed_json: serde_json::Value = serde_json::from_str(&json_serialized).unwrap();
+    let parsed_json: serde_json::Value =
+        serde_json::from_str(&json_serialized).expect("parse json value");
     assert!(parsed_json.is_object());
     assert_eq!(parsed_json["uup_id"], "ce863cb6-6967-4632-a567-eb965a6f2ea3");
     assert_eq!(parsed_json["edition"], "pro");
@@ -129,7 +132,8 @@ fn test_serde_json_roundtrip_from_string() {
 
     // Also verify deserialization from 4-segment string JSON
     let string_json = format!("\"{}\"", raw_tag);
-    let from_string: ImageTagSpecification = serde_json::from_str(&string_json).unwrap();
+    let from_string: ImageTagSpecification =
+        serde_json::from_str(&string_json).expect("deserialize string json");
     assert_eq!(from_string, tag);
 }
 
@@ -142,7 +146,8 @@ fn test_serde_json_deserialization_from_structured_object() {
         "flavor": "looking-glass"
     }"#;
 
-    let tag: ImageTagSpecification = serde_json::from_str(structured_json).unwrap();
+    let tag: ImageTagSpecification =
+        serde_json::from_str(structured_json).expect("deserialize structured json");
     assert_eq!(tag.uup_id, "ce863cb6-6967-4632-a567-eb965a6f2ea3");
     assert_eq!(tag.edition, "pro");
     assert_eq!(tag.language, "en-us");
@@ -172,21 +177,19 @@ fn test_structured_image_deserialization_rejects_unknown_fields() {
 
 #[test]
 fn test_parse_rejects_invalid_bcp47_language_tags() {
-    let invalid_tags = vec![
+    let invalid_tags = [
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/123/looking-glass",
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/invalid_tag!/looking-glass",
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/e/looking-glass",
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/english-unitedstates/looking-glass",
     ];
-    for tag_str in invalid_tags {
-        assert!(
-            matches!(
-                ImageTagSpecification::from_str(tag_str),
-                Err(ImageTagParseError::InvalidLanguage { .. })
-            ),
-            "Expected InvalidLanguage error for tag: {tag_str}"
-        );
-    }
+    let all_invalid = invalid_tags.iter().all(|tag_str| {
+        matches!(
+            ImageTagSpecification::from_str(tag_str),
+            Err(ImageTagParseError::InvalidLanguage { .. })
+        )
+    });
+    assert!(all_invalid, "Expected InvalidLanguage error for all invalid tags");
 }
 
 #[test]
@@ -194,12 +197,12 @@ fn test_resolve_golden_master_and_iso_artifact_paths() {
     let tag = ImageTagSpecification::from_str(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
     )
-    .unwrap();
+    .expect("parse valid tag");
     let flavor_metadata = FlavorDerivationMetadata::new(
         PathBuf::from("/nix/store/ba6eafb712345678-oemdrv-looking-glass"),
         "ba6eafb71234".to_string(),
     )
-    .unwrap();
+    .expect("valid flavor metadata");
 
     let master_filename =
         ContentAddressedImageResolver::resolve_golden_master_filename(&tag, &flavor_metadata);
@@ -268,7 +271,7 @@ fn test_resolve_with_flavor_registry() {
             PathBuf::from("/nix/store/ba6eafb712345678-oemdrv-looking-glass"),
             "ba6eafb71234".to_string(),
         )
-        .unwrap(),
+        .expect("valid metadata"),
     )]
     .into_iter()
     .collect();
@@ -276,25 +279,26 @@ fn test_resolve_with_flavor_registry() {
     let valid_tag = ImageTagSpecification::from_str(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
     )
-    .unwrap();
+    .expect("parse valid tag");
     let resolved_metadata =
-        ContentAddressedImageResolver::lookup_flavor(&valid_tag, &flavor_registry).unwrap();
+        ContentAddressedImageResolver::lookup_flavor(&valid_tag, &flavor_registry)
+            .expect("lookup valid flavor");
     assert_eq!(resolved_metadata.content_hash, "ba6eafb71234");
 
     let unknown_flavor_tag = ImageTagSpecification::from_str(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/unregistered",
     )
-    .unwrap();
-    match ContentAddressedImageResolver::lookup_flavor(&unknown_flavor_tag, &flavor_registry) {
-        Err(FlavorResolutionError::UnknownFlavor {
-            requested_flavor,
-            available_flavors,
-        }) => {
-            assert_eq!(requested_flavor, "unregistered");
-            assert_eq!(available_flavors, vec!["looking-glass".to_string()]);
+    .expect("parse unknown flavor tag");
+    let resolution_error =
+        ContentAddressedImageResolver::lookup_flavor(&unknown_flavor_tag, &flavor_registry)
+            .expect_err("Expected UnknownFlavor error");
+    assert_eq!(
+        resolution_error,
+        FlavorResolutionError::UnknownFlavor {
+            requested_flavor: "unregistered".to_string(),
+            available_flavors: vec!["looking-glass".to_string()],
         }
-        other => panic!("Expected UnknownFlavor error, got {:?}", other),
-    }
+    );
 }
 
 #[test]

@@ -27,16 +27,18 @@ nix develop .#onehost -c cargo test --manifest-path packages/onehost/Cargo.toml 
 
 ## Deterministic Lint Floor (Clippy)
 
-Before declaring any implementation step complete or committing changes, run Clippy against the library and binaries:
+Before declaring any implementation step complete or committing changes, run Clippy across **all targets** (library, binaries, and tests) with warnings denied:
 ```bash
-nix develop .#onehost -c cargo clippy --manifest-path packages/onehost/Cargo.toml --lib --bins
+nix develop .#onehost -c cargo clippy --manifest-path packages/onehost/Cargo.toml --all-targets -- -D warnings
 ```
 
-The build is configured in `packages/onehost/Cargo.toml` with strict non-negotiable lints:
-- `clippy::unwrap_used = "deny"`: No `.unwrap()` calls in production code.
-- `clippy::panic = "deny"`: No unhandled `panic!()` invocations in production code.
-- `clippy::needless_for_each = "warn"`: Prefer idiomatic iterator loops or combinators.
-- `clippy::match_same_arms = "warn"`: Deduplicate match logic.
+The build is configured in `packages/onehost/Cargo.toml` and `packages/onehost/clippy.toml` with strict non-negotiable lints across all targets:
+- `unused = "deny"`, `dead_code = "deny"`, `unused_variables = "deny"`, `unused_mut = "deny"`, `unused_imports = "deny"`, `unreachable_code = "deny"`, `unused_qualifications = "deny"`: Zero dead code or unused items anywhere in the repository.
+- `clippy::allow_attributes = "deny"`: Never suppress lints with `#[allow(...)]`.
+- `clippy::used_underscore_binding = "deny"`, `clippy::pub_underscore_fields = "deny"`, `clippy::no_effect_underscore_binding = "deny"`: Never silence unused fields, parameters, or variables with a leading `_`.
+- `clippy::unwrap_used = "deny"`, `clippy::panic = "deny"`: No `.unwrap()` or `panic!()` calls in `src/` or `tests/`.
+- `clippy::needless_for_each = "deny"`, `clippy::disallowed_methods = "deny"` (`Iterator::for_each`, `Iterator::try_for_each`): Both imperative `for` loops and side-effecting `for_each`/`try_for_each` combinators are forbidden; use value-producing combinators (`map`, `filter`, `fold`, `try_fold`, `collect`).
+- `clippy::match_same_arms = "deny"`, `clippy::unnecessary_wraps = "deny"`: Deduplicate match logic and avoid redundant `Result`/`Option` wrappers.
 
 Any warning or error from this command indicates a failed evaluation gate and must be resolved before proceeding to code review.
 

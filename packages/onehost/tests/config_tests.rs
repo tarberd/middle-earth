@@ -34,7 +34,8 @@ const VALID_MANIFEST_JSON: &str = r#"{
 
 #[test]
 fn test_valid_manifest_deserialization_and_validation() {
-    let manifest = ManifestLoader::load_from_json_string(VALID_MANIFEST_JSON).unwrap();
+    let manifest = ManifestLoader::load_from_json_string(VALID_MANIFEST_JSON)
+        .expect("valid manifest should parse");
 
     assert_eq!(manifest.version, "1.0");
     assert_eq!(
@@ -42,17 +43,20 @@ fn test_valid_manifest_deserialization_and_validation() {
         Path::new("/data/depot/virtualization/libvirt/store")
     );
 
-    let flavor = manifest.flavors.get("looking-glass").unwrap();
+    let flavor = manifest
+        .flavors
+        .get("looking-glass")
+        .expect("looking-glass flavor");
     assert_eq!(
         flavor.oemdrv_path,
         Path::new("/nix/store/ba6eafb712345678-oemdrv-looking-glass")
     );
     assert_eq!(
-        flavor.extra_isos.get("virtio").unwrap(),
+        flavor.extra_isos.get("virtio").expect("virtio extra iso"),
         Path::new("/nix/store/1111111111111111-virtio-win.iso")
     );
 
-    let instance = manifest.instances.get("win11-gollum").unwrap();
+    let instance = manifest.instances.get("win11-gollum").expect("instance");
     assert_eq!(instance.uuid, "e5a7d620-8931-4bf6-98ec-7e44a30e8c45");
     assert_eq!(instance.image.flavor, "looking-glass");
     assert_eq!(
@@ -62,7 +66,10 @@ fn test_valid_manifest_deserialization_and_validation() {
     assert_eq!(instance.image.edition, "pro");
     assert_eq!(instance.image.language, "en-us");
     assert_eq!(instance.pool, "default");
-    assert_eq!(instance.effective_pool("win11-gollum").unwrap(), "default");
+    assert_eq!(
+        instance.effective_pool("win11-gollum").expect("effective pool"),
+        "default"
+    );
 }
 
 #[test]
@@ -80,7 +87,7 @@ fn test_manifest_supports_structured_image_object() {
     let manifest = ManifestLoader::load_from_json_string(&structured_image_manifest_json)
         .expect("Manifest with structured image object should parse successfully");
 
-    let instance = manifest.instances.get("win11-gollum").unwrap();
+    let instance = manifest.instances.get("win11-gollum").expect("instance");
     assert_eq!(instance.image.uup_id, "ce863cb6-6967-4632-a567-eb965a6f2ea3");
     assert_eq!(instance.image.edition, "pro");
     assert_eq!(instance.image.language, "en-us");
@@ -107,10 +114,9 @@ fn test_manifest_rejects_legacy_hash_field_in_flavor() {
                 "Expected unknown field hash error, got: {source}"
             );
         }
-        other => panic!(
-            "Expected JsonDeserializationError for legacy hash, got {:?}",
-            other
-        ),
+        other => {
+            unreachable!("Expected JsonDeserializationError for legacy hash, got {other:?}");
+        }
     }
 }
 
@@ -127,10 +133,11 @@ fn test_manifest_rejects_legacy_default_pool_in_storage() {
                 "Expected unknown field default_pool error, got: {source}"
             );
         }
-        other => panic!(
-            "Expected JsonDeserializationError for legacy default_pool, got {:?}",
-            other
-        ),
+        other => {
+            unreachable!(
+                "Expected JsonDeserializationError for legacy default_pool, got {other:?}"
+            );
+        }
     }
 }
 
@@ -147,10 +154,9 @@ fn test_manifest_rejects_legacy_autostart_in_instance() {
                 "Expected unknown field autostart error, got: {source}"
             );
         }
-        other => panic!(
-            "Expected JsonDeserializationError for legacy autostart, got {:?}",
-            other
-        ),
+        other => {
+            unreachable!("Expected JsonDeserializationError for legacy autostart, got {other:?}");
+        }
     }
 }
 
@@ -167,10 +173,9 @@ fn test_manifest_rejects_legacy_lifecycle_block_in_instance() {
                 "Expected unknown field lifecycle error, got: {source}"
             );
         }
-        other => panic!(
-            "Expected JsonDeserializationError for legacy lifecycle, got {:?}",
-            other
-        ),
+        other => {
+            unreachable!("Expected JsonDeserializationError for legacy lifecycle, got {other:?}");
+        }
     }
 }
 
@@ -185,10 +190,9 @@ fn test_instance_requires_explicit_pool() {
                 "Expected missing field pool error, got: {source}"
             );
         }
-        other => panic!(
-            "Expected JsonDeserializationError for missing pool, got {:?}",
-            other
-        ),
+        other => {
+            unreachable!("Expected JsonDeserializationError for missing pool, got {other:?}");
+        }
     }
 
     // Empty pool string is rejected by validate_manifest
@@ -199,7 +203,7 @@ fn test_instance_requires_explicit_pool() {
         }) => {
             assert_eq!(instance_name, "win11-gollum");
         }
-        other => panic!("Expected MissingStoragePool error, got {:?}", other),
+        other => unreachable!("Expected MissingStoragePool error, got {other:?}"),
     }
 }
 
@@ -218,7 +222,7 @@ fn test_manifest_version_must_be_exact() {
             assert_eq!(supported_version, "1.0");
             assert_eq!(actual_version, "2.0");
         }
-        other => panic!("Expected UnsupportedManifestVersion error, got {:?}", other),
+        other => unreachable!("Expected UnsupportedManifestVersion error, got {other:?}"),
     }
 }
 
@@ -235,7 +239,7 @@ fn test_relative_paths_in_storage_configuration_are_rejected() {
             assert_eq!(field_name, "storage.depot_store_dir");
             assert_eq!(path, PathBuf::from("relative/path/to/store"));
         }
-        other => panic!("Expected RelativePathNotAllowed error, got {:?}", other),
+        other => unreachable!("Expected RelativePathNotAllowed error, got {other:?}"),
     }
 }
 
@@ -252,7 +256,7 @@ fn test_relative_paths_in_flavor_configuration_are_rejected() {
             assert_eq!(field_name, "flavors.looking-glass.oemdrv_path");
             assert_eq!(path, PathBuf::from("relative/oemdrv/path"));
         }
-        other => panic!("Expected RelativePathNotAllowed error, got {:?}", other),
+        other => unreachable!("Expected RelativePathNotAllowed error, got {other:?}"),
     }
 
     // Relative path in extra_isos
@@ -267,7 +271,7 @@ fn test_relative_paths_in_flavor_configuration_are_rejected() {
             assert_eq!(field_name, "flavors.looking-glass.extra_isos.virtio");
             assert_eq!(path, PathBuf::from("relative/virtio.iso"));
         }
-        other => panic!("Expected RelativePathNotAllowed error, got {:?}", other),
+        other => unreachable!("Expected RelativePathNotAllowed error, got {other:?}"),
     }
 }
 
@@ -284,7 +288,7 @@ fn test_relative_paths_in_instance_template_are_rejected() {
             assert_eq!(field_name, "instances.win11-gollum.template_xml");
             assert_eq!(path, PathBuf::from("relative/template.xml"));
         }
-        other => panic!("Expected RelativePathNotAllowed error, got {:?}", other),
+        other => unreachable!("Expected RelativePathNotAllowed error, got {other:?}"),
     }
 }
 
@@ -305,7 +309,7 @@ fn test_invalid_uuid_in_instance_is_rejected() {
             assert_eq!(instance_name, "win11-gollum");
             assert_eq!(raw_uuid, "not-a-valid-uuid");
         }
-        other => panic!("Expected InvalidInstanceUuid error, got {:?}", other),
+        other => unreachable!("Expected InvalidInstanceUuid error, got {other:?}"),
     }
 }
 
@@ -328,17 +332,17 @@ fn test_unregistered_flavor_reference_is_rejected() {
             assert_eq!(referenced_flavor, "unregistered-flavor");
             assert_eq!(available_flavors, vec!["looking-glass".to_string()]);
         }
-        other => panic!("Expected ReferencedFlavorNotFound error, got {:?}", other),
+        other => unreachable!("Expected ReferencedFlavorNotFound error, got {other:?}"),
     }
 }
 
 #[test]
 fn test_load_manifest_from_filesystem_file() {
-    let temporary_directory = tempfile::tempdir().unwrap();
+    let temporary_directory = tempfile::tempdir().expect("tempdir");
     let manifest_file_path = temporary_directory.path().join("onehost.json");
-    std::fs::write(&manifest_file_path, VALID_MANIFEST_JSON).unwrap();
+    std::fs::write(&manifest_file_path, VALID_MANIFEST_JSON).expect("write manifest");
 
-    let manifest = ManifestLoader::load_from_path(&manifest_file_path).unwrap();
+    let manifest = ManifestLoader::load_from_path(&manifest_file_path).expect("load manifest");
     assert_eq!(manifest.version, "1.0");
     assert!(manifest.instances.contains_key("win11-gollum"));
 }

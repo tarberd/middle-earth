@@ -11,7 +11,7 @@ pub mod applier;
 pub mod destroyer;
 pub mod planner;
 
-pub use applier::{ApplyOptions, DomainLifecycleApplier};
+pub use applier::DomainLifecycleApplier;
 pub use destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 pub use planner::{
     DanglingSnapshotAlert, DomainLifecyclePlanner, InstancePlanAction, OnehostPlan,

@@ -1,3 +1,4 @@
+use onehost::storage::StorageManager;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -15,16 +16,16 @@ use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
 use onehost::lifecycle::planner::OnehostPlan;
 use onehost::process::mock::MockProcessRunner;
-use onehost::storage::mock::{MockImageRecord, MockStorageManager, RecordedStorageAction};
+use onehost::storage::QemuImgStorage;
 
-struct CliTestFixture {
-    temporary_directory: tempfile::TempDir,
-    manifest_path: PathBuf,
-    template_xml_path: PathBuf,
-    depot_store_directory: PathBuf,
-    pool_directory: PathBuf,
-    oemdrv_path: PathBuf,
-    content_hash: String,
+pub struct CliTestFixture {
+    pub temporary_directory: tempfile::TempDir,
+    pub manifest_path: PathBuf,
+    pub template_xml_path: PathBuf,
+    pub depot_store_directory: PathBuf,
+    pub pool_directory: PathBuf,
+    pub nvram_directory: PathBuf,
+    pub content_hash: String,
 }
 
 impl CliTestFixture {
@@ -40,15 +41,25 @@ impl CliTestFixture {
         let ovmf_code = temporary_path.join("OVMF_CODE.fd");
         let pool_directory = temporary_path.join("pool-default");
 
+        std::fs::create_dir_all(&depot_store_directory).expect("create depot store dir");
+        std::fs::create_dir_all(&depot_iso_directory).expect("create depot iso dir");
+        std::fs::create_dir_all(&depot_backup_directory).expect("create depot backup dir");
+        std::fs::create_dir_all(&nvram_directory).expect("create nvram dir");
+        std::fs::create_dir_all(&pool_directory).expect("create pool dir");
+        std::fs::write(&nvram_template, b"NVRAM_TEMPLATE_VARS").expect("write nvram template");
+        std::fs::write(&ovmf_code, b"OVMF_CODE_DATA").expect("write ovmf code");
+
+        let template_nvram_path = nvram_directory.join("win-workstation_VARS.fd");
         let template_xml_path = temporary_path.join("win-template.xml");
-        let template_xml_content = r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
+        let template_xml_content = format!(
+            r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
   <name>win-workstation</name>
   <uuid>550e8400-e29b-41d4-a716-446655440000</uuid>
   <memory unit='KiB'>8388608</memory>
   <vcpu placement='static'>8</vcpu>
   <os>
     <type arch='x86_64' machine='pc-q35-8.2'>hvm</type>
-    <nvram>/var/lib/libvirt/qemu/nvram/win-workstation_VARS.fd</nvram>
+    <nvram>{}</nvram>
   </os>
   <devices>
     <disk type='file' device='disk' onehost:role='os-disk'>
@@ -57,7 +68,9 @@ impl CliTestFixture {
       <target dev='sda' bus='sata'/>
     </disk>
   </devices>
-</domain>"#;
+</domain>"#,
+            template_nvram_path.display()
+        );
 
         std::fs::write(&template_xml_path, template_xml_content).expect("write template xml");
 
@@ -65,7 +78,7 @@ impl CliTestFixture {
             depot_store_directory.clone(),
             depot_iso_directory,
             depot_backup_directory,
-            nvram_directory,
+            nvram_directory.clone(),
             nvram_template,
             ovmf_code,
         );
@@ -105,13 +118,21 @@ impl CliTestFixture {
         let manifest_content = serde_json::to_string_pretty(&manifest).expect("serialize manifest");
         std::fs::write(&manifest_path, manifest_content).expect("write manifest");
 
+        let golden_master_path = depot_store_directory.join(format!(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{content_hash}.qcow2"
+        ));
+        let storage = QemuImgStorage::new();
+        storage
+            .create_empty_disk(&golden_master_path, 20 * 1024 * 1024)
+            .expect("create golden master");
+
         Self {
             temporary_directory,
             manifest_path,
             template_xml_path,
             depot_store_directory,
             pool_directory,
-            oemdrv_path,
+            nvram_directory,
             content_hash,
         }
     }
@@ -148,14 +169,9 @@ impl CliTestFixture {
 #[test]
 fn test_cli_plan_human_readable_output() {
     let fixture = CliTestFixture::new();
-    let golden_master = fixture.golden_master_path();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
-
-    let storage = MockStorageManager::new()
-        .with_image(&golden_master, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, fixture.template_xml_content());
-
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
@@ -179,14 +195,9 @@ fn test_cli_plan_human_readable_output() {
 #[test]
 fn test_cli_plan_json_output() {
     let fixture = CliTestFixture::new();
-    let golden_master = fixture.golden_master_path();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
-
-    let storage = MockStorageManager::new()
-        .with_image(&golden_master, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, fixture.template_xml_content());
-
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
@@ -210,14 +221,9 @@ fn test_cli_plan_json_output() {
 #[test]
 fn test_cli_plan_filter_instance() {
     let fixture = CliTestFixture::new();
-    let golden_master = fixture.golden_master_path();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
-
-    let storage = MockStorageManager::new()
-        .with_image(&golden_master, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, fixture.template_xml_content());
-
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     // Query for non-matching instance filter
@@ -243,14 +249,9 @@ fn test_cli_plan_filter_instance() {
 #[test]
 fn test_cli_apply_reconciles_infrastructure() {
     let fixture = CliTestFixture::new();
-    let golden_master = fixture.golden_master_path();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
-
-    let storage = MockStorageManager::new()
-        .with_image(&golden_master, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, fixture.template_xml_content());
-
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
@@ -285,9 +286,10 @@ fn test_cli_destroy_deprovisions_instance() {
         .with_domain(fixture.domain_info(), &domain_xml);
 
     let overlay_path = fixture.pool_directory.join("win-workstation.qcow2");
-    let storage = MockStorageManager::new()
-        .with_image(&overlay_path, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, &domain_xml);
+    let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
+        .expect("create overlay");
 
     let runner = MockProcessRunner::new();
 
@@ -314,23 +316,24 @@ fn test_cli_destroy_deprovisions_instance() {
     // Verify domain is undefined
     assert!(hypervisor.domain_info("win-workstation").is_err());
 
-    // Verify disk deletion was recorded
-    let recorded_actions = storage.recorded_actions();
-    assert!(
-        recorded_actions
-            .iter()
-            .any(|action| matches!(action, RecordedStorageAction::DeleteImage { .. }))
-    );
+    // Verify disk is deprovisioned from storage
+    let overlay_path = fixture.pool_directory.join("win-workstation.qcow2");
+    assert!(storage.inspect_image(&overlay_path).is_err());
 }
 
 #[test]
 fn test_cli_backup_creates_staged_artifacts() {
     let fixture = CliTestFixture::new();
     let overlay_path = fixture.pool_directory.join("win-workstation.qcow2");
-    let domain_xml = fixture.template_xml_content().replace(
-        "/dummy-template-disk.qcow2",
-        &overlay_path.to_string_lossy(),
-    );
+    let nvram_path = fixture.nvram_directory.join("win-workstation_VARS.fd");
+    std::fs::write(&nvram_path, b"NVRAM_DATA").expect("write nvram");
+
+    let domain_xml = fixture
+        .template_xml_content()
+        .replace(
+            "/dummy-template-disk.qcow2",
+            &overlay_path.to_string_lossy(),
+        );
     let target_backup_directory = fixture
         .temporary_directory
         .path()
@@ -340,9 +343,10 @@ fn test_cli_backup_creates_staged_artifacts() {
         .with_pool_xml("default", fixture.default_pool_xml())
         .with_domain(fixture.domain_info(), &domain_xml);
 
-    let storage = MockStorageManager::new()
-        .with_image(&overlay_path, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, &domain_xml);
+    let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
+        .expect("create overlay");
 
     let runner = MockProcessRunner::new();
 
@@ -410,13 +414,15 @@ fn test_cli_restore_restores_from_staged_directory() {
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
-    let storage = MockStorageManager::new()
-        .with_image(&golden_master, MockImageRecord::default())
-        .with_image(&backup_disk_path, MockImageRecord::default())
-        .with_file(&backup_manifest_path, manifest_json)
-        .with_file(&backup_xml_path, fixture.template_xml_content())
-        .with_file(&backup_nvram_path, "NVRAM_BINARY_DATA")
-        .with_file(&fixture.template_xml_path, fixture.template_xml_content());
+    std::fs::create_dir_all(&backup_stage_directory).expect("create backup stage dir");
+    std::fs::write(&backup_manifest_path, manifest_json).expect("write backup manifest");
+    std::fs::write(&backup_xml_path, fixture.template_xml_content()).expect("write backup xml");
+    std::fs::write(&backup_nvram_path, b"NVRAM_BINARY_DATA").expect("write backup nvram");
+
+    let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&backup_disk_path, 20 * 1024 * 1024)
+        .expect("create thin backup disk");
 
     let runner = MockProcessRunner::new();
 
@@ -441,6 +447,16 @@ fn test_cli_restore_restores_from_staged_directory() {
 
     // Verify domain was restored and defined in hypervisor
     assert!(hypervisor.domain_info("win-workstation").is_ok());
+
+    // Physical disk and nvram state verification
+    let restored_disk_path = fixture.pool_directory.join("win-workstation.qcow2");
+    assert!(restored_disk_path.exists());
+    let restored_nvram_path = fixture.nvram_directory.join("win-workstation_VARS.fd");
+    assert!(restored_nvram_path.exists());
+    assert_eq!(
+        std::fs::read(&restored_nvram_path).expect("read restored nvram"),
+        b"NVRAM_BINARY_DATA"
+    );
 }
 
 #[test]
@@ -453,9 +469,10 @@ fn test_cli_status_human_and_json() {
         .with_domain(fixture.domain_info(), &domain_xml);
 
     let overlay_path = fixture.pool_directory.join("win-workstation.qcow2");
-    let storage = MockStorageManager::new()
-        .with_image(&overlay_path, MockImageRecord::default())
-        .with_file(&fixture.template_xml_path, &domain_xml);
+    let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
+        .expect("create overlay");
 
     let runner = MockProcessRunner::new();
 
@@ -499,12 +516,9 @@ fn test_cli_status_human_and_json() {
 #[test]
 fn test_cli_image_build_when_master_exists() {
     let fixture = CliTestFixture::new();
-    let golden_master = fixture.golden_master_path();
 
     let hypervisor = MockHypervisor::new();
-    let storage = MockStorageManager::new()
-        .with_content_hash(&fixture.oemdrv_path, &fixture.content_hash)
-        .with_image(&golden_master, MockImageRecord::default());
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
@@ -575,7 +589,7 @@ fn test_cli_rejects_removed_allow_destroy_protected_flag() {
 fn test_cli_image_build_rejects_informal_build_tags() {
     let fixture = CliTestFixture::new();
     let hypervisor = MockHypervisor::new();
-    let storage = MockStorageManager::new();
+    let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
@@ -595,16 +609,12 @@ fn test_cli_image_build_rejects_informal_build_tags() {
 
     let mut output_buffer = Vec::new();
     let result = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer);
-    assert!(result.is_err(), "Expected image build with informal tag to be rejected");
-    match result.unwrap_err() {
+    let err = result.expect_err("Expected image build with informal tag to be rejected");
+    assert!(matches!(
+        err,
         cli::CliError::TagError(onehost::image::tag::ImageTagParseError::InvalidUupId {
-            raw_tag,
-            uup_id,
-        }) => {
-            assert_eq!(raw_tag, "win11/pro/en-us/looking-glass");
-            assert_eq!(uup_id, "win11");
-        }
-        other => panic!("Expected TagError(InvalidUupId), got {:?}", other),
-    }
+            ref raw_tag,
+            ref uup_id,
+        }) if raw_tag == "win11/pro/en-us/looking-glass" && uup_id == "win11"
+    ));
 }
-

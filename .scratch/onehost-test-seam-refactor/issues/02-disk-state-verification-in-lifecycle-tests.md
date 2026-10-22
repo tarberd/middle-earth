@@ -4,8 +4,8 @@
 
 **Blocked by:** 01: Storage Unit Tests on Real Toolchain in Temporary Directories
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Domain lifecycle applier and destroyer tests assert on physical overlay presence, backing chain integrity, and disk unlinking in temporary directories.
-- [ ] Disaster recovery and pipeline integration tests eliminate assertions on recorded storage actions.
-- [ ] No lifecycle or integration test asserts on internal storage method invocation logs.
+- [x] Domain lifecycle applier and destroyer tests assert on physical overlay presence, backing chain integrity, and disk unlinking in temporary directories.
+- [x] Disaster recovery and pipeline integration tests eliminate assertions on recorded storage actions.
+- [x] No lifecycle or integration test asserts on internal storage method invocation logs.

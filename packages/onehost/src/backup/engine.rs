@@ -261,19 +261,22 @@ impl<'a, H: Hypervisor, S: StorageManager> BackupEngine<'a, H, S> {
             })
             .collect::<Result<Vec<DiskBackupEntry>, StorageError>>()?;
 
-        cleanup_guard.snapshots().iter().try_for_each(|snapshot| {
-            self.hypervisor.blockcommit(
-                instance_name,
-                &snapshot.target_device,
-                Some(&snapshot.base_path),
-                Some(&snapshot.snapshot_path),
-                true,
-                true,
-            )?;
+        cleanup_guard
+            .snapshots()
+            .iter()
+            .try_fold((), |(), snapshot| {
+                self.hypervisor.blockcommit(
+                    instance_name,
+                    &snapshot.target_device,
+                    Some(&snapshot.base_path),
+                    Some(&snapshot.snapshot_path),
+                    true,
+                    true,
+                )?;
 
-            self.storage.delete_image(&snapshot.snapshot_path)?;
-            Ok::<(), BackupError>(())
-        })?;
+                self.storage.delete_image(&snapshot.snapshot_path)?;
+                Ok::<(), BackupError>(())
+            })?;
 
         cleanup_guard.disarm();
 

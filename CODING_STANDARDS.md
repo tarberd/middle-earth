@@ -13,15 +13,16 @@ See [ADR-0010 (Functional Rust Idioms and Pure Core Architecture)](docs/adr/0010
 
 ### 2. Immutability & Functional Combinators
 - **Expression-Oriented**: Prefer expressions and pattern matching (`match`, `if let`) over early returns and procedural state machines.
-- **Combinators over Loops**: Transform collections and sequences using iterator combinators (`map`, `filter`, `fold`, `try_fold`, `chain`, `collect::<Result<_, _>>()`) instead of imperative `for`/`while` loops with mutable accumulators.
+- **Combinators over Loops**: Transform collections and sequences using value-producing iterator combinators (`map`, `filter`, `fold`, `try_fold`, `chain`, `collect::<Result<_, _>>()`) across both `src/` and `tests/`. Both imperative `for`/`while` loops and side-effecting `.for_each(...)` / `.try_for_each(...)` combinators are forbidden.
 - **Functional Builders**: When building or mutating domain structures, use functional builder patterns (`fn with_*(self, ...) -> Self`) returning new or updated instances.
 
 ### 3. Total Error Handling & Explicit Types
-- **No Unchecked Unwraps or Panics**: Production code in `src/` must never call `.unwrap()`, `.expect()`, or `panic!()`.
+- **No Unchecked Unwraps or Panics**: Neither `src/` nor `tests/` may call `.unwrap()` or `panic!()`. Use `?` in production code and `.expect("reason")` or `assert!(matches!(...))` in tests.
 - **Typed Error Enums**: Model domain and boundary failures using explicit `thiserror` enums. Never use stringly-typed errors or bare `anyhow` in domain code.
 - **Parse, Don't Validate**: Encode invariants directly into algebraic data types (ADTs) at boundaries.
 
-### 4. Algebraic data types over Object Oriented Programmin
-- **Zero mutation**: Objects should be born already in valid state. All ADT methods must consume `self` or `&self`. No `&mut self` allowed anywhere.
-- **No seters and getters**: All objects should be treated as immutable, with public attributes, and leverage move semantics for setting new values.
+### 4. Algebraic Data Types & Zero Dead Code
+- **Zero Mutation**: Objects must be born in a valid state. All ADT methods must consume `self` or `&self`. No `&mut self` is allowed anywhere.
+- **No Setters and Getters**: Treat all objects as immutable with public attributes, leveraging move semantics for setting new values.
+- **Zero Dead Code**: Unused struct fields, function/method parameters, types, and local bindings must never exist anywhere in the repository (`src/` or `tests/`) for any reason. Delete unused fields, parameters, and bindings outright — never silence compiler warnings with a leading underscore (`_field`, `_param`, `_var`) or `#[allow(...)]` / `#[expect(...)]` attributes.
 

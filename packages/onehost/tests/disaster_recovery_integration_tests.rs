@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::tempdir;
 
 use onehost::backup::model::{BackupConsistencyLevel, BackupOptions, RestoreOptions};
@@ -10,10 +9,9 @@ use onehost::config::loader::ManifestLoader;
 use onehost::hypervisor::mock::{MockHypervisor, RecordedHypervisorAction};
 use onehost::hypervisor::traits::{DomainState, Hypervisor};
 use onehost::lifecycle::LifecycleError;
-use onehost::lifecycle::applier::{ApplyOptions, DomainLifecycleApplier};
+use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{DomainLifecyclePlanner, InstancePlanAction};
-use onehost::storage::mock::{MockImageRecord, MockStorageManager, RecordedStorageAction};
 use onehost::storage::qemu_img::QemuImgStorage;
 use onehost::storage::traits::StorageManager;
 
@@ -54,17 +52,14 @@ const MULTI_DISK_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https
   </devices>
 </domain>"#;
 
-struct DisasterRecoveryWorkspace {
-    _workspace_directory: tempfile::TempDir,
-    manifest_path: PathBuf,
-    _template_xml_path: PathBuf,
-    _depot_store_directory: PathBuf,
-    depot_backup_directory: PathBuf,
-    _nvram_directory: PathBuf,
-    default_pool_directory: PathBuf,
-    initial_golden_master_path: PathBuf,
-    secondary_disk_path: Option<PathBuf>,
-    content_hash: String,
+pub struct DisasterRecoveryWorkspace {
+    pub workspace_directory: tempfile::TempDir,
+    pub manifest_path: PathBuf,
+    pub depot_backup_directory: PathBuf,
+    pub default_pool_directory: PathBuf,
+    pub initial_golden_master_path: PathBuf,
+    pub secondary_disk_path: Option<PathBuf>,
+    pub content_hash: String,
 }
 
 impl DisasterRecoveryWorkspace {
@@ -102,10 +97,18 @@ impl DisasterRecoveryWorkspace {
             "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
             content_hash
         ));
-        std::fs::write(&initial_master_path, b"GOLDEN_MASTER_QCOW2").expect("write golden master");
+
+        let storage = QemuImgStorage::new();
+        storage
+            .create_empty_disk(&initial_master_path, 20 * 1024 * 1024)
+            .expect("create golden master");
 
         let (template_xml_path, secondary_disk_path) = if is_multi_disk {
             let secondary_path = default_pool_directory.join("win11-gollum-sdb.qcow2");
+            storage
+                .create_empty_disk(&secondary_path, 10 * 1024 * 1024)
+                .expect("create secondary disk");
+
             let rendered_multi_disk_template = MULTI_DISK_TEMPLATE_XML.replace(
                 "__SECONDARY_DISK_PATH__",
                 &secondary_path.display().to_string(),
@@ -160,12 +163,9 @@ impl DisasterRecoveryWorkspace {
         std::fs::write(&manifest_file_path, manifest_content).expect("write manifest");
 
         Self {
-            _workspace_directory: temporary_workspace_directory,
+            workspace_directory: temporary_workspace_directory,
             manifest_path: manifest_file_path,
-            _template_xml_path: template_xml_path,
-            _depot_store_directory: depot_store_directory,
             depot_backup_directory,
-            _nvram_directory: nvram_directory,
             default_pool_directory,
             initial_golden_master_path: initial_master_path,
             secondary_disk_path,
@@ -190,35 +190,12 @@ fn file_template_resolver(template_path: &Path) -> Result<String, LifecycleError
     std::fs::read_to_string(template_path).map_err(LifecycleError::from)
 }
 
-fn create_real_qcow2_image(path: &Path, size_megabytes: u64) {
-    let size_argument = format!("{size_megabytes}M");
-    let output = Command::new("qemu-img")
-        .args([
-            "create",
-            "-f",
-            "qcow2",
-            path.to_str().expect("valid utf8 path"),
-            &size_argument,
-        ])
-        .output()
-        .expect("qemu-img must be available in test environment");
-
-    assert!(
-        output.status.success(),
-        "failed to create test qcow2 image: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 #[test]
 fn test_end_to_end_disaster_recovery_round_trip_offline() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     // 1. Provision instance via declarative plan and apply
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
@@ -238,7 +215,7 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
     ));
 
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply must succeed");
 
     let domain_info = hypervisor
@@ -247,7 +224,9 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
     assert_eq!(domain_info.state, DomainState::Shutoff);
 
     let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(overlay_path.exists());
     assert!(storage.inspect_image(&overlay_path).is_ok());
+    assert!(storage.check_image(&overlay_path).is_ok());
 
     let idempotent_plan = planner.plan(&manifest).expect("idempotent plan");
     assert!(matches!(
@@ -284,6 +263,10 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
     assert_eq!(backup_manifest.disks.len(), 1);
     assert_eq!(backup_manifest.disks[0].target_device, "sda");
 
+    let archive_path = backup_directory.join("sda.qcow2");
+    assert!(archive_path.exists());
+    assert!(storage.check_image(&archive_path).is_ok());
+
     // 3. Simulate disaster: destroy instance and wipe its overlay disk
     let destroy_options = DestroyOptions {
         delete_disk: true,
@@ -295,6 +278,7 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
         .expect("destroy instance must succeed");
 
     assert!(hypervisor.domain_info("win11-gollum").is_err());
+    assert!(!overlay_path.exists());
     assert!(storage.inspect_image(&overlay_path).is_err());
 
     let post_disaster_plan = planner.plan(&manifest).expect("post disaster plan");
@@ -314,6 +298,7 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
         .expect("domain must exist after restore");
     assert_eq!(restored_domain.state, DomainState::Shutoff);
 
+    assert!(overlay_path.exists());
     let restored_image_info = storage
         .inspect_image(&overlay_path)
         .expect("overlay image must exist after restore");
@@ -324,6 +309,7 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
             .as_ref()
             .is_some_and(|backing| backing.to_string_lossy().contains(&workspace.content_hash))
     );
+    assert!(storage.check_image(&overlay_path).is_ok());
 
     // 5. Plan Verification: restored instance produces NoOp with zero drift
     let post_restore_plan = planner.plan(&manifest).expect("post restore plan");
@@ -339,10 +325,7 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
         .expect("manifest loading must succeed");
@@ -356,7 +339,7 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
 
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     // Boot VM into running state
@@ -393,7 +376,7 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
         BackupConsistencyLevel::VssQuiesced
     );
 
-    // Verify online backup actions: snapshot creation, blockcommit pivot, and cleanup of temporary .snap file
+    // Verify online backup actions: snapshot creation and blockcommit pivot in hypervisor
     let recorded_hypervisor_actions = hypervisor.recorded_actions();
     let has_snapshot = recorded_hypervisor_actions
         .iter()
@@ -411,11 +394,21 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
     assert!(has_snapshot);
     assert!(has_blockcommit);
 
-    let recorded_storage_actions = storage.recorded_actions();
-    let has_delete_snapshot_overlay = recorded_storage_actions
-        .iter()
-        .any(|action| matches!(action, RecordedStorageAction::DeleteImage { image_path } if image_path.to_string_lossy().ends_with(".snap")));
-    assert!(has_delete_snapshot_overlay);
+    // Physical disk state verification: temporary .snap file deleted, archive and nvram exist
+    let snap_path = workspace
+        .default_pool_directory
+        .join("win11-gollum.sda.snap");
+    assert!(
+        !snap_path.exists(),
+        "temporary .snap overlay must be unlinked"
+    );
+
+    let archive_path = backup_directory.join("sda.qcow2");
+    assert!(archive_path.exists(), "backup archive must exist on disk");
+    assert!(storage.check_image(&archive_path).is_ok());
+
+    let nvram_path = backup_directory.join("nvram.fd");
+    assert!(nvram_path.exists(), "backup nvram must exist on disk");
 
     // Simulate disaster: destroy instance with delete_disk
     let destroy_options = DestroyOptions {
@@ -427,6 +420,9 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
         .expect("destroy instance");
 
     assert!(hypervisor.domain_info("win11-gollum").is_err());
+    let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(!overlay_path.exists());
+    assert!(storage.inspect_image(&overlay_path).is_err());
 
     // Disaster Recovery: restore instance
     restore_engine
@@ -438,6 +434,8 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
         .expect("restore instance");
 
     assert!(hypervisor.domain_info("win11-gollum").is_ok());
+    assert!(overlay_path.exists());
+    assert!(storage.check_image(&overlay_path).is_ok());
 
     // Plan Verification: restored instance produces NoOp
     let post_restore_plan = planner.plan(&manifest).expect("post restore plan");
@@ -450,9 +448,6 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
 #[test]
 fn test_end_to_end_disaster_recovery_with_real_qemu_img_toolchain() {
     let workspace = DisasterRecoveryWorkspace::new(false);
-
-    // Create real golden master QCOW2 image
-    create_real_qcow2_image(&workspace.initial_golden_master_path, 20);
 
     let storage = QemuImgStorage::new();
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
@@ -470,7 +465,7 @@ fn test_end_to_end_disaster_recovery_with_real_qemu_img_toolchain() {
     // 1. Initial provision creates real QCOW2 overlay on disk
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
@@ -564,10 +559,7 @@ fn test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation()
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest =
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("manifest loading");
@@ -582,13 +574,14 @@ fn test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation()
     // 1. Provision instance
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     let cached_master_path = workspace.default_pool_directory.join(format!(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
         workspace.content_hash
     ));
+    assert!(cached_master_path.exists());
     assert!(storage.inspect_image(&cached_master_path).is_ok());
 
     // 2. Perform backup
@@ -621,6 +614,7 @@ fn test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation()
     storage
         .delete_image(&cached_master_path)
         .expect("wipe cached base master from pool");
+    assert!(!cached_master_path.exists());
     assert!(storage.inspect_image(&cached_master_path).is_err());
 
     // 4. Disaster Recovery: restore engine must detect missing pool cache and repopulate it from depot store
@@ -632,8 +626,10 @@ fn test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation()
         )
         .expect("restore instance");
 
+    assert!(cached_master_path.exists());
     assert!(storage.inspect_image(&cached_master_path).is_ok());
     let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(overlay_path.exists());
     assert!(storage.inspect_image(&overlay_path).is_ok());
 
     // 5. Verification: planner emits NoOp
@@ -653,12 +649,7 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
         .expect("secondary disk path must be present in multi-disk workspace");
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new()
-        .with_image(
-            &workspace.initial_golden_master_path,
-            MockImageRecord::default(),
-        )
-        .with_image(&secondary_disk_path, MockImageRecord::default());
+    let storage = QemuImgStorage::new();
 
     let manifest =
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("manifest loading");
@@ -673,7 +664,7 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
     // 1. Provision multi-disk instance
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     let block_devices = hypervisor
@@ -722,6 +713,11 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
     assert!(backup_has_sda);
     assert!(backup_has_sdb);
 
+    let sda_archive = backup_directory.join("sda.qcow2");
+    let sdb_archive = backup_directory.join("sdb.qcow2");
+    assert!(storage.check_image(&sda_archive).is_ok());
+    assert!(storage.check_image(&sdb_archive).is_ok());
+
     // 3. Catastrophic Disaster: destroy instance and wipe both disk images
     destroyer
         .destroy(
@@ -739,6 +735,8 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
         .expect("wipe secondary data disk");
 
     let primary_overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(!primary_overlay_path.exists());
+    assert!(!secondary_disk_path.exists());
     assert!(storage.inspect_image(&primary_overlay_path).is_err());
     assert!(storage.inspect_image(&secondary_disk_path).is_err());
 
@@ -751,8 +749,12 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
         )
         .expect("restore instance");
 
+    assert!(primary_overlay_path.exists());
+    assert!(secondary_disk_path.exists());
     assert!(storage.inspect_image(&primary_overlay_path).is_ok());
     assert!(storage.inspect_image(&secondary_disk_path).is_ok());
+    assert!(storage.check_image(&primary_overlay_path).is_ok());
+    assert!(storage.check_image(&secondary_disk_path).is_ok());
 
     let restored_devices = hypervisor
         .list_block_devices("win11-gollum")
@@ -775,9 +777,11 @@ fn test_real_toolchain_thin_backup_and_restore_compression() {
     let backup_archive_path = temporary_directory.path().join("thin_backup_archive.qcow2");
     let restored_overlay_path = temporary_directory.path().join("restored_overlay.qcow2");
 
-    create_real_qcow2_image(&base_image_path, 25);
-
     let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&base_image_path, 25 * 1024 * 1024)
+        .expect("create base image");
+
     storage
         .create_cow_overlay(&base_image_path, &overlay_disk_path)
         .expect("create overlay");
@@ -834,10 +838,7 @@ fn test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite() 
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest =
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("manifest loading");
@@ -851,7 +852,7 @@ fn test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite() 
     // Provision instance and take backup
     let plan = planner.plan(&manifest).expect("plan");
     applier
-        .apply(&plan, &ApplyOptions::default())
+        .apply(&plan)
         .expect("apply");
 
     let backup_directory = workspace
@@ -876,12 +877,10 @@ fn test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite() 
         )
         .expect_err("restore must fail when domain already exists and allow_overwrite is false");
 
-    match restore_error {
-        RestoreError::DomainAlreadyExists { instance_name } => {
-            assert_eq!(instance_name, "win11-gollum");
-        }
-        other_error => panic!("expected DomainAlreadyExists, but got: {:?}", other_error),
-    }
+    assert!(matches!(
+        restore_error,
+        RestoreError::DomainAlreadyExists { instance_name } if instance_name == "win11-gollum"
+    ));
 
     // Attempt restore with allow_overwrite = true succeeds
     let overwrite_options = RestoreOptions {
@@ -898,10 +897,7 @@ fn test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot()
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest =
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("manifest loading");
@@ -915,7 +911,7 @@ fn test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot()
 
     let plan = planner.plan(&manifest).expect("plan");
     applier
-        .apply(&plan, &ApplyOptions::default())
+        .apply(&plan)
         .expect("apply");
 
     let backup_directory = workspace
@@ -953,6 +949,8 @@ fn test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot()
     storage
         .delete_image(&workspace.initial_golden_master_path)
         .expect("delete depot base");
+    assert!(!cached_master_path.exists());
+    assert!(!workspace.initial_golden_master_path.exists());
 
     // Restore must fail fast with BaseImageNotFound
     let restore_error = restore_engine
@@ -963,10 +961,8 @@ fn test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot()
         )
         .expect_err("restore must fail when base image is missing from depot store");
 
-    match restore_error {
-        RestoreError::BaseImageNotFound { path } => {
-            assert_eq!(path, workspace.initial_golden_master_path);
-        }
-        other_error => panic!("expected BaseImageNotFound, but got: {:?}", other_error),
-    }
+    assert!(matches!(
+        restore_error,
+        RestoreError::BaseImageNotFound { ref path } if path == &workspace.initial_golden_master_path
+    ));
 }

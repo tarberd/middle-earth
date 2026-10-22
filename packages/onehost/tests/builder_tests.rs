@@ -138,7 +138,7 @@ fn test_builder_missing_iso_fails_fast_with_typed_error() {
                 "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us"
             );
         }
-        other_error => panic!("expected IsoNotFound, got: {:?}", other_error),
+        other_error => unreachable!("expected IsoNotFound, got: {:?}", other_error),
     }
 
     assert!(runner.recorded_actions().is_empty());
@@ -173,7 +173,7 @@ fn test_builder_unregistered_flavor_fails_fast() {
         }) => {
             assert_eq!(requested_flavor, "nonexistent-flavor");
         }
-        other_error => panic!("expected UnknownFlavor, got: {:?}", other_error),
+        other_error => unreachable!("expected UnknownFlavor, got: {:?}", other_error),
     }
 }
 
@@ -198,7 +198,7 @@ fn test_builder_missing_oemdrv_fails_fast() {
         ImageBuilderError::OemdrvNotFound { path } => {
             assert_eq!(path, fixture.oemdrv_path);
         }
-        other_error => panic!("expected OemdrvNotFound, got: {:?}", other_error),
+        other_error => unreachable!("expected OemdrvNotFound, got: {:?}", other_error),
     }
 }
 
@@ -345,7 +345,7 @@ fn test_builder_corruption_check_failure_aborts_promotion_and_cleans_up_tmp() {
             assert_eq!(path, temporary_master_path);
             assert!(details.contains("Simulated cluster corruption"));
         }
-        other_error => panic!(
+        other_error => unreachable!(
             "expected PromotionIntegrityCheckFailed, got: {:?}",
             other_error
         ),
@@ -388,7 +388,7 @@ fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
             assert_eq!(exit_code, Some(1));
             assert!(stderr.contains("KVM hardware virtualization unavailable"));
         }
-        other_error => panic!("expected QemuExecutionFailed, got: {:?}", other_error),
+        other_error => unreachable!("expected QemuExecutionFailed, got: {:?}", other_error),
     }
 
     // swtpm daemon must have been killed

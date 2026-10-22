@@ -37,7 +37,7 @@ pub enum StorageError {
     #[error("I/O error during storage operation: {source}")]
     IoError {
         #[from]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 
@@ -217,37 +217,27 @@ pub fn execute_compute_content_hash(
 ) -> Result<String, StorageError> {
     use sha2::{Digest, Sha256};
 
-    let mut hasher = Sha256::new();
-    stream_file_to_hasher(oemdrv_path, &mut hasher)?;
+    let initial_hasher = stream_file_to_hasher(Sha256::new(), oemdrv_path)?;
 
     let sorted_isos: std::collections::BTreeMap<&str, &PathBuf> = extra_isos
         .iter()
         .map(|(key, path)| (key.as_str(), path))
         .collect();
 
-    sorted_isos
-        .values()
-        .try_for_each(|iso_path| stream_file_to_hasher(iso_path, &mut hasher))?;
+    let final_hasher = sorted_isos
+        .into_values()
+        .try_fold(initial_hasher, |hasher, iso_path| {
+            stream_file_to_hasher(hasher, iso_path)
+        })?;
 
-    let full_hex = format!("{:x}", sha2::Digest::finalize(hasher));
+    let full_hex = format!("{:x}", final_hasher.finalize());
     Ok(full_hex[..12].to_string())
 }
 
-struct HasherWriter<'a>(&'a mut sha2::Sha256);
-
-impl std::io::Write for HasherWriter<'_> {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        use sha2::Digest;
-        self.0.update(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-fn stream_file_to_hasher(path: &Path, hasher: &mut sha2::Sha256) -> Result<(), StorageError> {
+fn stream_file_to_hasher(
+    mut hasher: sha2::Sha256,
+    path: &Path,
+) -> Result<sha2::Sha256, StorageError> {
     path.exists()
         .then_some(())
         .ok_or_else(|| StorageError::SourceFileNotFound {
@@ -255,7 +245,6 @@ fn stream_file_to_hasher(path: &Path, hasher: &mut sha2::Sha256) -> Result<(), S
         })?;
 
     let mut file = File::open(path)?;
-    let mut writer = HasherWriter(hasher);
-    io::copy(&mut file, &mut writer)?;
-    Ok(())
+    io::copy(&mut file, &mut hasher)?;
+    Ok(hasher)
 }

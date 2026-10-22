@@ -184,12 +184,12 @@ fn test_real_qemu_img_check_image_detects_corruption() {
     let check_result = storage.check_image(&corrupt_image_path);
 
     assert!(check_result.is_err());
-    match check_result.unwrap_err() {
+    match check_result.expect_err("check_image must detect corruption") {
         StorageError::ImageCorruptionDetected { path, details } => {
             assert_eq!(path, corrupt_image_path);
             assert!(!details.is_empty());
         }
-        other_error => panic!(
+        other_error => unreachable!(
             "expected ImageCorruptionDetected, but got: {:?}",
             other_error
         ),

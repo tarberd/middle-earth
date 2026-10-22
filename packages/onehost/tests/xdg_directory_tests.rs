@@ -20,20 +20,27 @@ fn test_explicit_xdg_environment_variables_are_honored() {
     });
 
     assert_eq!(
-        resolver.configuration_home().unwrap(),
+        resolver
+            .configuration_home()
+            .expect("resolve configuration_home"),
         PathBuf::from("/custom/config")
     );
     assert_eq!(
-        resolver.cache_home().unwrap(),
+        resolver.cache_home().expect("resolve cache_home"),
         PathBuf::from("/custom/cache")
     );
-    assert_eq!(resolver.data_home().unwrap(), PathBuf::from("/custom/data"));
     assert_eq!(
-        resolver.state_home().unwrap(),
+        resolver.data_home().expect("resolve data_home"),
+        PathBuf::from("/custom/data")
+    );
+    assert_eq!(
+        resolver.state_home().expect("resolve state_home"),
         PathBuf::from("/custom/state")
     );
     assert_eq!(
-        resolver.runtime_directory().unwrap(),
+        resolver
+            .runtime_directory()
+            .expect("resolve runtime_directory"),
         PathBuf::from("/custom/runtime")
     );
 }
@@ -53,19 +60,21 @@ fn test_fallback_to_home_directory_when_xdg_variables_are_unset() {
     });
 
     assert_eq!(
-        resolver.configuration_home().unwrap(),
+        resolver
+            .configuration_home()
+            .expect("resolve configuration_home"),
         PathBuf::from("/home/testuser/.config")
     );
     assert_eq!(
-        resolver.cache_home().unwrap(),
+        resolver.cache_home().expect("resolve cache_home"),
         PathBuf::from("/home/testuser/.cache")
     );
     assert_eq!(
-        resolver.data_home().unwrap(),
+        resolver.data_home().expect("resolve data_home"),
         PathBuf::from("/home/testuser/.local/share")
     );
     assert_eq!(
-        resolver.state_home().unwrap(),
+        resolver.state_home().expect("resolve state_home"),
         PathBuf::from("/home/testuser/.local/state")
     );
 }
@@ -78,33 +87,25 @@ fn test_missing_home_directory_returns_error_when_fallback_is_needed() {
         environment_variables.get(variable_name).cloned()
     });
 
-    match resolver.configuration_home() {
-        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) => {
-            assert_eq!(fallback_target, ".config");
-        }
-        other => panic!("Expected MissingHomeDirectory error, got {:?}", other),
-    }
+    assert!(matches!(
+        resolver.configuration_home(),
+        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) if fallback_target == ".config"
+    ));
 
-    match resolver.cache_home() {
-        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) => {
-            assert_eq!(fallback_target, ".cache");
-        }
-        other => panic!("Expected MissingHomeDirectory error, got {:?}", other),
-    }
+    assert!(matches!(
+        resolver.cache_home(),
+        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) if fallback_target == ".cache"
+    ));
 
-    match resolver.data_home() {
-        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) => {
-            assert_eq!(fallback_target, ".local/share");
-        }
-        other => panic!("Expected MissingHomeDirectory error, got {:?}", other),
-    }
+    assert!(matches!(
+        resolver.data_home(),
+        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) if fallback_target == ".local/share"
+    ));
 
-    match resolver.state_home() {
-        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) => {
-            assert_eq!(fallback_target, ".local/state");
-        }
-        other => panic!("Expected MissingHomeDirectory error, got {:?}", other),
-    }
+    assert!(matches!(
+        resolver.state_home(),
+        Err(XdgDirectoryResolutionError::MissingHomeDirectory { fallback_target }) if fallback_target == ".local/state"
+    ));
 }
 
 #[test]
@@ -118,10 +119,10 @@ fn test_missing_runtime_directory_returns_error() {
         environment_variables.get(variable_name).cloned()
     });
 
-    match resolver.runtime_directory() {
-        Err(XdgDirectoryResolutionError::MissingRuntimeDirectory) => (),
-        other => panic!("Expected MissingRuntimeDirectory error, got {:?}", other),
-    }
+    assert!(matches!(
+        resolver.runtime_directory(),
+        Err(XdgDirectoryResolutionError::MissingRuntimeDirectory)
+    ));
 }
 
 #[test]
@@ -135,16 +136,13 @@ fn test_relative_path_in_xdg_environment_variable_is_rejected() {
         environment_variables.get(variable_name).cloned()
     });
 
-    match resolver.configuration_home() {
+    assert!(matches!(
+        resolver.configuration_home(),
         Err(XdgDirectoryResolutionError::RelativePathNotAllowed {
             variable_name,
             provided_path,
-        }) => {
-            assert_eq!(variable_name, "XDG_CONFIG_HOME");
-            assert_eq!(provided_path, PathBuf::from("relative/config"));
-        }
-        other => panic!("Expected RelativePathNotAllowed error, got {:?}", other),
-    }
+        }) if variable_name == "XDG_CONFIG_HOME" && provided_path == std::path::Path::new("relative/config")
+    ));
 }
 
 #[test]
@@ -165,30 +163,40 @@ fn test_application_specific_directories_append_application_name() {
     });
 
     assert_eq!(
-        resolver.onehost_configuration_directory().unwrap(),
+        resolver
+            .onehost_configuration_directory()
+            .expect("resolve onehost_configuration_directory"),
         PathBuf::from("/custom/config/onehost")
     );
     assert_eq!(
-        resolver.onehost_cache_directory().unwrap(),
+        resolver
+            .onehost_cache_directory()
+            .expect("resolve onehost_cache_directory"),
         PathBuf::from("/custom/cache/onehost")
     );
     assert_eq!(
-        resolver.onehost_data_directory().unwrap(),
+        resolver
+            .onehost_data_directory()
+            .expect("resolve onehost_data_directory"),
         PathBuf::from("/custom/data/onehost")
     );
     assert_eq!(
-        resolver.onehost_state_directory().unwrap(),
+        resolver
+            .onehost_state_directory()
+            .expect("resolve onehost_state_directory"),
         PathBuf::from("/custom/state/onehost")
     );
     assert_eq!(
-        resolver.onehost_runtime_directory().unwrap(),
+        resolver
+            .onehost_runtime_directory()
+            .expect("resolve onehost_runtime_directory"),
         PathBuf::from("/custom/runtime/onehost")
     );
 }
 
 #[test]
 fn test_ensure_application_directories_exist_creates_directories_on_filesystem() {
-    let temporary_directory = tempfile::tempdir().unwrap();
+    let temporary_directory = tempfile::tempdir().expect("create tempdir");
     let base_path = temporary_directory.path();
 
     let configuration_directory = base_path.join("config");
@@ -200,23 +208,26 @@ fn test_ensure_application_directories_exist_creates_directories_on_filesystem()
     let environment_variables: HashMap<String, String> = [
         (
             "XDG_CONFIG_HOME",
-            configuration_directory.to_str().unwrap().to_string(),
+            configuration_directory
+                .to_str()
+                .expect("valid utf8")
+                .to_string(),
         ),
         (
             "XDG_CACHE_HOME",
-            cache_directory.to_str().unwrap().to_string(),
+            cache_directory.to_str().expect("valid utf8").to_string(),
         ),
         (
             "XDG_DATA_HOME",
-            data_directory.to_str().unwrap().to_string(),
+            data_directory.to_str().expect("valid utf8").to_string(),
         ),
         (
             "XDG_STATE_HOME",
-            state_directory.to_str().unwrap().to_string(),
+            state_directory.to_str().expect("valid utf8").to_string(),
         ),
         (
             "XDG_RUNTIME_DIR",
-            runtime_directory.to_str().unwrap().to_string(),
+            runtime_directory.to_str().expect("valid utf8").to_string(),
         ),
     ]
     .into_iter()
@@ -233,7 +244,9 @@ fn test_ensure_application_directories_exist_creates_directories_on_filesystem()
     assert!(!state_directory.join("onehost").exists());
     assert!(!runtime_directory.join("onehost").exists());
 
-    resolver.ensure_application_directories_exist().unwrap();
+    resolver
+        .ensure_application_directories_exist()
+        .expect("directories creation");
 
     assert!(configuration_directory.join("onehost").is_dir());
     assert!(cache_directory.join("onehost").is_dir());

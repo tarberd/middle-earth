@@ -6,10 +6,10 @@ use onehost::config::loader::ManifestLoader;
 use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainState, Hypervisor};
 use onehost::lifecycle::LifecycleError;
-use onehost::lifecycle::applier::{ApplyOptions, DomainLifecycleApplier};
+use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{DomainLifecyclePlanner, InstancePlanAction};
-use onehost::storage::mock::{MockImageRecord, MockStorageManager};
+use onehost::storage::qemu_img::QemuImgStorage;
 use onehost::storage::traits::StorageManager;
 
 const SAMPLE_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
@@ -44,21 +44,20 @@ const MODIFIED_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https:/
   </devices>
 </domain>"#;
 
-struct TestWorkspace {
-    _workspace_directory: tempfile::TempDir,
-    manifest_path: std::path::PathBuf,
-    template_xml_path: std::path::PathBuf,
-    depot_store_directory: std::path::PathBuf,
-    nvram_directory: std::path::PathBuf,
-    default_pool_directory: std::path::PathBuf,
-    nvme_pool_directory: std::path::PathBuf,
-    initial_golden_master_path: std::path::PathBuf,
-    oemdrv_path: std::path::PathBuf,
-    content_hash: String,
+pub struct TestWorkspace {
+    pub workspace_directory: tempfile::TempDir,
+    pub manifest_path: std::path::PathBuf,
+    pub template_xml_path: std::path::PathBuf,
+    pub depot_store_directory: std::path::PathBuf,
+    pub nvram_directory: std::path::PathBuf,
+    pub default_pool_directory: std::path::PathBuf,
+    pub nvme_pool_directory: std::path::PathBuf,
+    pub oemdrv_path: std::path::PathBuf,
+    pub content_hash: String,
 }
 
 impl TestWorkspace {
-    fn new(_on_image_change_policy: &str) -> Self {
+    fn new() -> Self {
         let temporary_workspace_directory = tempdir().expect("create workspace tempdir");
         let workspace_root_path = temporary_workspace_directory.path();
 
@@ -97,7 +96,10 @@ impl TestWorkspace {
             "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
             content_hash
         ));
-        std::fs::write(&initial_master_path, b"GOLDEN_MASTER_QCOW2").expect("write golden master");
+        let storage = QemuImgStorage::new();
+        storage
+            .create_empty_disk(&initial_master_path, 20 * 1024 * 1024)
+            .expect("create golden master");
 
         let manifest_content = format!(
             r#"{{
@@ -139,14 +141,13 @@ impl TestWorkspace {
         std::fs::write(&manifest_file_path, manifest_content).expect("write manifest");
 
         Self {
-            _workspace_directory: temporary_workspace_directory,
+            workspace_directory: temporary_workspace_directory,
             manifest_path: manifest_file_path,
             template_xml_path,
             depot_store_directory,
             nvram_directory,
             default_pool_directory,
             nvme_pool_directory,
-            initial_golden_master_path: initial_master_path,
             oemdrv_path,
             content_hash,
         }
@@ -194,13 +195,10 @@ fn count_pool_refreshes(hypervisor: &MockHypervisor, pool_name: &str) -> usize {
 
 #[test]
 fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
-    let workspace = TestWorkspace::new("protect");
+    let workspace = TestWorkspace::new();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     // 1. Load manifest from real disk path
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
@@ -215,18 +213,16 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
         .expect("initial planning must succeed");
     assert_eq!(initial_plan.actions.len(), 1);
 
-    match &initial_plan.actions[0] {
-        InstancePlanAction::Create { instance_name, .. } => {
-            assert_eq!(instance_name, "win11-gollum");
-        }
-        other_action => panic!("expected Create action, but got: {:?}", other_action),
-    }
+    assert!(matches!(
+        &initial_plan.actions[0],
+        InstancePlanAction::Create { instance_name, .. } if instance_name == "win11-gollum"
+    ));
 
     // 3. Execute apply
     let applier = DomainLifecycleApplier::new(&hypervisor, &storage);
 
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply must succeed");
 
     // 4. Verify hypervisor and storage state
@@ -236,7 +232,9 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     assert_eq!(domain_info.name, "win11-gollum");
     assert_eq!(domain_info.state, DomainState::Shutoff);
 
-    let registered_xml = hypervisor.dump_xml("win11-gollum", false).unwrap();
+    let registered_xml = hypervisor
+        .dump_xml("win11-gollum", false)
+        .expect("dump xml");
     assert!(registered_xml.contains("<name>win11-gollum</name>"));
 
     let expected_overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
@@ -246,14 +244,28 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     assert!(!registered_xml.contains("onehost:role"));
     assert!(!registered_xml.contains("xmlns:onehost"));
 
-    assert!(storage.inspect_image(&expected_overlay_path).is_ok());
+    assert!(expected_overlay_path.exists());
+    let overlay_inspection = storage
+        .inspect_image(&expected_overlay_path)
+        .expect("overlay image must exist and be valid qcow2");
+    assert_eq!(overlay_inspection.format, "qcow2");
+    let expected_base_cache_path = workspace.default_pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        workspace.content_hash
+    ));
+    assert_eq!(
+        overlay_inspection.backing_file,
+        Some(expected_base_cache_path)
+    );
+    assert!(storage.check_image(&expected_overlay_path).is_ok());
 
     let nvram_target = workspace.nvram_directory.join("win11-gollum_VARS.fd");
     assert!(
-        storage
-            .initialized_nvrams()
-            .contains(&(manifest.storage.nvram_template.clone(), nvram_target))
+        nvram_target.exists(),
+        "NVRAM target file must exist on disk"
     );
+    let nvram_content = std::fs::read(&nvram_target).expect("read NVRAM target");
+    assert_eq!(nvram_content, b"NVRAM_TEMPLATE_VARS");
 
     // 5. Assert IDEMPOTENCY: second plan emits NoOp
     let idempotent_plan = planner
@@ -261,23 +273,18 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
         .expect("idempotent planning must succeed");
     assert_eq!(idempotent_plan.actions.len(), 1);
 
-    match &idempotent_plan.actions[0] {
-        InstancePlanAction::NoOp { instance_name } => {
-            assert_eq!(instance_name, "win11-gollum");
-        }
-        other_action => panic!("expected NoOp action, but got: {:?}", other_action),
-    }
+    assert!(matches!(
+        &idempotent_plan.actions[0],
+        InstancePlanAction::NoOp { instance_name } if instance_name == "win11-gollum"
+    ));
 }
 
 #[test]
 fn test_end_to_end_template_drift_reconciliation_pipeline() {
-    let workspace = TestWorkspace::new("protect");
+    let workspace = TestWorkspace::new();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -288,7 +295,7 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
     // Initial provision
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     // 1. Modify the template XML file on disk (increase vcpu to 8)
@@ -301,27 +308,23 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
         .expect("planning after template modification");
     assert_eq!(drift_plan.actions.len(), 1);
 
-    match &drift_plan.actions[0] {
+    assert!(matches!(
+        &drift_plan.actions[0],
         InstancePlanAction::UpdateDomainXml {
             instance_name,
             diff_summary,
             ..
-        } => {
-            assert_eq!(instance_name, "win11-gollum");
-            assert!(diff_summary.contains("vcpu"));
-        }
-        other_action => panic!(
-            "expected UpdateDomainXml action, but got: {:?}",
-            other_action
-        ),
-    }
+        } if instance_name == "win11-gollum" && diff_summary.contains("vcpu")
+    ));
 
     // 3. Apply reconciliation without recreating overlay
     applier
-        .apply(&drift_plan, &ApplyOptions::default())
+        .apply(&drift_plan)
         .expect("apply update");
 
-    let updated_xml = hypervisor.dump_xml("win11-gollum", false).unwrap();
+    let updated_xml = hypervisor
+        .dump_xml("win11-gollum", false)
+        .expect("dump xml");
     assert!(updated_xml.contains(r#"<vcpu placement="static">8</vcpu>"#));
 
     // 4. Verify planner returns NoOp
@@ -334,16 +337,13 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
 
 #[test]
 fn test_end_to_end_storage_pool_relocation_pipeline() {
-    let workspace = TestWorkspace::new("protect");
+    let workspace = TestWorkspace::new();
 
     let hypervisor = MockHypervisor::new()
         .with_pool_xml("default", workspace.default_pool_xml())
         .with_pool_xml("fast-nvme", workspace.nvme_pool_xml());
 
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -354,7 +354,7 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
     // Initial provision in 'default' pool
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     // 1. Edit manifest file on disk: change pool to 'fast-nvme'
@@ -371,41 +371,39 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
     let relocation_plan = planner.plan(&relocated_manifest).expect("plan relocation");
     assert_eq!(relocation_plan.actions.len(), 1);
 
-    match &relocation_plan.actions[0] {
+    assert!(matches!(
+        &relocation_plan.actions[0],
         InstancePlanAction::RelocateStoragePool {
             instance_name,
             source_pool,
             target_pool,
             ..
-        } => {
-            assert_eq!(instance_name, "win11-gollum");
-            assert_eq!(source_pool, "default");
-            assert_eq!(target_pool, "fast-nvme");
-        }
-        other_action => panic!(
-            "expected RelocateStoragePool action, but got: {:?}",
-            other_action
-        ),
-    }
+        } if instance_name == "win11-gollum" && source_pool == "default" && target_pool == "fast-nvme"
+    ));
 
     // 4. Apply relocation
     applier
-        .apply(&relocation_plan, &ApplyOptions::default())
+        .apply(&relocation_plan)
         .expect("apply relocation");
 
     // 5. Verify new overlay location and backing file rebase
     let expected_new_overlay = workspace.nvme_pool_directory.join("win11-gollum.qcow2");
     assert!(storage.inspect_image(&expected_new_overlay).is_ok());
 
-    let rebased_inspection = storage.inspect_image(&expected_new_overlay).unwrap();
+    let rebased_inspection = storage
+        .inspect_image(&expected_new_overlay)
+        .expect("inspect rebased image");
     let expected_new_base = workspace.nvme_pool_directory.join(format!(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
         workspace.content_hash
     ));
     assert_eq!(rebased_inspection.backing_file, Some(expected_new_base));
+    assert!(storage.check_image(&expected_new_overlay).is_ok());
 
     // 6. Verify domain XML points to new disk
-    let updated_domain_xml = hypervisor.dump_xml("win11-gollum", false).unwrap();
+    let updated_domain_xml = hypervisor
+        .dump_xml("win11-gollum", false)
+        .expect("dump xml");
     assert!(updated_domain_xml.contains(&expected_new_overlay.display().to_string()));
 
     // 7. Verify both pools refreshed
@@ -424,13 +422,10 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
 
 #[test]
 fn test_end_to_end_recreate_pipeline() {
-    let workspace = TestWorkspace::new("protect");
+    let workspace = TestWorkspace::new();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -441,7 +436,7 @@ fn test_end_to_end_recreate_pipeline() {
     // Initial provision
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
 
     // 1. Simulate base image hash change by modifying oemdrv content
@@ -457,13 +452,9 @@ fn test_end_to_end_recreate_pipeline() {
         "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
         new_hash
     ));
-    std::fs::write(&new_golden_master, b"NEW_GOLDEN_MASTER").expect("write new golden master");
     storage
-        .state
-        .lock()
-        .unwrap()
-        .images
-        .insert(new_golden_master, MockImageRecord::default());
+        .create_empty_disk(&new_golden_master, 20 * 1024 * 1024)
+        .expect("create new golden master");
 
     let drifted_manifest =
         ManifestLoader::load_from_path(&workspace.manifest_path).expect("reload manifest");
@@ -476,8 +467,20 @@ fn test_end_to_end_recreate_pipeline() {
     ));
 
     // 3. Apply recreate succeeds
-    let success_result = applier.apply(&recreate_plan, &ApplyOptions::default());
+    let success_result = applier.apply(&recreate_plan);
     assert!(success_result.is_ok());
+
+    let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(overlay_path.exists());
+    let overlay_inspection = storage
+        .inspect_image(&overlay_path)
+        .expect("inspect recreated overlay");
+    let expected_new_base = workspace.default_pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        new_hash
+    ));
+    assert_eq!(overlay_inspection.backing_file, Some(expected_new_base));
+    assert!(storage.check_image(&overlay_path).is_ok());
 
     // 4. Verify subsequent plan is NoOp
     let final_plan = planner.plan(&drifted_manifest).expect("final plan");
@@ -489,13 +492,10 @@ fn test_end_to_end_recreate_pipeline() {
 
 #[test]
 fn test_end_to_end_destroyer_lifecycle_pipeline() {
-    let workspace = TestWorkspace::new("protect");
+    let workspace = TestWorkspace::new();
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
-    let storage = MockStorageManager::new().with_image(
-        &workspace.initial_golden_master_path,
-        MockImageRecord::default(),
-    );
+    let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
 
@@ -507,9 +507,25 @@ fn test_end_to_end_destroyer_lifecycle_pipeline() {
     // Initial provision
     let initial_plan = planner.plan(&manifest).expect("initial plan");
     applier
-        .apply(&initial_plan, &ApplyOptions::default())
+        .apply(&initial_plan)
         .expect("initial apply");
     assert!(hypervisor.domain_info("win11-gollum").is_ok());
+
+    let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(overlay_path.exists(), "overlay must exist after initial apply");
+    let pre_destroy_inspection = storage
+        .inspect_image(&overlay_path)
+        .expect("inspect overlay before destroy");
+    assert_eq!(pre_destroy_inspection.format, "qcow2");
+    let expected_base_cache_path = workspace.default_pool_directory.join(format!(
+        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
+        workspace.content_hash
+    ));
+    assert_eq!(
+        pre_destroy_inspection.backing_file,
+        Some(expected_base_cache_path.clone())
+    );
+    assert!(storage.check_image(&overlay_path).is_ok());
 
     // 1. Destroy instance with delete_disk
     let destroy_options = DestroyOptions {
@@ -522,8 +538,13 @@ fn test_end_to_end_destroyer_lifecycle_pipeline() {
 
     // 2. Verify domain undefined and overlay unlinked
     assert!(hypervisor.domain_info("win11-gollum").is_err());
-    let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
+    assert!(!overlay_path.exists(), "overlay disk must be unlinked after destroy");
     assert!(storage.inspect_image(&overlay_path).is_err());
+    assert!(
+        expected_base_cache_path.exists(),
+        "base cache image must be preserved after overlay unlinking"
+    );
+    assert!(storage.check_image(&expected_base_cache_path).is_ok());
 
     // 3. Plan now reflects Create action again
     let post_destroy_plan = planner.plan(&manifest).expect("post destroy plan");

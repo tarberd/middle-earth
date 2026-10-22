@@ -3,10 +3,6 @@ use crate::lifecycle::LifecycleError;
 use crate::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use crate::storage::traits::{StorageError, StorageManager};
 
-/// Options controlling apply execution.
-#[derive(Debug, Clone, Default)]
-pub struct ApplyOptions {}
-
 /// Applier reconciling the execution plan against hypervisor and storage infrastructure.
 pub struct DomainLifecycleApplier<'a, H: Hypervisor, S: StorageManager> {
     pub hypervisor: &'a H,
@@ -23,20 +19,15 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
     }
 
     /// Executes the planned reconciliation actions sequentially.
-    pub fn apply(&self, plan: &OnehostPlan, options: &ApplyOptions) -> Result<(), LifecycleError> {
+    pub fn apply(&self, plan: &OnehostPlan) -> Result<(), LifecycleError> {
         plan.actions
             .iter()
-            .try_for_each(|action| self.apply_action(action, options))
+            .try_fold((), |(), action| self.apply_action(action))
     }
 
-    fn apply_action(
-        &self,
-        action: &InstancePlanAction,
-        _options: &ApplyOptions,
-    ) -> Result<(), LifecycleError> {
+    fn apply_action(&self, action: &InstancePlanAction) -> Result<(), LifecycleError> {
         match action {
             InstancePlanAction::Create {
-                instance_name: _,
                 concrete_xml,
                 target_pool,
                 overlay_path,
@@ -44,6 +35,7 @@ impl<'a, H: Hypervisor, S: StorageManager> DomainLifecycleApplier<'a, H, S> {
                 golden_master_path,
                 nvram_path,
                 nvram_template_path,
+                ..
             } => {
                 // Ensure base image is cached in target pool
                 self.storage

@@ -57,7 +57,7 @@ impl<'a, H: Hypervisor> Drop for SnapshotCleanupGuard<'a, H> {
                 domain_name = %self.domain_name,
                 "Snapshot cleanup guard triggered; executing rollback blockcommit on active snapshots"
             );
-            self.snapshots.iter().for_each(|snapshot| {
+            self.snapshots.iter().fold((), |(), snapshot| {
                 let blockcommit_result = self.hypervisor.blockcommit(
                     &self.domain_name,
                     &snapshot.target_device,

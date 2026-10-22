@@ -57,7 +57,7 @@ fn test_synthesize_domain_xml_with_single_os_disk() {
 
     let synthesized_xml =
         DomainTemplateEngine::synthesize_concrete_domain_xml(SAMPLE_TEMPLATE_XML, &parameters)
-            .unwrap();
+            .expect("synthesize concrete domain xml");
 
     // 1. Instance identity injected
     assert!(synthesized_xml.contains("<name>win11-gollum</name>"));

@@ -18,6 +18,7 @@ mkFlakeModule { } (
       fileset = lib.fileset.unions [
         ./Cargo.toml
         ./Cargo.lock
+        ./clippy.toml
         ./src
         ./tests
       ];

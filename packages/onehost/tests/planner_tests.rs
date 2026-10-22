@@ -70,7 +70,7 @@ const BULK_DATA_POOL_XML: &str = r#"<pool type='dir'>
 const TEST_CONTENT_HASH: &str = "ba6eafb71234";
 
 fn create_test_manifest() -> onehost::config::model::OnehostManifest {
-    ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).unwrap()
+    ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("should succeed")
 }
 
 fn create_test_storage() -> MockStorageManager {
@@ -87,7 +87,7 @@ fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -135,7 +135,7 @@ fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
             assert!(concrete_xml.contains("<uuid>e5a7d620-8931-4bf6-98ec-7e44a30e8c45</uuid>"));
             assert!(concrete_xml.contains("/var/lib/libvirt/images/win11-gollum.qcow2"));
         }
-        other_action => panic!("expected Create action, but got: {:?}", other_action),
+        other_action => unreachable!("expected Create action, but got: {:?}", other_action),
     }
 }
 
@@ -146,10 +146,10 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     // Get expected concrete XML from a preliminary plan
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -186,7 +186,7 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -207,9 +207,9 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -249,7 +249,7 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -264,7 +264,7 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
             assert!(concrete_xml.contains("<memory unit=\"KiB\">16777216</memory>"));
             assert!(diff_summary.contains("Value mismatch"));
         }
-        other_action => panic!(
+        other_action => unreachable!(
             "expected UpdateDomainXml action, but got: {:?}",
             other_action
         ),
@@ -278,9 +278,9 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -318,7 +318,7 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -335,7 +335,7 @@ fn test_plan_emits_recreate_when_base_image_hash_changes() {
             assert!(reason.contains("ba6eafb71234"));
             assert!(reason.contains("forces replacement"));
         }
-        other_action => panic!("expected Recreate action, but got: {:?}", other_action),
+        other_action => unreachable!("expected Recreate action, but got: {:?}", other_action),
     }
 }
 
@@ -346,14 +346,14 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/looking-glass",
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/enterprise/en-us/looking-glass",
     );
-    let manifest = ManifestLoader::load_from_json_string(&manifest_json).unwrap();
+    let manifest = ManifestLoader::load_from_json_string(&manifest_json).expect("should succeed");
     let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -391,7 +391,7 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -411,7 +411,7 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
                 "reason did not mention expected new base image: {reason}"
             );
         }
-        other_action => panic!("expected Recreate action, but got: {:?}", other_action),
+        other_action => unreachable!("expected Recreate action, but got: {:?}", other_action),
     }
 }
 
@@ -420,7 +420,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
     // Manifest declares instance on 'bulk-data' pool
     let manifest_json =
         SAMPLE_MANIFEST_JSON.replace("\"pool\": \"default\"", "\"pool\": \"bulk-data\"");
-    let manifest = ManifestLoader::load_from_json_string(&manifest_json).unwrap();
+    let manifest = ManifestLoader::load_from_json_string(&manifest_json).expect("should succeed");
 
     let hypervisor = MockHypervisor::new()
         .with_pool_xml("default", DEFAULT_POOL_XML)
@@ -428,9 +428,9 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -468,7 +468,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
     );
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -508,7 +508,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
                 )
             );
         }
-        other_action => panic!(
+        other_action => unreachable!(
             "expected RelocateStoragePool action, but got: {:?}",
             other_action
         ),
@@ -522,9 +522,9 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
-    let initial_plan = planner.plan(&manifest).unwrap();
+    let initial_plan = planner.plan(&manifest).expect("should succeed");
     let expected_concrete_xml = match &initial_plan.actions[0] {
         InstancePlanAction::Create { concrete_xml, .. } => concrete_xml.clone(),
         _ => unreachable!(),
@@ -550,7 +550,7 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
         .with_block_devices("win11-gollum", block_devices);
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan = planner.plan(&manifest).expect("planning should succeed");
 
@@ -568,23 +568,23 @@ fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
 #[test]
 fn test_plan_returns_error_when_flavor_not_registered() {
     // bypass high-level loader validation to specifically verify planner behavior
-    let mut manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).unwrap();
+    let mut manifest = ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("should succeed");
     if let Some(instance) = manifest.instances.get_mut("win11-gollum") {
         instance.image = "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/unregistered-flavor"
             .parse()
-            .unwrap();
+            .expect("should succeed");
     }
 
     let hypervisor = MockHypervisor::new().with_pool_xml("default", DEFAULT_POOL_XML);
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan_result = planner.plan(&manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.unwrap_err() {
+    match plan_result.expect_err("should fail") {
         LifecycleError::FlavorResolutionError {
             source:
                 FlavorResolutionError::UnknownFlavor {
@@ -593,7 +593,7 @@ fn test_plan_returns_error_when_flavor_not_registered() {
         } => {
             assert_eq!(requested_flavor, "unregistered-flavor");
         }
-        other_error => panic!("expected FlavorResolutionError, but got: {:?}", other_error),
+        other_error => unreachable!("expected FlavorResolutionError, but got: {:?}", other_error),
     }
 }
 
@@ -605,14 +605,14 @@ fn test_plan_propagates_hypervisor_pool_resolution_error() {
     let storage = create_test_storage();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage)
-        .with_template_resolver(|_template_path| Ok(SAMPLE_TEMPLATE_XML.to_string()));
+        .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
 
     let plan_result = planner.plan(&manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.unwrap_err() {
+    match plan_result.expect_err("should fail") {
         LifecycleError::HypervisorError { .. } => {}
-        other_error => panic!("expected HypervisorError, but got: {:?}", other_error),
+        other_error => unreachable!("expected HypervisorError, but got: {:?}", other_error),
     }
 }
 
@@ -624,14 +624,14 @@ fn test_plan_propagates_domain_synthesis_error_on_invalid_template() {
 
     // Template XML is missing the root <domain> tag
     let planner = DomainLifecyclePlanner::new(&hypervisor, &storage).with_template_resolver(
-        |_template_path| Ok("<invalid>Not a domain template</invalid>".to_string()),
+        |_| Ok("<invalid>Not a domain template</invalid>".to_string()),
     );
 
     let plan_result = planner.plan(&manifest);
 
     assert!(plan_result.is_err());
-    match plan_result.unwrap_err() {
+    match plan_result.expect_err("should fail") {
         LifecycleError::DomainSynthesisError { .. } => {}
-        other_error => panic!("expected DomainSynthesisError, but got: {:?}", other_error),
+        other_error => unreachable!("expected DomainSynthesisError, but got: {:?}", other_error),
     }
 }
