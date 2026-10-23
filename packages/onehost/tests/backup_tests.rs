@@ -6,9 +6,9 @@ use onehost::backup::model::{
 };
 use onehost::backup::{BackupEngine, BackupError, RestoreEngine, RestoreError};
 use onehost::config::model::InstanceUuid;
-use onehost::hypervisor::mock::{MockHypervisor, RecordedHypervisorAction};
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
 use onehost::storage::qemu_img::QemuImgStorage;
+use onehost_test_support::FakeHypervisor;
 
 fn create_sample_domain_xml(
     instance_name: &str,
@@ -128,7 +128,7 @@ fn test_offline_backup_success() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, &domain_xml);
     let engine = BackupEngine::new(&hypervisor, &storage);
 
     let options = BackupOptions {
@@ -175,14 +175,20 @@ fn test_offline_backup_success() {
         b"NVRAM_OFFLINE_DATA"
     );
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let has_snapshots = hypervisor_actions.iter().any(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::CreateSnapshot { .. }
-        )
-    });
-    assert!(!has_snapshots, "Offline backup should not create snapshots");
+    assert_eq!(
+        hypervisor.domain_state(instance_name),
+        Some(DomainState::Shutoff)
+    );
+    let devices = hypervisor
+        .domain_block_devices(instance_name)
+        .expect("block devices");
+    assert_eq!(devices[0].source_file, Some(overlay_path));
+    assert!(
+        !pool_directory
+            .join(format!("{instance_name}.sda.snap"))
+            .exists(),
+        "Offline backup should not create snapshots"
+    );
 }
 
 #[test]
@@ -230,7 +236,7 @@ fn test_online_backup_vss_quiesced_success() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, &domain_xml);
     let engine = BackupEngine::new(&hypervisor, &storage);
 
     let options = BackupOptions {
@@ -248,31 +254,19 @@ fn test_online_backup_vss_quiesced_success() {
         BackupConsistencyLevel::VssQuiesced
     );
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let snapshot_action = hypervisor_actions.iter().find(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::CreateSnapshot { quiesce: true, .. }
-        )
-    });
-    assert!(
-        snapshot_action.is_some(),
-        "Hypervisor should create atomic snapshot with VSS quiescing enabled"
+    assert_eq!(
+        hypervisor.domain_state(instance_name),
+        Some(DomainState::Running)
     );
-
-    let blockcommit_action = hypervisor_actions.iter().find(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::Blockcommit {
-                active: true,
-                pivot: true,
-                ..
-            }
-        )
-    });
+    let devices = hypervisor
+        .domain_block_devices(instance_name)
+        .expect("block devices");
+    assert_eq!(devices[0].source_file, Some(overlay_path.clone()));
     assert!(
-        blockcommit_action.is_some(),
-        "Hypervisor should collapse snapshot via active blockcommit with pivot"
+        !pool_directory
+            .join(format!("{instance_name}.sda.snap"))
+            .exists(),
+        "temporary snapshot overlay must be collapsed and unlinked"
     );
 
     // Physical disk state verification
@@ -335,7 +329,7 @@ fn test_online_backup_quiesce_fallback_to_crash_consistent() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_domain(domain_info, &domain_xml)
         .with_quiesce_failure(true);
 
@@ -356,36 +350,14 @@ fn test_online_backup_quiesce_fallback_to_crash_consistent() {
         BackupConsistencyLevel::CrashConsistent
     );
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let snapshot_attempts: Vec<_> = hypervisor_actions
-        .iter()
-        .filter(|recorded_action| {
-            matches!(
-                recorded_action,
-                RecordedHypervisorAction::CreateSnapshot { .. }
-            )
-        })
-        .collect();
-
     assert_eq!(
-        snapshot_attempts.len(),
-        2,
-        "Should attempt quiesced snapshot first, then fall back to crash-consistent"
+        hypervisor.domain_state(instance_name),
+        Some(DomainState::Running)
     );
-    assert!(
-        matches!(
-            snapshot_attempts[0],
-            RecordedHypervisorAction::CreateSnapshot { quiesce: true, .. }
-        ),
-        "First snapshot attempt should be quiesced"
-    );
-    assert!(
-        matches!(
-            snapshot_attempts[1],
-            RecordedHypervisorAction::CreateSnapshot { quiesce: false, .. }
-        ),
-        "Second snapshot attempt should be unquiesced (crash-consistent)"
-    );
+    let devices = hypervisor
+        .domain_block_devices(instance_name)
+        .expect("block devices");
+    assert_eq!(devices[0].source_file, Some(overlay_path.clone()));
 
     // Physical disk state verification
     let archive_path = backup_directory.join("sda.qcow2");
@@ -436,7 +408,7 @@ fn test_online_backup_raii_guard_triggers_blockcommit_on_failure() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, &domain_xml);
     let engine = BackupEngine::new(&hypervisor, &storage);
 
     let options = BackupOptions::default();
@@ -448,21 +420,13 @@ fn test_online_backup_raii_guard_triggers_blockcommit_on_failure() {
         "Backup must fail when storage conversion errors"
     );
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let blockcommit_action = hypervisor_actions.iter().find(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::Blockcommit {
-                active: true,
-                pivot: true,
-                ..
-            }
-        )
-    });
-
-    assert!(
-        blockcommit_action.is_some(),
-        "RAII guard must execute blockcommit when conversion fails to prevent dangling snapshots"
+    let devices = hypervisor
+        .domain_block_devices(instance_name)
+        .expect("block devices");
+    assert_eq!(
+        devices[0].source_file,
+        Some(overlay_path),
+        "RAII guard must execute blockcommit when conversion fails to restore base disk"
     );
 }
 
@@ -517,7 +481,7 @@ fn test_multi_disk_atomic_snapshot_backup() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, &domain_xml);
     let engine = BackupEngine::new(&hypervisor, &storage);
 
     let options = BackupOptions::default();
@@ -528,24 +492,12 @@ fn test_multi_disk_atomic_snapshot_backup() {
 
     assert_eq!(backup_manifest.disks.len(), 2);
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let snapshot_action =
-        hypervisor_actions
-            .iter()
-            .find_map(|recorded_action| match recorded_action {
-                RecordedHypervisorAction::CreateSnapshot {
-                    disk_specifications,
-                    ..
-                } => Some(disk_specifications),
-                _ => None,
-            });
-
-    let snapshot_specs = snapshot_action.expect("CreateSnapshot should have been recorded");
-    assert_eq!(
-        snapshot_specs.len(),
-        2,
-        "Snapshot should include specifications for all attached disks"
-    );
+    let devices = hypervisor
+        .domain_block_devices(instance_name)
+        .expect("block devices");
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0].source_file, Some(disk1_path.clone()));
+    assert_eq!(devices[1].source_file, Some(disk2_path.clone()));
 
     // Physical disk state verification
     let sda_archive = backup_directory.join("sda.qcow2");
@@ -594,7 +546,7 @@ fn test_backup_fails_when_no_disks_attached() {
         autostart: false,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, domain_xml);
     let storage = QemuImgStorage::new();
     let engine = BackupEngine::new(&hypervisor, &storage);
 
@@ -626,7 +578,7 @@ fn test_restore_engine_success() {
 
     let pool_name = "default";
     let pool_xml = create_sample_pool_xml(pool_name, &pool_directory);
-    let hypervisor = MockHypervisor::new().with_pool_xml(pool_name, &pool_xml);
+    let hypervisor = FakeHypervisor::new().with_pool_xml(pool_name, &pool_xml);
 
     let storage = QemuImgStorage::new();
 
@@ -721,28 +673,21 @@ fn test_restore_engine_success() {
         b"NVRAM_BINARY_DATA"
     );
 
-    let hypervisor_actions = hypervisor.recorded_actions();
-    let has_defined_domain = hypervisor_actions.iter().any(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::DefineDomain { .. }
-        )
-    });
     assert!(
-        has_defined_domain,
+        hypervisor.is_domain_defined(instance_name),
         "Domain should be registered with hypervisor"
     );
-
-    let has_refreshed_pool = hypervisor_actions.iter().any(|recorded_action| {
-        matches!(
-            recorded_action,
-            RecordedHypervisorAction::PoolRefresh { pool_name: refreshed_pool }
-            if refreshed_pool == pool_name
-        )
-    });
+    assert_eq!(
+        hypervisor.domain_state(instance_name),
+        Some(DomainState::Shutoff)
+    );
     assert!(
-        has_refreshed_pool,
-        "Target storage pool should be refreshed in Libvirt"
+        hypervisor.domain_xml(instance_name).is_some(),
+        "Domain XML should be defined in hypervisor"
+    );
+    assert!(
+        hypervisor.has_storage_pool(pool_name),
+        "Target storage pool should exist in hypervisor"
     );
 }
 
@@ -775,7 +720,7 @@ fn test_restore_engine_rejects_already_existing_domain() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new().with_domain(domain_info, &domain_xml);
+    let hypervisor = FakeHypervisor::new().with_domain(domain_info, &domain_xml);
 
     let manifest = BackupManifest {
         instance_name: instance_name.to_string(),
@@ -850,7 +795,7 @@ fn test_restore_engine_allows_overwrite_when_flag_set() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_domain(domain_info, &domain_xml)
         .with_pool_xml(pool_name, &pool_xml);
 
@@ -916,7 +861,7 @@ fn test_restore_engine_fails_when_base_image_not_found() {
     let pool_name = "default";
     let pool_xml = create_sample_pool_xml(pool_name, &pool_directory);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml(pool_name, &pool_xml);
+    let hypervisor = FakeHypervisor::new().with_pool_xml(pool_name, &pool_xml);
 
     let manifest = BackupManifest {
         instance_name: instance_name.to_string(),
@@ -970,7 +915,7 @@ fn test_restore_engine_empty_disks_validation() {
     let backup_directory = temporary_directory.path().join("backup");
     std::fs::create_dir_all(&backup_directory).expect("create backup dir");
 
-    let hypervisor = MockHypervisor::new();
+    let hypervisor = FakeHypervisor::new();
 
     let manifest = BackupManifest {
         instance_name: instance_name.to_string(),

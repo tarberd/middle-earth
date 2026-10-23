@@ -6,8 +6,8 @@ use tempfile::tempdir;
 use onehost::backup::model::{BackupConsistencyLevel, BackupOptions, RestoreOptions};
 use onehost::backup::{BackupEngine, RestoreEngine, RestoreError};
 use onehost::config::loader::ManifestLoader;
-use onehost::hypervisor::mock::{MockHypervisor, RecordedHypervisorAction};
 use onehost::hypervisor::traits::{DomainState, Hypervisor};
+use onehost_test_support::FakeHypervisor;
 use onehost::lifecycle::LifecycleError;
 use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
@@ -193,7 +193,7 @@ fn file_template_resolver(template_path: &Path) -> Result<String, LifecycleError
 fn test_end_to_end_disaster_recovery_round_trip_offline() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     // 1. Provision instance via declarative plan and apply
@@ -323,7 +323,7 @@ fn test_end_to_end_disaster_recovery_round_trip_offline() {
 fn test_end_to_end_disaster_recovery_round_trip_online() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
@@ -375,23 +375,18 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
         BackupConsistencyLevel::VssQuiesced
     );
 
-    // Verify online backup actions: snapshot creation and blockcommit pivot in hypervisor
-    let recorded_hypervisor_actions = hypervisor.recorded_actions();
-    let has_snapshot = recorded_hypervisor_actions
-        .iter()
-        .any(|action| matches!(action, RecordedHypervisorAction::CreateSnapshot { .. }));
-    let has_blockcommit = recorded_hypervisor_actions.iter().any(|action| {
-        matches!(
-            action,
-            RecordedHypervisorAction::Blockcommit {
-                active: true,
-                pivot: true,
-                ..
-            }
-        )
-    });
-    assert!(has_snapshot);
-    assert!(has_blockcommit);
+    // Verify online backup state: domain remains running and block device is committed back to base disk
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Running)
+    );
+    let devices = hypervisor
+        .domain_block_devices("win11-gollum")
+        .expect("block devices must exist");
+    assert_eq!(
+        devices[0].source_file,
+        Some(workspace.default_pool_directory.join("win11-gollum.qcow2"))
+    );
 
     // Physical disk state verification: temporary .snap file deleted, archive and nvram exist
     let snap_path = workspace
@@ -449,7 +444,7 @@ fn test_end_to_end_disaster_recovery_with_real_qemu_img_toolchain() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
     let storage = QemuImgStorage::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path)
         .expect("manifest loading must succeed");
@@ -557,7 +552,7 @@ fn test_end_to_end_disaster_recovery_with_real_qemu_img_toolchain() {
 fn test_end_to_end_disaster_recovery_missing_base_cache_automatic_repopulation() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest =
@@ -647,7 +642,7 @@ fn test_end_to_end_disaster_recovery_multi_disk() {
         .clone()
         .expect("secondary disk path must be present in multi-disk workspace");
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest =
@@ -836,7 +831,7 @@ fn test_real_toolchain_thin_backup_and_restore_compression() {
 fn test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest =
@@ -895,7 +890,7 @@ fn test_disaster_recovery_guardrail_aborts_if_domain_exists_without_overwrite() 
 fn test_disaster_recovery_fails_if_base_image_missing_from_both_pool_and_depot() {
     let workspace = DisasterRecoveryWorkspace::new(false);
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest =

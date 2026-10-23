@@ -4,8 +4,8 @@
 
 **Blocked by:** 05: Migrate Planner and Lifecycle Tests to Fake Hypervisor State Assertions
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Mock hypervisor and recorded hypervisor action enums are deleted from production sources.
-- [ ] Production library exports no longer expose testing hypervisor doubles or call-recording types.
-- [ ] Hypervisor tests only exercise production adapters and data parsing.
+- [x] Mock hypervisor and recorded hypervisor action enums are deleted from production sources.
+- [x] Production library exports no longer expose testing hypervisor doubles or call-recording types.
+- [x] Hypervisor tests only exercise production adapters and data parsing.

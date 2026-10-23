@@ -11,8 +11,8 @@ use onehost::config::model::{
     FlavorConfiguration, InstanceConfiguration, OnehostManifest, StorageDirectoriesConfiguration,
 };
 use onehost::hypervisor::Hypervisor;
-use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
+use onehost_test_support::FakeHypervisor;
 use onehost::lifecycle::planner::OnehostPlan;
 use onehost::process::mock::MockProcessRunner;
 use onehost::storage::QemuImgStorage;
@@ -169,7 +169,7 @@ impl CliTestFixture {
 fn test_cli_plan_human_readable_output() {
     let fixture = CliTestFixture::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
@@ -195,7 +195,7 @@ fn test_cli_plan_human_readable_output() {
 fn test_cli_plan_json_output() {
     let fixture = CliTestFixture::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
@@ -221,7 +221,7 @@ fn test_cli_plan_json_output() {
 fn test_cli_plan_filter_instance() {
     let fixture = CliTestFixture::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
@@ -249,7 +249,7 @@ fn test_cli_plan_filter_instance() {
 fn test_cli_apply_reconciles_infrastructure() {
     let fixture = CliTestFixture::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
@@ -280,7 +280,7 @@ fn test_cli_destroy_deprovisions_instance() {
     let fixture = CliTestFixture::new();
     let domain_xml = fixture.template_xml_content();
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", fixture.default_pool_xml())
         .with_domain(fixture.domain_info(), &domain_xml);
 
@@ -338,7 +338,7 @@ fn test_cli_backup_creates_staged_artifacts() {
         .path()
         .join("test-backup-output");
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", fixture.default_pool_xml())
         .with_domain(fixture.domain_info(), &domain_xml);
 
@@ -411,7 +411,7 @@ fn test_cli_restore_restores_from_staged_directory() {
     let backup_nvram_path = backup_stage_directory.join("nvram.fd");
     let backup_disk_path = backup_stage_directory.join("sda.qcow2.thin");
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     std::fs::create_dir_all(&backup_stage_directory).expect("create backup stage dir");
     std::fs::write(&backup_manifest_path, manifest_json).expect("write backup manifest");
@@ -463,7 +463,7 @@ fn test_cli_status_human_and_json() {
     let fixture = CliTestFixture::new();
     let domain_xml = fixture.template_xml_content();
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", fixture.default_pool_xml())
         .with_domain(fixture.domain_info(), &domain_xml);
 
@@ -516,7 +516,7 @@ fn test_cli_status_human_and_json() {
 fn test_cli_image_build_when_master_exists() {
     let fixture = CliTestFixture::new();
 
-    let hypervisor = MockHypervisor::new();
+    let hypervisor = FakeHypervisor::new();
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 
@@ -587,7 +587,7 @@ fn test_cli_rejects_removed_allow_destroy_protected_flag() {
 #[test]
 fn test_cli_image_build_rejects_informal_build_tags() {
     let fixture = CliTestFixture::new();
-    let hypervisor = MockHypervisor::new();
+    let hypervisor = FakeHypervisor::new();
     let storage = QemuImgStorage::new();
     let runner = MockProcessRunner::new();
 

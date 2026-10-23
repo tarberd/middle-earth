@@ -1,8 +1,5 @@
-pub mod mock;
 pub mod traits;
 pub mod virsh;
-
-pub use mock::{MockHypervisor, MockHypervisorState, RecordedHypervisorAction};
 pub use traits::{
     BlockDeviceInfo, DiskSnapshotSpecification, DomainInfo, DomainState, Hypervisor,
     HypervisorError, parse_pool_target_path,
