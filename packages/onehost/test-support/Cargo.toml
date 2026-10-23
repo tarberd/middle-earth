@@ -1,0 +1,10 @@
+[package]
+name = "onehost-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+onehost = { path = ".." }
+
+[lints]
+workspace = true

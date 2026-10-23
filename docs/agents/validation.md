@@ -17,7 +17,7 @@ nix develop .#onehost -c <command>
 
 Run the full test suite for `onehost`:
 ```bash
-nix develop .#onehost -c cargo test --manifest-path packages/onehost/Cargo.toml
+nix develop .#onehost -c cargo test --manifest-path packages/onehost/Cargo.toml --workspace
 ```
 
 Run a single integration test during `/tdd` loops:
@@ -27,9 +27,9 @@ nix develop .#onehost -c cargo test --manifest-path packages/onehost/Cargo.toml 
 
 ## Deterministic Lint Floor (Clippy)
 
-Before declaring any implementation step complete or committing changes, run Clippy across **all targets** (library, binaries, and tests) with warnings denied:
+Before declaring any implementation step complete or committing changes, run Clippy across **all workspace crates and targets** (library, binaries, test-support, and tests) with warnings denied:
 ```bash
-nix develop .#onehost -c cargo clippy --manifest-path packages/onehost/Cargo.toml --all-targets -- -D warnings
+nix develop .#onehost -c cargo clippy --manifest-path packages/onehost/Cargo.toml --workspace --all-targets -- -D warnings
 ```
 
 The build is configured in `packages/onehost/Cargo.toml` and `packages/onehost/clippy.toml` with strict non-negotiable lints across all targets:

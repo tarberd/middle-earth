@@ -4,8 +4,8 @@
 
 **Blocked by:** 03: Collapse Storage Trait into Concrete QEMU Storage Manager and Delete Mock
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] In-memory fake hypervisor fixture implements the hypervisor boundary port in test fixtures outside production crate sources.
-- [ ] Domain state, XML configurations, block devices, and storage pools are maintained in memory without call-recording spies.
-- [ ] Inspection helpers allow tests to query defined domains, XML bodies, and active states.
+- [x] In-memory fake hypervisor fixture implements the hypervisor boundary port in test fixtures outside production crate sources.
+- [x] Domain state, XML configurations, block devices, and storage pools are maintained in memory without call-recording spies.
+- [x] Inspection helpers allow tests to query defined domains, XML bodies, and active states.

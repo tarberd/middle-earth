@@ -3,6 +3,31 @@ name = "onehost"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["test-support"]
+default-members = ["."]
+
+[workspace.lints.rust]
+unused = "deny"
+dead_code = "deny"
+unused_variables = "deny"
+unused_mut = "deny"
+unused_imports = "deny"
+unreachable_code = "deny"
+unused_qualifications = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+needless_for_each = "deny"
+match_same_arms = "deny"
+used_underscore_binding = "deny"
+pub_underscore_fields = "deny"
+no_effect_underscore_binding = "deny"
+unnecessary_wraps = "deny"
+disallowed_methods = "deny"
+allow_attributes = "deny"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -14,23 +39,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
 
-[lints.rust]
-unused = "deny"
-dead_code = "deny"
-unused_variables = "deny"
-unused_mut = "deny"
-unused_imports = "deny"
-unreachable_code = "deny"
-unused_qualifications = "deny"
+[dev-dependencies]
+onehost-test-support = { path = "test-support" }
 
-[lints.clippy]
-unwrap_used = "deny"
-panic = "deny"
-needless_for_each = "deny"
-match_same_arms = "deny"
-used_underscore_binding = "deny"
-pub_underscore_fields = "deny"
-no_effect_underscore_binding = "deny"
-unnecessary_wraps = "deny"
-disallowed_methods = "deny"
-allow_attributes = "deny"
+[lints]
+workspace = true

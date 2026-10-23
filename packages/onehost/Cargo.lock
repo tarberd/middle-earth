@@ -277,6 +277,7 @@ name = "onehost"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "onehost-test-support",
  "quick-xml",
  "serde",
  "serde_json",
@@ -285,6 +286,13 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "onehost-test-support"
+version = "0.1.0"
+dependencies = [
+ "onehost",
 ]
 
 [[package]]

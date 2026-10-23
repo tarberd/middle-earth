@@ -40,10 +40,10 @@ Refactor `onehost`'s test seams in accordance with the Pure Core / Imperative Sh
 - Direct all storage unit and integration test fixtures to execute against temporary directories created via `tempfile::tempdir()`.
 
 ### 2. Hypervisor Test Double Relocation and State-Based Simplification
-- Relocate the in-memory hypervisor test double from production crate sources into a shared test-only fixture module (`tests/common/fake_hypervisor.rs`).
+- Relocate the in-memory hypervisor test double from production crate sources into a dedicated dev-dependency workspace crate (`packages/onehost/test-support`, crate name `onehost-test-support`).
 - Purge all call-recording action enums and recorded action vectors.
 - Maintain domain state as an in-memory mapping of domain names to their running state, XML definitions, block device mappings, and pool paths.
-- Provide state inspection helper methods for tests (e.g. querying defined domains or checking active states) through public test-only methods on the fake.
+- Provide state inspection helper methods for tests (e.g. querying defined domains or checking active states) through public methods on `FakeHypervisor`.
 
 ### 3. Elimination of Call-Spy Assertions Across Test Suites
 - Update lifecycle, planner, and disaster recovery tests to replace assertions on recorded storage and hypervisor action vectors with state assertions.

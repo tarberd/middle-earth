@@ -21,6 +21,7 @@ mkFlakeModule { } (
         ./clippy.toml
         ./src
         ./tests
+        ./test-support
       ];
     };
     cargoLock.lockFile = ./Cargo.lock;
