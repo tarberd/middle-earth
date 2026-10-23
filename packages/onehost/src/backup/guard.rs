@@ -57,25 +57,32 @@ impl<'a, H: Hypervisor> Drop for SnapshotCleanupGuard<'a, H> {
                 domain_name = %self.domain_name,
                 "Snapshot cleanup guard triggered; executing rollback blockcommit on active snapshots"
             );
-            self.snapshots.iter().fold((), |(), snapshot| {
-                let blockcommit_result = self.hypervisor.blockcommit(
-                    &self.domain_name,
-                    &snapshot.target_device,
-                    Some(&snapshot.base_path),
-                    Some(&snapshot.snapshot_path),
-                    true,
-                    true,
-                );
-
-                if let Err(error) = blockcommit_result {
-                    tracing::error!(
-                        domain_name = %self.domain_name,
-                        target_device = %snapshot.target_device,
-                        error = %error,
-                        "Failed to execute rollback blockcommit during snapshot cleanup guard drop"
+            let cleanup_results: Vec<_> = self
+                .snapshots
+                .iter()
+                .map(|snapshot| {
+                    let blockcommit_result = self.hypervisor.blockcommit(
+                        &self.domain_name,
+                        &snapshot.target_device,
+                        Some(&snapshot.base_path),
+                        Some(&snapshot.snapshot_path),
+                        true,
+                        true,
                     );
-                }
-            });
+
+                    if let Err(ref error) = blockcommit_result {
+                        tracing::error!(
+                            domain_name = %self.domain_name,
+                            target_device = %snapshot.target_device,
+                            error = %error,
+                            "Failed to execute rollback blockcommit during snapshot cleanup guard drop"
+                        );
+                    }
+
+                    blockcommit_result
+                })
+                .collect();
+            drop(cleanup_results);
         }
     }
 }

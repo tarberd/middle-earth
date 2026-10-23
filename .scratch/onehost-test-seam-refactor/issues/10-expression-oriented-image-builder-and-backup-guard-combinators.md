@@ -4,8 +4,8 @@
 
 **Blocked by:** 09: Pure State Snapshot and Running-State Lifecycle Transitions in FakeHypervisor
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Image builder validates OEMDRV existence once using an expression-oriented combinator with zero early `return` statements and no redundant `inspect_image` check on the OEMDRV ISO.
-- [ ] Stale `BuildScratchGuard` comments are removed from image builder tests.
-- [ ] Backup snapshot transaction guard cleanup uses a value-producing iterator combinator instead of `.fold((), ...)`.
+- [x] Image builder validates OEMDRV existence once using an expression-oriented combinator with zero early `return` statements and no redundant `inspect_image` check on the OEMDRV ISO.
+- [x] Stale `BuildScratchGuard` comments are removed from image builder tests.
+- [x] Backup snapshot transaction guard cleanup uses a value-producing iterator combinator instead of `.fold((), ...)`.

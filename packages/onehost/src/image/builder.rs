@@ -244,11 +244,13 @@ impl<'a> ImageBuilder<'a> {
             }
         })?;
 
-        if !flavor_config.oemdrv_path.exists() {
-            return Err(ImageBuilderError::OemdrvNotFound {
+        flavor_config
+            .oemdrv_path
+            .exists()
+            .then_some(())
+            .ok_or_else(|| ImageBuilderError::OemdrvNotFound {
                 path: flavor_config.oemdrv_path.clone(),
-            });
-        }
+            })?;
 
         let content_hash = self
             .storage
@@ -281,16 +283,9 @@ impl<'a> ImageBuilder<'a> {
             // 3. Locate required Windows installation ISO
             let win_iso_path = self.resolve_iso_path(manifest, image_tag, options)?;
 
-            // 4. Verify OEMDRV path exists
             let oemdrv_path = &flavor_metadata.oemdrv_nix_store_path;
-            let oemdrv_exists = self.storage.inspect_image(oemdrv_path).is_ok();
-            oemdrv_exists
-                .then_some(())
-                .ok_or_else(|| ImageBuilderError::OemdrvNotFound {
-                    path: oemdrv_path.clone(),
-                })?;
 
-            // 5. Allocate ephemeral scratch isolation directory
+            // 4. Allocate ephemeral scratch isolation directory
             let scratch_directory = match options.scratch_dir {
                 Some(ref custom_directory) => custom_directory.clone(),
                 None => {
@@ -317,7 +312,7 @@ impl<'a> ImageBuilder<'a> {
 
             std::fs::create_dir_all(&scratch_directory)?;
 
-            // 6. Create 64GB ephemeral build disk in scratch directory
+            // 5. Create 64GB ephemeral build disk in scratch directory
             self.storage
                 .create_empty_disk(&scratch_disk_path, 64 * 1024 * 1024 * 1024)?;
 
@@ -383,11 +378,11 @@ impl<'a> ImageBuilder<'a> {
                 .join(temporary_master_filename);
 
             let build_steps_result = (|| -> Result<(), ImageBuilderError> {
-                // 7. Initialize OVMF NVRAM vars in scratch directory
+                // 6. Initialize OVMF NVRAM vars in scratch directory
                 self.storage
                     .initialize_nvram(&manifest.storage.nvram_template, &ovmf_vars_path)?;
 
-                // 8. Execute headless QEMU installation VM with TPM emulator
+                // 7. Execute headless QEMU installation VM with TPM emulator
                 tracing::info!(
                     tag = %image_tag,
                     "Launching headless QEMU builder VM for automated Windows installation"
@@ -398,7 +393,7 @@ impl<'a> ImageBuilder<'a> {
                     &qemu_arguments,
                 )?;
 
-                // 9. Atomic Master Promotion Sequence
+                // 8. Atomic Master Promotion Sequence
                 tracing::info!(
                     destination = %temporary_master_path.display(),
                     "Compressing and staging raw build disk to temporary golden master"

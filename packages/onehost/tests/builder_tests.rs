@@ -538,7 +538,7 @@ fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
     // 2. Temporary staged master was NEVER created / does not exist
     assert!(!fixture.temporary_master_path().exists());
 
-    // 3. Scratch disk must be deleted by BuildScratchGuard
+    // 3. Scratch disk must be deleted on failure
     assert!(!fixture.scratch_disk_path().exists());
 
     // 4. Depot store directory remains completely empty
