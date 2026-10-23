@@ -8,7 +8,7 @@ use onehost::image::builder::{
     ImageBuildOptions, ImageBuildOutcome, ImageBuilder, ImageBuilderError,
 };
 use onehost::image::tag::{FlavorResolutionError, ImageTagSpecification};
-use onehost::process::mock::{MockProcessRunner, RecordedProcessAction};
+use onehost::process::mock::MockProcessRunner;
 use onehost::storage::{QemuImgStorage, execute_compute_content_hash};
 
 pub struct BuilderTestFixture {
@@ -98,10 +98,21 @@ impl BuilderTestFixture {
             self.content_hash
         ))
     }
+
+    fn temporary_master_path(&self) -> PathBuf {
+        self.depot_store_directory.join(format!(
+            "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2.tmp",
+            self.content_hash
+        ))
+    }
+
+    fn scratch_disk_path(&self) -> PathBuf {
+        self.scratch_directory.join("build-disk.qcow2")
+    }
 }
 
 #[test]
-fn test_builder_already_existing_master_returns_early_without_process_spawning() {
+fn test_builder_already_existing_master_returns_early_without_modifying_storage() {
     let fixture = BuilderTestFixture::new();
     let golden_master_path = fixture.golden_master_path();
 
@@ -109,6 +120,9 @@ fn test_builder_already_existing_master_returns_early_without_process_spawning()
     storage
         .create_empty_disk(&golden_master_path, 1024 * 1024)
         .expect("create golden master disk");
+
+    let initial_metadata = std::fs::metadata(&golden_master_path).expect("read metadata");
+    let initial_modified = initial_metadata.modified().expect("read modified time");
 
     let runner = MockProcessRunner::new();
 
@@ -126,8 +140,24 @@ fn test_builder_already_existing_master_returns_early_without_process_spawning()
         }
     );
 
-    // Assert zero external processes were spawned
-    assert!(runner.recorded_actions().is_empty());
+    // Verify existing master is retained and unmodified
+    assert!(golden_master_path.exists());
+    let current_metadata = std::fs::metadata(&golden_master_path).expect("read current metadata");
+    assert_eq!(
+        initial_modified,
+        current_metadata.modified().expect("read current modified time")
+    );
+
+    // Verify scratch directory has no build artifacts
+    assert!(!fixture.scratch_disk_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+
+    // Verify depot store contains only the initial golden master
+    let depot_store_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert_eq!(depot_store_entries, vec![golden_master_path]);
 }
 
 #[test]
@@ -163,7 +193,16 @@ fn test_builder_missing_iso_fails_fast_with_typed_error() {
         other_error => unreachable!("expected IsoNotFound, got: {other_error:?}"),
     }
 
-    assert!(runner.recorded_actions().is_empty());
+    // Verify no build artifacts or temporary files were created
+    assert!(!fixture.golden_master_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+    assert!(!fixture.scratch_disk_path().exists());
+
+    let depot_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert!(depot_entries.is_empty());
 }
 
 #[test]
@@ -194,6 +233,17 @@ fn test_builder_unregistered_flavor_fails_fast() {
         }
         other_error => unreachable!("expected UnknownFlavor, got: {other_error:?}"),
     }
+
+    // Verify no build artifacts or temporary files were created
+    assert!(!fixture.golden_master_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+    assert!(!fixture.scratch_disk_path().exists());
+
+    let depot_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert!(depot_entries.is_empty());
 }
 
 #[test]
@@ -221,6 +271,17 @@ fn test_builder_missing_oemdrv_fails_fast() {
         }
         other_error => unreachable!("expected OemdrvNotFound, got: {other_error:?}"),
     }
+
+    // Verify no build artifacts or temporary files were created
+    assert!(!fixture.golden_master_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+    assert!(!fixture.scratch_disk_path().exists());
+
+    let depot_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert!(depot_entries.is_empty());
 }
 
 #[test]
@@ -260,20 +321,22 @@ fn test_builder_atomic_promotion_sequence_and_scratch_cleanup() {
         }
     }
 
-    // Verify filesystem state:
-    // 1. Golden master promoted and exists
+    // 1. Golden master promoted and exists on filesystem
     assert!(expected_master_path.exists());
 
-    // 2. Scratch disk cleaned up
-    let scratch_disk_path = fixture.scratch_directory.join("build-disk.qcow2");
-    assert!(!scratch_disk_path.exists());
+    // 2. Validate image structure, format, and size via QemuImgStorage inspection
+    let inspected = storage
+        .inspect_image(&expected_master_path)
+        .expect("inspect golden master");
+    assert_eq!(inspected.format, "qcow2");
+    assert_eq!(inspected.virtual_size_bytes, 64 * 1024 * 1024 * 1024);
+    assert!(inspected.backing_file.is_none());
+    assert!(inspected.actual_size_bytes > 0);
 
-    // 3. Temporary master cleaned up / moved
-    let temporary_master_path = fixture.depot_store_directory.join(format!(
-        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2.tmp",
-        fixture.content_hash
-    ));
-    assert!(!temporary_master_path.exists());
+    // 3. Verify image integrity with qemu-img check
+    storage
+        .check_image(&expected_master_path)
+        .expect("promoted golden master integrity check");
 
     // 4. Strict read-only permissions (0444) on promoted golden master
     #[cfg(unix)]
@@ -285,36 +348,96 @@ fn test_builder_atomic_promotion_sequence_and_scratch_cleanup() {
         assert_eq!(permissions.mode() & 0o777, 0o444);
     }
 
-    // Verify process actions:
-    // 1. spawn_daemon("swtpm")
-    // 2. execute("qemu-system-x86_64")
-    // 3. kill_daemon
-    let process_actions = runner.recorded_actions();
+    // 5. Scratch disk and temporary staging files cleaned up
+    assert!(!fixture.scratch_disk_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
 
-    let spawned_swtpm = process_actions.iter().any(|action| {
-        matches!(action, RecordedProcessAction::SpawnDaemon { program, .. } if program == "swtpm")
-    });
-    assert!(spawned_swtpm);
+    // 6. Depot store contains only the final promoted master
+    let depot_store_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert_eq!(depot_store_entries, vec![expected_master_path]);
+}
 
-    let executed_qemu = process_actions.iter().any(|action| {
-        matches!(action, RecordedProcessAction::Execute { program, .. } if program == "qemu-system-x86_64")
-    });
-    assert!(executed_qemu);
+#[test]
+fn test_builder_force_flag_rebuilds_and_overwrites_existing_master() {
+    let fixture = BuilderTestFixture::new();
+    let golden_master_path = fixture.golden_master_path();
 
-    let killed_daemon = process_actions
-        .iter()
-        .any(|action| matches!(action, RecordedProcessAction::KillDaemon { .. }));
-    assert!(killed_daemon);
+    let storage = QemuImgStorage::new();
+    storage
+        .create_empty_disk(&golden_master_path, 1024 * 1024)
+        .expect("create initial small golden master");
+
+    let initial_inspection = storage
+        .inspect_image(&golden_master_path)
+        .expect("inspect initial disk");
+    assert_eq!(initial_inspection.virtual_size_bytes, 1024 * 1024);
+
+    let runner = MockProcessRunner::new();
+    let builder = ImageBuilder::new(&storage, &runner);
+    let options = ImageBuildOptions {
+        force: true,
+        scratch_dir: Some(fixture.scratch_directory.clone()),
+        iso_path: None,
+        memory_mb: 8192,
+        cpu_count: 8,
+    };
+
+    let outcome = builder
+        .build_image(&fixture.manifest, &fixture.image_tag, &options)
+        .expect("forced rebuild succeeds");
+
+    match outcome {
+        ImageBuildOutcome::Built {
+            golden_master_path: outcome_path,
+            virtual_size_bytes,
+            archive_size_bytes,
+        } => {
+            assert_eq!(outcome_path, golden_master_path);
+            assert_eq!(virtual_size_bytes, 64 * 1024 * 1024 * 1024);
+            assert!(archive_size_bytes > 0);
+        }
+        ImageBuildOutcome::AlreadyExists { .. } => {
+            unreachable!("expected Built outcome with force: true");
+        }
+    }
+
+    // Verify rebuilt golden master replaced the old disk with the 64GB image
+    assert!(golden_master_path.exists());
+    let inspected = storage
+        .inspect_image(&golden_master_path)
+        .expect("inspect rebuilt golden master");
+    assert_eq!(inspected.format, "qcow2");
+    assert_eq!(inspected.virtual_size_bytes, 64 * 1024 * 1024 * 1024);
+    assert!(inspected.backing_file.is_none());
+
+    // Verify readonly permissions
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::metadata(&golden_master_path)
+            .expect("metadata")
+            .permissions();
+        assert_eq!(permissions.mode() & 0o777, 0o444);
+    }
+
+    // Verify scratch disk and temporary files cleaned up
+    assert!(!fixture.scratch_disk_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+
+    let depot_store_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert_eq!(depot_store_entries, vec![golden_master_path]);
 }
 
 #[test]
 fn test_builder_corruption_check_failure_aborts_promotion_and_cleans_up_tmp() {
     let fixture = BuilderTestFixture::new();
-
-    let temporary_master_path = fixture.depot_store_directory.join(format!(
-        "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2.tmp",
-        fixture.content_hash
-    ));
+    let temporary_master_path = fixture.temporary_master_path();
 
     // Create wrapper script that fails when check is invoked
     let qemu_img_bin = std::env::var_os("PATH")
@@ -368,9 +491,18 @@ exec "{qemu_img_bin}" "$@"
     }
 
     // Assert that the final golden master was NEVER created
-    let golden_master_path = fixture.golden_master_path();
-    assert!(!golden_master_path.exists());
+    assert!(!fixture.golden_master_path().exists());
+    // Staging temporary master must be unlinked
     assert!(!temporary_master_path.exists());
+    // Scratch disk must be cleaned up
+    assert!(!fixture.scratch_disk_path().exists());
+
+    // Depot store directory has no leftover files
+    let depot_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert!(depot_entries.is_empty());
 }
 
 #[test]
@@ -405,14 +537,20 @@ fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
         other_error => unreachable!("expected QemuExecutionFailed, got: {other_error:?}"),
     }
 
-    // swtpm daemon must have been killed
-    let killed_daemon = runner
-        .recorded_actions()
-        .iter()
-        .any(|action| matches!(action, RecordedProcessAction::KillDaemon { .. }));
-    assert!(killed_daemon);
+    // Verify observable filesystem state on failure:
+    // 1. Final golden master was NEVER created
+    assert!(!fixture.golden_master_path().exists());
 
-    // Scratch disk must be deleted
-    let scratch_disk_path = fixture.scratch_directory.join("build-disk.qcow2");
-    assert!(!scratch_disk_path.exists());
+    // 2. Temporary staged master was NEVER created / does not exist
+    assert!(!fixture.temporary_master_path().exists());
+
+    // 3. Scratch disk must be deleted by BuildScratchGuard
+    assert!(!fixture.scratch_disk_path().exists());
+
+    // 4. Depot store directory remains completely empty
+    let depot_entries: Vec<PathBuf> = std::fs::read_dir(&fixture.depot_store_directory)
+        .expect("read depot store directory")
+        .map(|entry| entry.expect("read dir entry").path())
+        .collect();
+    assert!(depot_entries.is_empty());
 }

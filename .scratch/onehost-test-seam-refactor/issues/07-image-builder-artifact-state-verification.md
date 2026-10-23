@@ -4,7 +4,7 @@
 
 **Blocked by:** 06: Purge Mock Hypervisor from Production Sources
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Image builder tests evaluate observable file artifacts, permissions, and directory state.
-- [ ] Assertions on recorded process action enum logs are eliminated from image builder tests.
+- [x] Image builder tests evaluate observable file artifacts, permissions, and directory state.
+- [x] Assertions on recorded process action enum logs are eliminated from image builder tests.
