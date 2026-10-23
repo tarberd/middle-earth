@@ -4,7 +4,7 @@
 
 **Blocked by:** 11: Eliminate Storage Middle-Man Delegation and Deduplicate Destroyer Tests
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The test-seam refactoring spec reflects the pure `snapshot()` inspection model on `FakeHypervisor`, removal of unused `ApplyOptions`, expression-oriented scratch cleanup in `ImageBuilder`, and functional Rust lint enforcement.
-- [ ] The declarative reconciliation spec references the `onehost-test-support` workspace crate rather than the outdated `tests/common/fake_hypervisor.rs` path.
+- [x] The test-seam refactoring spec reflects the pure `snapshot()` inspection model on `FakeHypervisor`, removal of unused `ApplyOptions`, expression-oriented scratch cleanup in `ImageBuilder`, and functional Rust lint enforcement.
+- [x] The declarative reconciliation spec references the `onehost-test-support` workspace crate rather than the outdated `tests/common/fake_hypervisor.rs` path.

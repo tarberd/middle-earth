@@ -99,7 +99,7 @@ Tests must evaluate observable external system behavior and contracts, not inter
 
 #### Seam 2: Libvirt Hypervisor Boundary Port (`FakeHypervisor` State Adapter)
 - **Seam Location**: The boundary between `onehost` and Libvirt hypervisor daemon.
-- **Components Tested**: `DomainLifecycleApplier`, `DomainLifecycleDestroyer`, and `DomainLifecyclePlanner` operating against an in-memory `FakeHypervisor` test double (`tests/common/fake_hypervisor.rs`). (Note: Libvirt's `test:///default` driver is unviable as it is ephemeral across individual CLI processes and rejects Windows KVM XML topologies).
+- **Components Tested**: `DomainLifecycleApplier`, `DomainLifecycleDestroyer`, and `DomainLifecyclePlanner` operating against an in-memory `FakeHypervisor` test double in the `onehost-test-support` workspace crate (`packages/onehost/test-support/src/fake_hypervisor.rs`). (Note: Libvirt's `test:///default` driver is unviable as it is ephemeral across individual CLI processes and rejects Windows KVM XML topologies).
 - **Observable State Behaviors Validated**:
   - Real domain definitions with embedded `<metadata><onehost:instance managed="true"/></metadata>` blocks.
   - Domain enumeration, state queries, and XML retrieval via observable state (no interaction spies).

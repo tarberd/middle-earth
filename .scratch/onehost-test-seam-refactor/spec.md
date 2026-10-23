@@ -35,7 +35,7 @@ Refactor `onehost`'s test seams in accordance with the Pure Core / Imperative Sh
 
 ### 1. Storage Seam Consolidation
 - Collapse the storage trait into the concrete QEMU disk image storage manager.
-- Remove the generic storage type parameter (`S: StorageManager`) across all domain lifecycle structs (applier, destroyer, planner), backup engines (backup engine, restore engine), and CLI entry points.
+- Remove the generic storage type parameter (`S: StorageManager`) across all domain lifecycle structs (applier, destroyer, planner), backup engines (backup engine, restore engine), and CLI entry points; removing `S: StorageManager` across domain lifecycle structs also removes dead/duplicate `ApplyOptions` on `DomainLifecycleApplier` to satisfy strict `dead_code = "deny"`.
 - Delete the in-memory mock storage manager from production sources.
 - Direct all storage unit and integration test fixtures to execute against temporary directories created via `tempfile::tempdir()`.
 
@@ -43,7 +43,8 @@ Refactor `onehost`'s test seams in accordance with the Pure Core / Imperative Sh
 - Relocate the in-memory hypervisor test double from production crate sources into a dedicated dev-dependency workspace crate (`packages/onehost/test-support`, crate name `onehost-test-support`).
 - Purge all call-recording action enums and recorded action vectors.
 - Maintain domain state as an in-memory mapping of domain names to their running state, XML definitions, block device mappings, and pool paths.
-- Provide state inspection helper methods for tests (e.g. querying defined domains or checking active states) through public methods on `FakeHypervisor`.
+- Expose a pure `snapshot()` state-projection method on `FakeHypervisor` returning an immutable `FakeHypervisorState` value with public fields (`domains: HashMap<String, FakeDomainEntry>`, `storage_pools: HashMap<String, String>`) rather than individual OOP getter methods.
+- Ensure `FakeHypervisor` preserves `DomainState::Running` on XML redefinition (`define_domain`) and rejects undefining `Running` domains until shut down or destroyed.
 
 ### 3. Elimination of Call-Spy Assertions Across Test Suites
 - Update lifecycle, planner, and disaster recovery tests to replace assertions on recorded storage and hypervisor action vectors with state assertions.
@@ -53,10 +54,19 @@ Refactor `onehost`'s test seams in accordance with the Pure Core / Imperative Sh
 ### 4. Process Execution Simplification
 - Remove the generic process runner trait and its associated mock implementation and recorded process action enum.
 - Simplify the image builder to execute child processes directly using standard system process utilities.
+- Replace mutable `Drop` scratch guards (`BuildScratchGuard`) in `ImageBuilder` with expression-oriented helper methods and `.inspect_err(...)` cleanup to uphold the zero-`&mut self` invariant.
 
 ### 5. Architectural Boundary Preservation
 - Maintain `trait Hypervisor` as the sole external system boundary port in the codebase, implemented by `VirshHypervisor` in production and `FakeHypervisor` in test fixtures.
 - Preserve the Pure Core / Imperative Shell architecture: planners, template synthesis engines, and XML AST manipulations remain pure functions with zero side effects.
+
+### 6. Functional Rust Coding Standards & Lint Enforcement
+- Enforce workspace-wide functional Rust idioms codified in `CODING_STANDARDS.md` and `docs/adr/0010-functional-rust-idioms.md` across workspace crates (`packages/onehost` and `packages/onehost/test-support`).
+- Configure strict workspace compiler and Clippy lints in `packages/onehost/Cargo.toml` and `packages/onehost/clippy.toml`:
+  - Rust compiler lints: deny `dead_code`, `unused`, `unused_variables`, `unused_mut`, `unused_imports`, `unreachable_code`, `unused_qualifications`.
+  - Clippy lints: deny `unwrap_used`, `panic`, `needless_for_each`, `match_same_arms`, `used_underscore_binding`, `pub_underscore_fields`, `no_effect_underscore_binding`, `unnecessary_wraps`, `disallowed_methods`, `allow_attributes`.
+  - Clippy disallowed methods: ban `Iterator::for_each` and `Iterator::try_for_each` in favor of value-producing iterator combinators (`map`, `filter`, `fold`, `try_fold`, `collect`).
+- Update production modules (`src/xdg.rs`, `src/config/validation.rs`) and all test suites to comply with zero-`unwrap`, zero-mutation (`&mut self`), expression-oriented combinators, and zero dead code (forbidding unused underscore-prefixed bindings or `#[allow(...)]` attributes).
 
 ## Testing Decisions
 
@@ -77,7 +87,7 @@ Tests evaluate observable external behavior and contracts, not internal implemen
 - Modifying domain template XML generation or Nix packaging.
 - Modifying instance manifest schemas or CLI command flags.
 - Modifying core domain XML diffing algorithms or planning heuristics.
-- Modifying or implementing feature tickets in `.scratch/onehost-declarative-reconciliation/`.
+- Implementing feature tickets in `.scratch/onehost-declarative-reconciliation/` (beyond aligning its test-seam references in spec.md).
 
 ## Further Notes
 - Governed by amended [ADR-0010 (Functional Rust Idioms and Pure Core Architecture)](docs/adr/0010-functional-rust-idioms.md) and repository coding standards in [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
