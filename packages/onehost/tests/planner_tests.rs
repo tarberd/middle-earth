@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use onehost::config::model::{
     FlavorConfiguration, InstanceConfiguration, OnehostManifest, StorageDirectoriesConfiguration,
 };
-use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{BlockDeviceInfo, DomainInfo, DomainState};
+use onehost_test_support::FakeHypervisor;
 use onehost::image::tag::FlavorResolutionError;
 use onehost::lifecycle::{
     DanglingSnapshotAlert, DomainLifecyclePlanner, InstancePlanAction, LifecycleError,
@@ -133,7 +133,7 @@ impl PlannerTestFixture {
 #[test]
 fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -203,7 +203,7 @@ fn test_plan_creates_new_domain_when_unregistered_in_hypervisor() {
 #[test]
 fn test_plan_emits_noop_when_live_state_matches_declared_state() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -266,7 +266,7 @@ fn test_plan_emits_noop_when_live_state_matches_declared_state() {
 #[test]
 fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -338,7 +338,7 @@ fn test_plan_emits_update_domain_xml_when_xml_drift_detected() {
 #[test]
 fn test_plan_emits_recreate_when_base_image_hash_changes() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -416,7 +416,7 @@ fn test_plan_emits_recreate_when_base_image_release_tuple_changes_with_identical
             .expect("image tag parsing");
     }
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -495,7 +495,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
         instance.pool = "bulk-data".to_string();
     }
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", fixture.default_pool_xml())
         .with_pool_xml("bulk-data", fixture.bulk_pool_xml());
 
@@ -591,7 +591,7 @@ fn test_plan_emits_relocate_storage_pool_when_pool_differs_with_unchanged_hash()
 #[test]
 fn test_plan_detects_dangling_snapshot_from_interrupted_backup() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -649,7 +649,7 @@ fn test_plan_returns_error_when_flavor_not_registered() {
             .expect("image tag parsing");
     }
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -675,7 +675,7 @@ fn test_plan_returns_error_when_flavor_not_registered() {
 #[test]
 fn test_plan_propagates_hypervisor_pool_resolution_error() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new();
+    let hypervisor = FakeHypervisor::new();
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage)
         .with_template_resolver(|_| Ok(SAMPLE_TEMPLATE_XML.to_string()));
@@ -694,7 +694,7 @@ fn test_plan_propagates_hypervisor_pool_resolution_error() {
 #[test]
 fn test_plan_propagates_domain_synthesis_error_on_invalid_template() {
     let fixture = PlannerTestFixture::new();
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
 
     let planner = DomainLifecyclePlanner::new(&hypervisor, &fixture.storage).with_template_resolver(
         |_| Ok("<invalid>Not a domain template</invalid>".to_string()),

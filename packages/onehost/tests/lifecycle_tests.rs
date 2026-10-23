@@ -1,13 +1,13 @@
 use tempfile::tempdir;
 
 use onehost::config::loader::ManifestLoader;
-use onehost::hypervisor::mock::{MockHypervisor, RecordedHypervisorAction};
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
 use onehost::lifecycle::LifecycleError;
 use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{InstancePlanAction, OnehostPlan};
 use onehost::storage::qemu_img::QemuImgStorage;
+use onehost_test_support::FakeHypervisor;
 
 const SAMPLE_MANIFEST_JSON: &str = r#"{
   "$schema": "https://middle-earth.internal/schemas/onehost.v1.json",
@@ -68,7 +68,7 @@ fn test_apply_create_provisions_storage_and_registers_domain() {
         pool_directory.display()
     );
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", pool_xml);
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", pool_xml);
 
     let plan = OnehostPlan {
         actions: vec![InstancePlanAction::Create {
@@ -116,23 +116,17 @@ fn test_apply_create_provisions_storage_and_registers_domain() {
         b"NVRAM_TEMPLATE_VARS"
     );
 
-    // Verify hypervisor actions
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::DefineDomain {
-            domain_xml: CONCRETE_XML.to_string(),
-        })
+    // Verify observable hypervisor state
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Shutoff)
     );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "default".to_string(),
-        })
+    assert_eq!(
+        hypervisor.domain_xml("win11-gollum"),
+        Some(CONCRETE_XML.to_string())
     );
+    assert!(hypervisor.has_storage_pool("default"));
 }
 
 #[test]
@@ -142,13 +136,23 @@ fn test_apply_update_domain_xml_redefines_domain() {
         "<pool type='dir'><name>default</name><target><path>{}</path></target></pool>",
         pool_directory.path().display()
     );
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", pool_xml);
+    let initial_domain_info = DomainInfo {
+        name: "win11-gollum".to_string(),
+        state: DomainState::Running,
+        vcpu_count: Some(16),
+        memory_kib: Some(16777216),
+        autostart: true,
+    };
+    let hypervisor = FakeHypervisor::new()
+        .with_pool_xml("default", pool_xml)
+        .with_domain(initial_domain_info, CONCRETE_XML);
     let storage = QemuImgStorage::new();
 
+    let updated_xml = "<domain><name>win11-gollum</name><vcpu>32</vcpu></domain>";
     let plan = OnehostPlan {
         actions: vec![InstancePlanAction::UpdateDomainXml {
             instance_name: "win11-gollum".to_string(),
-            concrete_xml: "<domain><name>win11-gollum</name><vcpu>32</vcpu></domain>".to_string(),
+            concrete_xml: updated_xml.to_string(),
             diff_summary: "Value mismatch at /domain/vcpu".to_string(),
         }],
         dangling_snapshots: Vec::new(),
@@ -159,16 +163,10 @@ fn test_apply_update_domain_xml_redefines_domain() {
         .apply(&plan)
         .expect("apply update should succeed");
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::DefineDomain {
-            domain_xml: "<domain><name>win11-gollum</name><vcpu>32</vcpu></domain>".to_string(),
-        })
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_xml("win11-gollum"),
+        Some(updated_xml.to_string())
     );
 }
 
@@ -214,7 +212,7 @@ fn test_apply_recreate_succeeds_with_auto_approve() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", pool_xml)
         .with_domain(domain_info, CONCRETE_XML);
 
@@ -259,33 +257,17 @@ fn test_apply_recreate_succeeds_with_auto_approve() {
         b"NEW_NVRAM_TEMPLATE"
     );
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::ShutdownDomain {
-            domain_name: "win11-gollum".to_string(),
-        })
+    // Verify observable hypervisor state
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Shutoff)
     );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::UndefineDomain {
-            domain_name: "win11-gollum".to_string(),
-            cleanup_nvram: true,
-        })
+    assert_eq!(
+        hypervisor.domain_xml("win11-gollum"),
+        Some(CONCRETE_XML.to_string())
     );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::DefineDomain {
-            domain_xml: CONCRETE_XML.to_string(),
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "default".to_string(),
-        })
-    );
+    assert!(hypervisor.has_storage_pool("default"));
 }
 
 #[test]
@@ -336,7 +318,7 @@ fn test_apply_relocate_storage_pool_moves_overlay_and_rebases() {
         target_overlay_path.display()
     );
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", default_pool_xml)
         .with_pool_xml("bulk-data", bulk_pool_xml)
         .with_domain(domain_info, CONCRETE_XML);
@@ -381,32 +363,18 @@ fn test_apply_relocate_storage_pool_moves_overlay_and_rebases() {
     assert!(storage.check_image(&target_overlay_path).is_ok());
     assert!(storage.check_image(&target_base_cache_path).is_ok());
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::ShutdownDomain {
-            domain_name: "win11-gollum".to_string(),
-        })
+    // Verify observable hypervisor state
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Shutoff)
     );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::DefineDomain {
-            domain_xml: concrete_xml,
-        })
+    assert_eq!(
+        hypervisor.domain_xml("win11-gollum"),
+        Some(concrete_xml)
     );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "default".to_string(),
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "bulk-data".to_string(),
-        })
-    );
+    assert!(hypervisor.has_storage_pool("default"));
+    assert!(hypervisor.has_storage_pool("bulk-data"));
 }
 
 #[test]
@@ -416,7 +384,16 @@ fn test_apply_delete_action_deprovisions() {
         "<pool type='dir'><name>default</name><target><path>{}</path></target></pool>",
         pool_directory.path().display()
     );
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", pool_xml);
+    let domain_info = DomainInfo {
+        name: "win11-gollum".to_string(),
+        state: DomainState::Running,
+        vcpu_count: Some(16),
+        memory_kib: Some(16777216),
+        autostart: true,
+    };
+    let hypervisor = FakeHypervisor::new()
+        .with_pool_xml("default", pool_xml)
+        .with_domain(domain_info, CONCRETE_XML);
     let storage = QemuImgStorage::new();
 
     let delete_plan = OnehostPlan {
@@ -432,23 +409,9 @@ fn test_apply_delete_action_deprovisions() {
         .apply(&delete_plan)
         .expect("delete action should succeed");
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::UndefineDomain {
-            domain_name: "win11-gollum".to_string(),
-            cleanup_nvram: true,
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "default".to_string(),
-        })
-    );
+    assert!(!hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
+    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
 }
 
 #[test]
@@ -489,7 +452,7 @@ fn test_destroyer_graceful_shutdown_and_undefine() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", pool_xml)
         .with_domain(domain_info, CONCRETE_XML);
 
@@ -515,28 +478,9 @@ fn test_destroyer_graceful_shutdown_and_undefine() {
     assert_eq!(post_inspection.backing_file, Some(base_image_path));
     assert!(storage.check_image(&overlay_path).is_ok());
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::ShutdownDomain {
-            domain_name: "win11-gollum".to_string(),
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::UndefineDomain {
-            domain_name: "win11-gollum".to_string(),
-            cleanup_nvram: true,
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::PoolRefresh {
-            pool_name: "default".to_string(),
-        })
-    );
+    assert!(!hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
+    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
 }
 
 #[test]
@@ -577,7 +521,7 @@ fn test_destroyer_force_cuts_power_when_force_flag_is_set() {
         autostart: true,
     };
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", pool_xml)
         .with_domain(domain_info, CONCRETE_XML);
 
@@ -603,23 +547,9 @@ fn test_destroyer_force_cuts_power_when_force_flag_is_set() {
     assert_eq!(post_inspection.backing_file, Some(base_image_path));
     assert!(storage.check_image(&overlay_path).is_ok());
 
-    let hypervisor_actions = hypervisor
-        .state
-        .lock()
-        .expect("lock state")
-        .recorded_actions
-        .clone();
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::DestroyDomain {
-            domain_name: "win11-gollum".to_string(),
-        })
-    );
-    assert!(
-        hypervisor_actions.contains(&RecordedHypervisorAction::UndefineDomain {
-            domain_name: "win11-gollum".to_string(),
-            cleanup_nvram: true,
-        })
-    );
+    assert!(!hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
+    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
 }
 
 #[test]
@@ -649,9 +579,18 @@ fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
     assert_eq!(pre_inspection.backing_file, Some(base_image_path.clone()));
     assert!(storage.check_image(&overlay_path).is_ok());
 
+    let domain_info = DomainInfo {
+        name: "win11-gollum".to_string(),
+        state: DomainState::Running,
+        vcpu_count: Some(16),
+        memory_kib: Some(16777216),
+        autostart: true,
+    };
     let manifest =
         ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("load sample manifest");
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", pool_xml);
+    let hypervisor = FakeHypervisor::new()
+        .with_pool_xml("default", pool_xml)
+        .with_domain(domain_info, CONCRETE_XML);
 
     let destroyer = DomainLifecycleDestroyer::new(&hypervisor, &storage);
     destroyer
@@ -681,13 +620,17 @@ fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
         storage.check_image(&base_image_path).is_ok(),
         "base image integrity must remain intact"
     );
+
+    assert!(!hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
+    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
 }
 
 #[test]
 fn test_destroyer_returns_instance_not_declared_for_unregistered_instance() {
     let manifest =
         ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("load sample manifest");
-    let hypervisor = MockHypervisor::new();
+    let hypervisor = FakeHypervisor::new();
     let storage = QemuImgStorage::new();
 
     let destroyer = DomainLifecycleDestroyer::new(&hypervisor, &storage);
@@ -711,7 +654,7 @@ fn test_destroyer_idempotent_undefine_ignores_domain_not_found_but_propagates_hy
     );
 
     // Case 1: Domain does not exist in hypervisor -> idempotent success
-    let hypervisor_without_domain = MockHypervisor::new().with_pool_xml("default", pool_xml.clone());
+    let hypervisor_without_domain = FakeHypervisor::new().with_pool_xml("default", pool_xml.clone());
     let storage = QemuImgStorage::new();
     let destroyer = DomainLifecycleDestroyer::new(&hypervisor_without_domain, &storage);
 
@@ -720,9 +663,10 @@ fn test_destroyer_idempotent_undefine_ignores_domain_not_found_but_propagates_hy
         result.is_ok(),
         "destroying when domain is not found in hypervisor must succeed idempotently"
     );
+    assert!(!hypervisor_without_domain.is_domain_defined("win11-gollum"));
 
     // Case 2: Hypervisor undefine fails with fatal error -> bubbles up error
-    let hypervisor_with_error = MockHypervisor::new()
+    let hypervisor_with_error = FakeHypervisor::new()
         .with_pool_xml("default", pool_xml)
         .with_injected_domain_error("win11-gollum", "Libvirt daemon disconnected");
     let destroyer_error = DomainLifecycleDestroyer::new(&hypervisor_with_error, &storage);

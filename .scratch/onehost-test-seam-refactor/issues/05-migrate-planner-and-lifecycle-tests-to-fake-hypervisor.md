@@ -4,8 +4,8 @@
 
 **Blocked by:** 04: Shared State-Based Fake Hypervisor Test Fixture
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Domain lifecycle applier and destroyer tests use the shared fake hypervisor and assert on observable domain state.
-- [ ] Planner tests verify reconciliation actions using the shared fake hypervisor without interaction spies.
-- [ ] Pipeline integration tests execute end-to-end lifecycle verification against observable hypervisor state.
+- [x] Domain lifecycle applier and destroyer tests use the shared fake hypervisor and assert on observable domain state.
+- [x] Planner tests verify reconciliation actions using the shared fake hypervisor without interaction spies.
+- [x] Pipeline integration tests execute end-to-end lifecycle verification against observable hypervisor state.

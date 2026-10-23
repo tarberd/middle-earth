@@ -3,13 +3,13 @@ use std::io::Write;
 use tempfile::tempdir;
 
 use onehost::config::loader::ManifestLoader;
-use onehost::hypervisor::mock::MockHypervisor;
 use onehost::hypervisor::traits::{DomainState, Hypervisor};
 use onehost::lifecycle::LifecycleError;
 use onehost::lifecycle::applier::DomainLifecycleApplier;
 use onehost::lifecycle::destroyer::{DestroyOptions, DomainLifecycleDestroyer};
 use onehost::lifecycle::planner::{DomainLifecyclePlanner, InstancePlanAction};
 use onehost::storage::qemu_img::QemuImgStorage;
+use onehost_test_support::FakeHypervisor;
 
 const SAMPLE_TEMPLATE_XML: &str = r#"<domain type='kvm' xmlns:onehost='https://middle-earth.internal/onehost'>
   <name>TEMPLATE</name>
@@ -181,22 +181,11 @@ fn file_template_resolver(template_path: &std::path::Path) -> Result<String, Lif
     std::fs::read_to_string(template_path).map_err(LifecycleError::from)
 }
 
-fn count_pool_refreshes(hypervisor: &MockHypervisor, pool_name: &str) -> usize {
-    hypervisor
-        .state
-        .lock()
-        .expect("hypervisor state lock")
-        .refreshed_pools
-        .iter()
-        .filter(|refreshed_pool| *refreshed_pool == pool_name)
-        .count()
-}
-
 #[test]
 fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
     let workspace = TestWorkspace::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     // 1. Load manifest from real disk path
@@ -225,6 +214,7 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
         .expect("initial apply must succeed");
 
     // 4. Verify hypervisor and storage state
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
     let domain_info = hypervisor
         .domain_info("win11-gollum")
         .expect("domain must be registered in hypervisor");
@@ -282,7 +272,7 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
 fn test_end_to_end_template_drift_reconciliation_pipeline() {
     let workspace = TestWorkspace::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
@@ -321,6 +311,7 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
         .apply(&drift_plan)
         .expect("apply update");
 
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
     let updated_xml = hypervisor
         .dump_xml("win11-gollum", false)
         .expect("dump xml");
@@ -338,7 +329,7 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
 fn test_end_to_end_storage_pool_relocation_pipeline() {
     let workspace = TestWorkspace::new();
 
-    let hypervisor = MockHypervisor::new()
+    let hypervisor = FakeHypervisor::new()
         .with_pool_xml("default", workspace.default_pool_xml())
         .with_pool_xml("fast-nvme", workspace.nvme_pool_xml());
 
@@ -405,9 +396,14 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
         .expect("dump xml");
     assert!(updated_domain_xml.contains(&expected_new_overlay.display().to_string()));
 
-    // 7. Verify both pools refreshed
-    assert_eq!(count_pool_refreshes(&hypervisor, "default"), 2);
-    assert_eq!(count_pool_refreshes(&hypervisor, "fast-nvme"), 1);
+    // 7. Verify observable hypervisor and pool state
+    assert!(hypervisor.has_storage_pool("default"));
+    assert!(hypervisor.has_storage_pool("fast-nvme"));
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Shutoff)
+    );
 
     // 8. Subsequent plan is NoOp
     let post_relocation_plan = planner
@@ -423,7 +419,7 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
 fn test_end_to_end_recreate_pipeline() {
     let workspace = TestWorkspace::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
@@ -469,6 +465,12 @@ fn test_end_to_end_recreate_pipeline() {
     let success_result = applier.apply(&recreate_plan);
     assert!(success_result.is_ok());
 
+    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(
+        hypervisor.domain_state("win11-gollum"),
+        Some(DomainState::Shutoff)
+    );
+
     let overlay_path = workspace.default_pool_directory.join("win11-gollum.qcow2");
     assert!(overlay_path.exists());
     let overlay_inspection = storage
@@ -493,7 +495,7 @@ fn test_end_to_end_recreate_pipeline() {
 fn test_end_to_end_destroyer_lifecycle_pipeline() {
     let workspace = TestWorkspace::new();
 
-    let hypervisor = MockHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
+    let hypervisor = FakeHypervisor::new().with_pool_xml("default", workspace.default_pool_xml());
     let storage = QemuImgStorage::new();
 
     let manifest = ManifestLoader::load_from_path(&workspace.manifest_path).expect("load manifest");
@@ -537,6 +539,8 @@ fn test_end_to_end_destroyer_lifecycle_pipeline() {
 
     // 2. Verify domain undefined and overlay unlinked
     assert!(hypervisor.domain_info("win11-gollum").is_err());
+    assert!(!hypervisor.is_domain_defined("win11-gollum"));
+    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
     assert!(!overlay_path.exists(), "overlay disk must be unlinked after destroy");
     assert!(storage.inspect_image(&overlay_path).is_err());
     assert!(
