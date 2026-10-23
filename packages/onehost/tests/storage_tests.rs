@@ -4,10 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
-use onehost::storage::{
-    QemuImgStorage, StorageError, execute_compute_content_hash,
-    execute_cross_device_streaming_move, execute_safe_file_move, parse_qemu_img_info_json,
-};
+use onehost::storage::{QemuImgStorage, StorageError, parse_qemu_img_info_json};
 
 const SAMPLE_QEMU_IMG_INFO_JSON: &str = r#"
 {
@@ -29,7 +26,7 @@ const SAMPLE_QEMU_IMG_INFO_JSON: &str = r#"
 "#;
 
 #[test]
-fn test_execute_cross_device_streaming_move() {
+fn test_qemu_img_storage_move_file_cross_device() {
     let source_directory = tempdir().expect("Failed to create source directory");
     let destination_directory = tempdir().expect("Failed to create destination directory");
 
@@ -39,7 +36,9 @@ fn test_execute_cross_device_streaming_move() {
     let test_payload = b"QCOW2_TEST_IMAGE_HEADER_AND_CLUSTERS_REPRESENTATIVE_PAYLOAD";
     fs::write(&source_path, test_payload).expect("Failed to write test source payload");
 
-    execute_cross_device_streaming_move(&source_path, &destination_path)
+    let storage = QemuImgStorage::new();
+    storage
+        .move_file_cross_device(&source_path, &destination_path)
         .expect("Streaming move should succeed");
 
     assert!(
@@ -56,12 +55,13 @@ fn test_execute_cross_device_streaming_move() {
 }
 
 #[test]
-fn test_execute_cross_device_streaming_move_nonexistent_source() {
+fn test_qemu_img_storage_move_file_cross_device_nonexistent_source() {
     let destination_directory = tempdir().expect("Failed to create destination directory");
     let non_existent_source = Path::new("/tmp/non_existent_source_path_for_test.qcow2");
     let destination_path = destination_directory.path().join("destination.qcow2");
 
-    let result = execute_cross_device_streaming_move(non_existent_source, &destination_path);
+    let storage = QemuImgStorage::new();
+    let result = storage.move_file_cross_device(non_existent_source, &destination_path);
     assert!(matches!(
         result,
         Err(StorageError::SourceFileNotFound { .. })
@@ -69,14 +69,15 @@ fn test_execute_cross_device_streaming_move_nonexistent_source() {
 }
 
 #[test]
-fn test_execute_cross_device_streaming_move_nonexistent_destination_parent() {
+fn test_qemu_img_storage_move_file_cross_device_nonexistent_destination_parent() {
     let source_directory = tempdir().expect("Failed to create source directory");
     let source_path = source_directory.path().join("source.qcow2");
     fs::write(&source_path, b"dummy payload").expect("Failed to write source file");
 
     let non_existent_destination =
         Path::new("/tmp/non_existent_parent_dir_xyz123/destination.qcow2");
-    let result = execute_cross_device_streaming_move(&source_path, non_existent_destination);
+    let storage = QemuImgStorage::new();
+    let result = storage.move_file_cross_device(&source_path, non_existent_destination);
     assert!(matches!(
         result,
         Err(StorageError::DestinationDirectoryNotFound { .. })
@@ -233,24 +234,6 @@ fn test_storage_manager_move_file_safely_same_filesystem() {
     );
 }
 
-#[test]
-fn test_execute_safe_file_move_success() {
-    let temp_workspace = tempdir().expect("Failed to create temporary workspace");
-    let source_path = temp_workspace.path().join("source_direct.qcow2");
-    let destination_path = temp_workspace.path().join("destination_direct.qcow2");
-
-    fs::write(&source_path, b"DIRECT_SAFE_MOVE_DATA").expect("Failed to write source file");
-
-    execute_safe_file_move(&source_path, &destination_path)
-        .expect("Direct execute_safe_file_move should succeed");
-
-    assert!(!source_path.exists());
-    assert!(destination_path.exists());
-    assert_eq!(
-        fs::read(&destination_path).expect("Moved destination file should be readable"),
-        b"DIRECT_SAFE_MOVE_DATA"
-    );
-}
 
 #[test]
 fn test_qemu_img_storage_convert_thin_backup() {
@@ -378,7 +361,7 @@ fn test_qemu_img_storage_write_read_file_and_set_readonly() {
 }
 
 #[test]
-fn test_execute_compute_content_hash_streaming_and_deterministic_order() {
+fn test_qemu_img_storage_compute_content_hash_streaming_and_deterministic_order() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
     let oemdrv_path = temp_dir.path().join("oemdrv.iso");
     let virtio_path = temp_dir.path().join("virtio.iso");
@@ -398,9 +381,13 @@ fn test_execute_compute_content_hash_streaming_and_deterministic_order() {
     extra_isos_2.insert("tools".to_string(), tools_path.clone());
     extra_isos_2.insert("virtio".to_string(), virtio_path.clone());
 
-    let hash_1 = execute_compute_content_hash(&oemdrv_path, &extra_isos_1)
+    let storage = QemuImgStorage::new();
+
+    let hash_1 = storage
+        .compute_content_hash(&oemdrv_path, &extra_isos_1)
         .expect("Content hash calculation should succeed");
-    let hash_2 = execute_compute_content_hash(&oemdrv_path, &extra_isos_2)
+    let hash_2 = storage
+        .compute_content_hash(&oemdrv_path, &extra_isos_2)
         .expect("Content hash calculation should succeed");
 
     assert_eq!(
@@ -417,19 +404,13 @@ fn test_execute_compute_content_hash_streaming_and_deterministic_order() {
     let modified_oemdrv_path = temp_dir.path().join("oemdrv_modified.iso");
     fs::write(&modified_oemdrv_path, b"DIFFERENT_OEMDRV_PAYLOAD")
         .expect("Failed to write modified oemdrv");
-    let hash_3 = execute_compute_content_hash(&modified_oemdrv_path, &extra_isos_1)
+    let hash_3 = storage
+        .compute_content_hash(&modified_oemdrv_path, &extra_isos_1)
         .expect("Content hash calculation should succeed");
     assert_ne!(
         hash_1, hash_3,
         "Different content must produce different hash"
     );
-
-    // Test with QemuImgStorage delegates cleanly
-    let qemu_storage = QemuImgStorage::new();
-    let qemu_hash = qemu_storage
-        .compute_content_hash(&oemdrv_path, &extra_isos_1)
-        .expect("QemuImgStorage compute_content_hash should succeed");
-    assert_eq!(hash_1, qemu_hash);
 }
 
 #[test]
@@ -493,6 +474,14 @@ fn test_qemu_img_storage_source_file_not_found_errors() {
     ));
     assert!(matches!(
         storage.set_readonly(&nonexistent_file),
+        Err(StorageError::SourceFileNotFound { .. })
+    ));
+    assert!(matches!(
+        storage.move_file_safely(&nonexistent_file, &destination_file),
+        Err(StorageError::SourceFileNotFound { .. })
+    ));
+    assert!(matches!(
+        storage.move_file_cross_device(&nonexistent_file, &destination_file),
         Err(StorageError::SourceFileNotFound { .. })
     ));
 }

@@ -438,8 +438,7 @@ fn test_apply_delete_action_deprovisions() {
     assert!(!snapshot.domains.contains_key("win11-gollum"));
 }
 
-#[test]
-fn test_destroyer_graceful_shutdown_and_undefine() {
+fn verify_destroyer_shutdown_and_undefine(force: bool) {
     let pool_directory = tempdir().expect("create tempdir");
     let pool_path = pool_directory.path();
     let base_image_path = pool_path.join("base.qcow2");
@@ -486,11 +485,11 @@ fn test_destroyer_graceful_shutdown_and_undefine() {
             "win11-gollum",
             &manifest,
             &DestroyOptions {
-                force: false,
+                force,
                 delete_disk: false,
             },
         )
-        .expect("graceful destroy should succeed");
+        .expect("destroy should succeed");
 
     assert!(
         overlay_path.exists(),
@@ -507,71 +506,13 @@ fn test_destroyer_graceful_shutdown_and_undefine() {
 }
 
 #[test]
+fn test_destroyer_graceful_shutdown_and_undefine() {
+    verify_destroyer_shutdown_and_undefine(false);
+}
+
+#[test]
 fn test_destroyer_force_cuts_power_when_force_flag_is_set() {
-    let pool_directory = tempdir().expect("create tempdir");
-    let pool_path = pool_directory.path();
-    let base_image_path = pool_path.join("base.qcow2");
-    let overlay_path = pool_path.join("win11-gollum.qcow2");
-
-    let pool_xml = format!(
-        "<pool type='dir'><name>default</name><target><path>{}</path></target></pool>",
-        pool_path.display()
-    );
-
-    let storage = QemuImgStorage::new();
-    storage
-        .create_empty_disk(&base_image_path, 20 * 1024 * 1024)
-        .expect("create base image");
-    storage
-        .create_cow_overlay(&base_image_path, &overlay_path)
-        .expect("create overlay on disk");
-
-    assert!(overlay_path.exists(), "overlay must exist before destroy");
-    let pre_inspection = storage
-        .inspect_image(&overlay_path)
-        .expect("inspect overlay before destroy");
-    assert_eq!(pre_inspection.backing_file, Some(base_image_path.clone()));
-    assert!(storage.check_image(&overlay_path).is_ok());
-
-    let manifest =
-        ManifestLoader::load_from_json_string(SAMPLE_MANIFEST_JSON).expect("load sample manifest");
-
-    let domain_info = DomainInfo {
-        name: "win11-gollum".to_string(),
-        state: DomainState::Running,
-        vcpu_count: Some(16),
-        memory_kib: Some(16777216),
-        autostart: true,
-    };
-
-    let hypervisor = FakeHypervisor::new()
-        .with_pool_xml("default", pool_xml)
-        .with_domain(domain_info, CONCRETE_XML);
-
-    let destroyer = DomainLifecycleDestroyer::new(&hypervisor, &storage);
-    destroyer
-        .destroy(
-            "win11-gollum",
-            &manifest,
-            &DestroyOptions {
-                force: true,
-                delete_disk: false,
-            },
-        )
-        .expect("force destroy should succeed");
-
-    assert!(
-        overlay_path.exists(),
-        "overlay disk must be physically preserved when delete_disk is false"
-    );
-    let post_inspection = storage
-        .inspect_image(&overlay_path)
-        .expect("inspect preserved overlay");
-    assert_eq!(post_inspection.backing_file, Some(base_image_path));
-    assert!(storage.check_image(&overlay_path).is_ok());
-
-    let snapshot = hypervisor.snapshot();
-    assert!(!snapshot.domains.contains_key("win11-gollum"));
+    verify_destroyer_shutdown_and_undefine(true);
 }
 
 #[test]

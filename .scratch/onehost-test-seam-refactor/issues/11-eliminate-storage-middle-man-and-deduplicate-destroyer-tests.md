@@ -4,8 +4,8 @@
 
 **Blocked by:** 10: Expression-Oriented Image Builder Validation and Backup Guard Combinators
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `QemuImgStorage` directly owns safe file moves and content-hash computation without delegating to duplicate public free functions, and shares a single helper for backing-file CLI argument construction across `convert_thin_backup` and `restore_thin_backup`.
-- [ ] Storage unit tests exercise `QemuImgStorage` methods directly with zero dead or duplicate free functions exported from the storage module.
-- [ ] Graceful and forced domain destroyer tests share a common setup and verification helper instead of duplicating test bodies.
+- [x] `QemuImgStorage` directly owns safe file moves and content-hash computation without delegating to duplicate public free functions, and shares a single helper for backing-file CLI argument construction across `convert_thin_backup` and `restore_thin_backup`.
+- [x] Storage unit tests exercise `QemuImgStorage` methods directly with zero dead or duplicate free functions exported from the storage module.
+- [x] Graceful and forced domain destroyer tests share a common setup and verification helper instead of duplicating test bodies.

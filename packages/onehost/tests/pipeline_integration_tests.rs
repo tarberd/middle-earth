@@ -86,16 +86,16 @@ impl TestWorkspace {
 
         let oemdrv_path = workspace_root_path.join("oemdrv");
         std::fs::write(&oemdrv_path, b"OEMDRV_PAYLOAD").expect("write oemdrv");
+        let storage = QemuImgStorage::new();
         let extra_isos = std::collections::HashMap::new();
-        let content_hash =
-            onehost::storage::execute_compute_content_hash(&oemdrv_path, &extra_isos)
-                .expect("compute content hash");
+        let content_hash = storage
+            .compute_content_hash(&oemdrv_path, &extra_isos)
+            .expect("compute content hash");
 
         let initial_master_path = depot_store_directory.join(format!(
             "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",
             content_hash
         ));
-        let storage = QemuImgStorage::new();
         storage
             .create_empty_disk(&initial_master_path, 20 * 1024 * 1024)
             .expect("create golden master");
@@ -441,11 +441,12 @@ fn test_end_to_end_recreate_pipeline() {
     // 1. Simulate base image hash change by modifying oemdrv content
     std::fs::write(&workspace.oemdrv_path, b"NEW_OEMDRV_PAYLOAD_CHANGED")
         .expect("write new oemdrv");
-    let new_hash = onehost::storage::execute_compute_content_hash(
-        &workspace.oemdrv_path,
-        &std::collections::HashMap::new(),
-    )
-    .expect("compute new hash");
+    let new_hash = storage
+        .compute_content_hash(
+            &workspace.oemdrv_path,
+            &std::collections::HashMap::new(),
+        )
+        .expect("compute new hash");
 
     let new_golden_master = workspace.depot_store_directory.join(format!(
         "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us-looking-glass-{}.qcow2",

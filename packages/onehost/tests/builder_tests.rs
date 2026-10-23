@@ -8,7 +8,7 @@ use onehost::image::builder::{
     ImageBuildOptions, ImageBuildOutcome, ImageBuilder, ImageBuilderError,
 };
 use onehost::image::tag::{FlavorResolutionError, ImageTagSpecification};
-use onehost::storage::{QemuImgStorage, execute_compute_content_hash};
+use onehost::storage::QemuImgStorage;
 
 pub struct BuilderTestFixture {
     pub temporary_directory: tempfile::TempDir,
@@ -77,7 +77,8 @@ impl BuilderTestFixture {
         );
 
         let extra_isos = HashMap::new();
-        let content_hash = execute_compute_content_hash(&oemdrv_path, &extra_isos)
+        let content_hash = QemuImgStorage::new()
+            .compute_content_hash(&oemdrv_path, &extra_isos)
             .expect("compute content hash succeeds");
 
         let mut flavors = HashMap::new();

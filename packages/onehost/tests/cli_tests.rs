@@ -84,9 +84,9 @@ impl CliTestFixture {
         let oemdrv_path = temporary_path.join("oemdrv");
         std::fs::write(&oemdrv_path, b"test-oemdrv-content").expect("write oemdrv");
         let extra_isos = HashMap::new();
-        let content_hash =
-            onehost::storage::execute_compute_content_hash(&oemdrv_path, &extra_isos)
-                .expect("compute content hash");
+        let content_hash = QemuImgStorage::new()
+            .compute_content_hash(&oemdrv_path, &extra_isos)
+            .expect("compute content hash");
 
         let mut flavors = HashMap::new();
         flavors.insert(
