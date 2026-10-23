@@ -5,6 +5,5 @@ pub mod domain;
 pub mod hypervisor;
 pub mod image;
 pub mod lifecycle;
-pub mod process;
 pub mod storage;
 pub mod xdg;

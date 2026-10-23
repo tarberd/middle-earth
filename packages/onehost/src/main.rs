@@ -1,7 +1,6 @@
 use clap::Parser;
 use onehost::cli::{self, Cli};
 use onehost::hypervisor::VirshHypervisor;
-use onehost::process::SystemProcessRunner;
 use onehost::storage::QemuImgStorage;
 use std::process::ExitCode;
 use tracing_subscriber::EnvFilter;
@@ -17,14 +16,12 @@ fn main() -> ExitCode {
     let cli_arguments = Cli::parse();
     let hypervisor = VirshHypervisor::new();
     let storage = QemuImgStorage::new();
-    let process_runner = SystemProcessRunner::new();
     let mut standard_output = std::io::stdout();
 
     match cli::dispatch(
         cli_arguments,
         &hypervisor,
         &storage,
-        &process_runner,
         &mut standard_output,
     ) {
         Ok(exit_code) => match u8::try_from(exit_code) {

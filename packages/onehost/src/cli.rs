@@ -19,7 +19,6 @@ use crate::lifecycle::{
     DestroyOptions, DomainLifecycleApplier, DomainLifecycleDestroyer,
     DomainLifecyclePlanner, InstancePlanAction, LifecycleError, OnehostPlan,
 };
-use crate::process::traits::{ProcessError, ProcessRunner};
 use crate::storage::{QemuImgStorage, StorageError};
 use crate::xdg::XdgBaseDirectories;
 
@@ -227,9 +226,6 @@ pub enum CliError {
 
     #[error("Storage error: {0}")]
     StorageError(#[from] StorageError),
-
-    #[error("Process error: {0}")]
-    ProcessError(#[from] ProcessError),
 
     #[error("JSON serialization error: {0}")]
     JsonError(#[from] serde_json::Error),
@@ -459,11 +455,10 @@ pub fn format_status_table(reports: &[InstanceStatusReport]) -> String {
 }
 
 /// Dispatches a parsed CLI command to the appropriate imperative lifecycle shell.
-pub fn dispatch<H: Hypervisor, P: ProcessRunner, W: Write>(
+pub fn dispatch<H: Hypervisor, W: Write>(
     cli: Cli,
     hypervisor: &H,
     storage: &QemuImgStorage,
-    runner: &P,
     output: &mut W,
 ) -> Result<i32, CliError> {
     match cli.command {
@@ -635,7 +630,7 @@ pub fn dispatch<H: Hypervisor, P: ProcessRunner, W: Write>(
                     cpu_count: args.cpus,
                 };
 
-                let builder = ImageBuilder::new(storage, runner);
+                let builder = ImageBuilder::new(storage);
                 let outcome = builder.build_image(&manifest, &image_tag, &build_options)?;
 
                 match outcome {

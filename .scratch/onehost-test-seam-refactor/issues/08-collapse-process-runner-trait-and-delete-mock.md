@@ -4,8 +4,8 @@
 
 **Blocked by:** 07: Image Builder Artifact State Verification
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Image builder uses direct system process execution, removing generic process runner parameters.
-- [ ] Process runner trait and in-memory mock process runner are removed from production sources.
-- [ ] Entire test suite passes under `nix develop .#onehost -c cargo test` with zero compiler or linter warnings.
+- [x] Image builder uses direct system process execution, removing generic process runner parameters.
+- [x] Process runner trait and in-memory mock process runner are removed from production sources.
+- [x] Entire test suite passes under `nix develop .#onehost -c cargo test` with zero compiler or linter warnings.

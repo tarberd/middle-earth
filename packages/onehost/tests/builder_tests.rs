@@ -8,7 +8,6 @@ use onehost::image::builder::{
     ImageBuildOptions, ImageBuildOutcome, ImageBuilder, ImageBuilderError,
 };
 use onehost::image::tag::{FlavorResolutionError, ImageTagSpecification};
-use onehost::process::mock::MockProcessRunner;
 use onehost::storage::{QemuImgStorage, execute_compute_content_hash};
 
 pub struct BuilderTestFixture {
@@ -20,6 +19,8 @@ pub struct BuilderTestFixture {
     pub depot_store_directory: PathBuf,
     pub depot_iso_directory: PathBuf,
     pub scratch_directory: PathBuf,
+    pub swtpm_script_path: PathBuf,
+    pub qemu_script_path: PathBuf,
     pub content_hash: String,
 }
 
@@ -47,6 +48,24 @@ impl BuilderTestFixture {
 
         let oemdrv_path = base_path.join("oemdrv-looking-glass.iso");
         std::fs::write(&oemdrv_path, "dummy oemdrv payload").expect("write oemdrv payload");
+
+        let swtpm_script_path = base_path.join("fake-swtpm.sh");
+        let qemu_script_path = base_path.join("fake-qemu.sh");
+
+        let swtpm_content = "#!/bin/sh\nexec sleep 60\n";
+        std::fs::write(&swtpm_script_path, swtpm_content).expect("write fake swtpm script");
+
+        let qemu_content = "#!/bin/sh\nexit 0\n";
+        std::fs::write(&qemu_script_path, qemu_content).expect("write fake qemu script");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&swtpm_script_path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod swtpm script");
+            std::fs::set_permissions(&qemu_script_path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod qemu script");
+        }
 
         let storage_config = StorageDirectoriesConfiguration::new(
             depot_store_directory.clone(),
@@ -88,8 +107,16 @@ impl BuilderTestFixture {
             depot_store_directory,
             depot_iso_directory,
             scratch_directory,
+            swtpm_script_path,
+            qemu_script_path,
             content_hash,
         }
+    }
+
+    fn builder<'a>(&'a self, storage: &'a QemuImgStorage) -> ImageBuilder<'a> {
+        ImageBuilder::new(storage)
+            .with_swtpm_binary(&self.swtpm_script_path)
+            .with_qemu_binary(&self.qemu_script_path)
     }
 
     fn golden_master_path(&self) -> PathBuf {
@@ -124,9 +151,7 @@ fn test_builder_already_existing_master_returns_early_without_modifying_storage(
     let initial_metadata = std::fs::metadata(&golden_master_path).expect("read metadata");
     let initial_modified = initial_metadata.modified().expect("read modified time");
 
-    let runner = MockProcessRunner::new();
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions::default();
 
     let outcome = builder
@@ -170,28 +195,21 @@ fn test_builder_missing_iso_fails_fast_with_typed_error() {
     }
 
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions::default();
 
     let build_error = builder
         .build_image(&fixture.manifest, &fixture.image_tag, &options)
         .expect_err("must fail when ISO is missing");
 
-    match build_error {
+    assert!(matches!(
+        build_error,
         ImageBuilderError::IsoNotFound {
-            iso_directory,
-            release_tuple,
-        } => {
-            assert_eq!(iso_directory, fixture.depot_iso_directory);
-            assert_eq!(
-                release_tuple,
-                "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us"
-            );
-        }
-        other_error => unreachable!("expected IsoNotFound, got: {other_error:?}"),
-    }
+            ref iso_directory,
+            ref release_tuple,
+        } if *iso_directory == fixture.depot_iso_directory
+            && release_tuple == "ce863cb6-6967-4632-a567-eb965a6f2ea3-pro-en-us"
+    ));
 
     // Verify no build artifacts or temporary files were created
     assert!(!fixture.golden_master_path().exists());
@@ -210,29 +228,25 @@ fn test_builder_unregistered_flavor_fails_fast() {
     let fixture = BuilderTestFixture::new();
 
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
-
     let unknown_tag: ImageTagSpecification =
         "ce863cb6-6967-4632-a567-eb965a6f2ea3/pro/en-us/nonexistent-flavor"
             .parse()
             .expect("image tag parsing");
 
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions::default();
 
     let build_error = builder
         .build_image(&fixture.manifest, &unknown_tag, &options)
         .expect_err("must fail on unregistered flavor");
 
-    match build_error {
+    assert!(matches!(
+        build_error,
         ImageBuilderError::FlavorError(FlavorResolutionError::UnknownFlavor {
-            requested_flavor,
+            ref requested_flavor,
             ..
-        }) => {
-            assert_eq!(requested_flavor, "nonexistent-flavor");
-        }
-        other_error => unreachable!("expected UnknownFlavor, got: {other_error:?}"),
-    }
+        }) if requested_flavor == "nonexistent-flavor"
+    ));
 
     // Verify no build artifacts or temporary files were created
     assert!(!fixture.golden_master_path().exists());
@@ -256,21 +270,17 @@ fn test_builder_missing_oemdrv_fails_fast() {
     }
 
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions::default();
 
     let build_error = builder
         .build_image(&fixture.manifest, &fixture.image_tag, &options)
         .expect_err("must fail when OEMDRV is missing");
 
-    match build_error {
-        ImageBuilderError::OemdrvNotFound { path } => {
-            assert_eq!(path, fixture.oemdrv_path);
-        }
-        other_error => unreachable!("expected OemdrvNotFound, got: {other_error:?}"),
-    }
+    assert!(matches!(
+        build_error,
+        ImageBuilderError::OemdrvNotFound { ref path } if *path == fixture.oemdrv_path
+    ));
 
     // Verify no build artifacts or temporary files were created
     assert!(!fixture.golden_master_path().exists());
@@ -289,9 +299,7 @@ fn test_builder_atomic_promotion_sequence_and_scratch_cleanup() {
     let fixture = BuilderTestFixture::new();
 
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions {
         force: false,
         scratch_dir: Some(fixture.scratch_directory.clone()),
@@ -306,20 +314,16 @@ fn test_builder_atomic_promotion_sequence_and_scratch_cleanup() {
 
     let expected_master_path = fixture.golden_master_path();
 
-    match outcome {
+    assert!(matches!(
+        outcome,
         ImageBuildOutcome::Built {
-            golden_master_path,
+            ref golden_master_path,
             virtual_size_bytes,
             archive_size_bytes,
-        } => {
-            assert_eq!(golden_master_path, expected_master_path);
-            assert_eq!(virtual_size_bytes, 64 * 1024 * 1024 * 1024);
-            assert!(archive_size_bytes > 0);
-        }
-        ImageBuildOutcome::AlreadyExists { .. } => {
-            unreachable!("expected Built outcome");
-        }
-    }
+        } if *golden_master_path == expected_master_path
+            && virtual_size_bytes == 64 * 1024 * 1024 * 1024
+            && archive_size_bytes > 0
+    ));
 
     // 1. Golden master promoted and exists on filesystem
     assert!(expected_master_path.exists());
@@ -375,8 +379,7 @@ fn test_builder_force_flag_rebuilds_and_overwrites_existing_master() {
         .expect("inspect initial disk");
     assert_eq!(initial_inspection.virtual_size_bytes, 1024 * 1024);
 
-    let runner = MockProcessRunner::new();
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions {
         force: true,
         scratch_dir: Some(fixture.scratch_directory.clone()),
@@ -389,20 +392,16 @@ fn test_builder_force_flag_rebuilds_and_overwrites_existing_master() {
         .build_image(&fixture.manifest, &fixture.image_tag, &options)
         .expect("forced rebuild succeeds");
 
-    match outcome {
+    assert!(matches!(
+        outcome,
         ImageBuildOutcome::Built {
-            golden_master_path: outcome_path,
+            golden_master_path: ref outcome_path,
             virtual_size_bytes,
             archive_size_bytes,
-        } => {
-            assert_eq!(outcome_path, golden_master_path);
-            assert_eq!(virtual_size_bytes, 64 * 1024 * 1024 * 1024);
-            assert!(archive_size_bytes > 0);
-        }
-        ImageBuildOutcome::AlreadyExists { .. } => {
-            unreachable!("expected Built outcome with force: true");
-        }
-    }
+        } if *outcome_path == golden_master_path
+            && virtual_size_bytes == 64 * 1024 * 1024 * 1024
+            && archive_size_bytes > 0
+    ));
 
     // Verify rebuilt golden master replaced the old disk with the 64GB image
     assert!(golden_master_path.exists());
@@ -468,9 +467,7 @@ exec "{qemu_img_bin}" "$@"
     }
 
     let storage = QemuImgStorage::new().with_executable(&wrapper_script);
-    let runner = MockProcessRunner::new();
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage);
     let options = ImageBuildOptions {
         scratch_dir: Some(fixture.scratch_directory.clone()),
         ..Default::default()
@@ -480,15 +477,11 @@ exec "{qemu_img_bin}" "$@"
         .build_image(&fixture.manifest, &fixture.image_tag, &options)
         .expect_err("must abort on corruption detection");
 
-    match build_error {
-        ImageBuilderError::PromotionIntegrityCheckFailed { path, details } => {
-            assert_eq!(path, temporary_master_path);
-            assert!(details.contains("Simulated cluster corruption"));
-        }
-        other_error => {
-            unreachable!("expected PromotionIntegrityCheckFailed, got: {other_error:?}");
-        }
-    }
+    assert!(matches!(
+        build_error,
+        ImageBuilderError::PromotionIntegrityCheckFailed { ref path, ref details }
+            if *path == temporary_master_path && details.contains("Simulated cluster corruption")
+    ));
 
     // Assert that the final golden master was NEVER created
     assert!(!fixture.golden_master_path().exists());
@@ -509,17 +502,18 @@ exec "{qemu_img_bin}" "$@"
 fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
     let fixture = BuilderTestFixture::new();
 
+    let failing_qemu_script = fixture.scratch_directory.join("failing-qemu.sh");
+    let script_content = "#!/bin/sh\necho \"KVM hardware virtualization unavailable\" >&2\nexit 1\n";
+    std::fs::write(&failing_qemu_script, script_content).expect("write failing qemu script");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&failing_qemu_script, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod failing qemu script");
+    }
+
     let storage = QemuImgStorage::new();
-
-    // Runner: inject non-zero exit code on qemu-system-x86_64
-    let runner = MockProcessRunner::new().with_output(
-        "qemu-system-x86_64",
-        1,
-        "",
-        "KVM hardware virtualization unavailable",
-    );
-
-    let builder = ImageBuilder::new(&storage, &runner);
+    let builder = fixture.builder(&storage).with_qemu_binary(&failing_qemu_script);
     let options = ImageBuildOptions {
         scratch_dir: Some(fixture.scratch_directory.clone()),
         ..Default::default()
@@ -529,13 +523,13 @@ fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
         .build_image(&fixture.manifest, &fixture.image_tag, &options)
         .expect_err("must abort on QEMU failure");
 
-    match build_error {
-        ImageBuilderError::QemuExecutionFailed { exit_code, stderr } => {
-            assert_eq!(exit_code, Some(1));
-            assert!(stderr.contains("KVM hardware virtualization unavailable"));
-        }
-        other_error => unreachable!("expected QemuExecutionFailed, got: {other_error:?}"),
-    }
+    assert!(matches!(
+        build_error,
+        ImageBuilderError::QemuExecutionFailed {
+            exit_code: Some(1),
+            ref stderr,
+        } if stderr.contains("KVM hardware virtualization unavailable")
+    ));
 
     // Verify observable filesystem state on failure:
     // 1. Final golden master was NEVER created
@@ -553,4 +547,32 @@ fn test_builder_qemu_process_failure_aborts_and_cleans_up() {
         .map(|entry| entry.expect("read dir entry").path())
         .collect();
     assert!(depot_entries.is_empty());
+}
+
+#[test]
+fn test_builder_swtpm_process_failure_aborts_and_cleans_up() {
+    let fixture = BuilderTestFixture::new();
+    let storage = QemuImgStorage::new();
+
+    let nonexistent_swtpm = fixture.scratch_directory.join("nonexistent-swtpm");
+    let builder = fixture.builder(&storage).with_swtpm_binary(&nonexistent_swtpm);
+    let options = ImageBuildOptions {
+        scratch_dir: Some(fixture.scratch_directory.clone()),
+        ..Default::default()
+    };
+
+    let build_error = builder
+        .build_image(&fixture.manifest, &fixture.image_tag, &options)
+        .expect_err("must abort on swtpm failure");
+
+    assert!(matches!(
+        build_error,
+        ImageBuilderError::SwtpmError { ref details }
+            if details.contains("Failed to spawn swtpm binary")
+    ));
+
+    // Verify filesystem state:
+    assert!(!fixture.golden_master_path().exists());
+    assert!(!fixture.temporary_master_path().exists());
+    assert!(!fixture.scratch_disk_path().exists());
 }

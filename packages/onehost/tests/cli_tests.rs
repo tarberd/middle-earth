@@ -14,7 +14,6 @@ use onehost::hypervisor::Hypervisor;
 use onehost::hypervisor::traits::{DomainInfo, DomainState};
 use onehost_test_support::FakeHypervisor;
 use onehost::lifecycle::planner::OnehostPlan;
-use onehost::process::mock::MockProcessRunner;
 use onehost::storage::QemuImgStorage;
 
 pub struct CliTestFixture {
@@ -171,7 +170,6 @@ fn test_cli_plan_human_readable_output() {
 
     let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -180,7 +178,7 @@ fn test_cli_plan_human_readable_output() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch plan succeeds");
 
     assert_eq!(exit_code, 0);
@@ -197,7 +195,6 @@ fn test_cli_plan_json_output() {
 
     let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -206,7 +203,7 @@ fn test_cli_plan_json_output() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch plan succeeds");
 
     assert_eq!(exit_code, 0);
@@ -223,7 +220,6 @@ fn test_cli_plan_filter_instance() {
 
     let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     // Query for non-matching instance filter
     let cli_args = Cli {
@@ -235,7 +231,7 @@ fn test_cli_plan_filter_instance() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch plan succeeds");
 
     assert_eq!(exit_code, 0);
@@ -251,7 +247,6 @@ fn test_cli_apply_reconciles_infrastructure() {
 
     let hypervisor = FakeHypervisor::new().with_pool_xml("default", fixture.default_pool_xml());
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -263,7 +258,7 @@ fn test_cli_apply_reconciles_infrastructure() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch apply succeeds");
 
     assert_eq!(exit_code, 0);
@@ -290,8 +285,6 @@ fn test_cli_destroy_deprovisions_instance() {
         .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
         .expect("create overlay");
 
-    let runner = MockProcessRunner::new();
-
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
         json: false,
@@ -304,7 +297,7 @@ fn test_cli_destroy_deprovisions_instance() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch destroy succeeds");
 
     assert_eq!(exit_code, 0);
@@ -347,8 +340,6 @@ fn test_cli_backup_creates_staged_artifacts() {
         .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
         .expect("create overlay");
 
-    let runner = MockProcessRunner::new();
-
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
         json: true,
@@ -361,7 +352,7 @@ fn test_cli_backup_creates_staged_artifacts() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch backup succeeds");
 
     assert_eq!(exit_code, 0);
@@ -423,8 +414,6 @@ fn test_cli_restore_restores_from_staged_directory() {
         .create_empty_disk(&backup_disk_path, 20 * 1024 * 1024)
         .expect("create thin backup disk");
 
-    let runner = MockProcessRunner::new();
-
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
         json: false,
@@ -436,7 +425,7 @@ fn test_cli_restore_restores_from_staged_directory() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch restore succeeds");
 
     assert_eq!(exit_code, 0);
@@ -473,8 +462,6 @@ fn test_cli_status_human_and_json() {
         .create_empty_disk(&overlay_path, 20 * 1024 * 1024)
         .expect("create overlay");
 
-    let runner = MockProcessRunner::new();
-
     // Human table test
     let cli_human = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -483,7 +470,7 @@ fn test_cli_status_human_and_json() {
     };
 
     let mut human_buffer = Vec::new();
-    let exit_human = cli::dispatch(cli_human, &hypervisor, &storage, &runner, &mut human_buffer)
+    let exit_human = cli::dispatch(cli_human, &hypervisor, &storage, &mut human_buffer)
         .expect("dispatch status human");
 
     assert_eq!(exit_human, 0);
@@ -500,7 +487,7 @@ fn test_cli_status_human_and_json() {
     };
 
     let mut json_buffer = Vec::new();
-    let exit_json = cli::dispatch(cli_json, &hypervisor, &storage, &runner, &mut json_buffer)
+    let exit_json = cli::dispatch(cli_json, &hypervisor, &storage, &mut json_buffer)
         .expect("dispatch status json");
 
     assert_eq!(exit_json, 0);
@@ -518,7 +505,6 @@ fn test_cli_image_build_when_master_exists() {
 
     let hypervisor = FakeHypervisor::new();
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -536,7 +522,7 @@ fn test_cli_image_build_when_master_exists() {
     };
 
     let mut output_buffer = Vec::new();
-    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer)
+    let exit_code = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer)
         .expect("dispatch image build succeeds");
 
     assert_eq!(exit_code, 0);
@@ -589,7 +575,6 @@ fn test_cli_image_build_rejects_informal_build_tags() {
     let fixture = CliTestFixture::new();
     let hypervisor = FakeHypervisor::new();
     let storage = QemuImgStorage::new();
-    let runner = MockProcessRunner::new();
 
     let cli_args = Cli {
         manifest: Some(fixture.manifest_path.clone()),
@@ -607,7 +592,7 @@ fn test_cli_image_build_rejects_informal_build_tags() {
     };
 
     let mut output_buffer = Vec::new();
-    let result = cli::dispatch(cli_args, &hypervisor, &storage, &runner, &mut output_buffer);
+    let result = cli::dispatch(cli_args, &hypervisor, &storage, &mut output_buffer);
     let err = result.expect_err("Expected image build with informal tag to be rejected");
     assert!(matches!(
         err,

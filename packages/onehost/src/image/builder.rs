@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 use crate::config::model::OnehostManifest;
@@ -6,7 +7,6 @@ use crate::image::tag::{
     ContentAddressedImageResolver, FlavorDerivationMetadata, FlavorResolutionError,
     ImageTagParseError, ImageTagSpecification,
 };
-use crate::process::traits::{ProcessError, ProcessRunner};
 use crate::storage::{QemuImgStorage, StorageError};
 
 /// Configuration options controlling the image build process.
@@ -79,75 +79,43 @@ pub enum ImageBuilderError {
     #[error("Storage error during image build: {0}")]
     StorageError(#[from] StorageError),
 
-    #[error("Process execution error during image build: {0}")]
-    ProcessError(#[from] ProcessError),
-
     #[error("I/O error during image build: {0}")]
     IoError(#[from] std::io::Error),
 }
 
-/// RAII scope guard ensuring ephemeral scratch build artifacts and temporary staging files
-/// are cleaned up on failure, error, or panic.
-struct BuildScratchGuard<'a> {
-    storage: &'a QemuImgStorage,
-    scratch_disk_path: PathBuf,
-    temporary_master_path: Option<PathBuf>,
-    armed: bool,
-}
-
-impl<'a> BuildScratchGuard<'a> {
-    fn new(storage: &'a QemuImgStorage, scratch_disk_path: PathBuf) -> Self {
-        Self {
-            storage,
-            scratch_disk_path,
-            temporary_master_path: None,
-            armed: true,
-        }
-    }
-
-    fn set_temporary_master(&mut self, path: PathBuf) {
-        self.temporary_master_path = Some(path);
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl<'a> Drop for BuildScratchGuard<'a> {
-    fn drop(&mut self) {
-        if self.armed {
-            if let Some(ref temporary_master) = self.temporary_master_path
-                && let Err(error) = self.storage.delete_image(temporary_master)
-            {
-                tracing::debug!(
-                    path = %temporary_master.display(),
-                    error = %error,
-                    "Failed to delete temporary master during scratch cleanup guard drop"
-                );
-            }
-
-            if let Err(error) = self.storage.delete_image(&self.scratch_disk_path) {
-                tracing::debug!(
-                    path = %self.scratch_disk_path.display(),
-                    error = %error,
-                    "Failed to delete scratch disk during scratch cleanup guard drop"
-                );
-            }
-        }
-    }
-}
 
 /// Orchestrates unattended installation of Windows golden master images using headless QEMU, swtpm, and OEMDRV media.
-pub struct ImageBuilder<'a, P: ProcessRunner> {
+#[derive(Debug, Clone)]
+pub struct ImageBuilder<'a> {
     pub storage: &'a QemuImgStorage,
-    pub runner: &'a P,
+    pub swtpm_binary_path: PathBuf,
+    pub qemu_binary_path: PathBuf,
 }
 
-impl<'a, P: ProcessRunner> ImageBuilder<'a, P> {
+impl<'a> ImageBuilder<'a> {
     /// Creates a new ImageBuilder instance.
-    pub fn new(storage: &'a QemuImgStorage, runner: &'a P) -> Self {
-        Self { storage, runner }
+    pub fn new(storage: &'a QemuImgStorage) -> Self {
+        Self {
+            storage,
+            swtpm_binary_path: PathBuf::from("swtpm"),
+            qemu_binary_path: PathBuf::from("qemu-system-x86_64"),
+        }
+    }
+
+    /// Functional builder: configures custom swtpm binary path.
+    pub fn with_swtpm_binary(self, binary: impl Into<PathBuf>) -> Self {
+        Self {
+            swtpm_binary_path: binary.into(),
+            ..self
+        }
+    }
+
+    /// Functional builder: configures custom qemu binary path.
+    pub fn with_qemu_binary(self, binary: impl Into<PathBuf>) -> Self {
+        Self {
+            qemu_binary_path: binary.into(),
+            ..self
+        }
     }
 
     /// Resolves the Windows installation ISO path.
@@ -184,6 +152,81 @@ impl<'a, P: ProcessRunner> ImageBuilder<'a, P> {
                 })
             }
         }
+    }
+
+    /// Executes QEMU installation VM with background swtpm emulator, ensuring swtpm child process is killed and reaped.
+    fn execute_qemu_with_swtpm(
+        &self,
+        swtpm_directory: &Path,
+        swtpm_socket_path: &Path,
+        qemu_arguments: &[&str],
+    ) -> Result<(), ImageBuilderError> {
+        std::fs::create_dir_all(swtpm_directory)?;
+        let swtpm_state_arg = format!("dir={}", swtpm_directory.display());
+        let swtpm_ctrl_arg = format!("type=unixio,path={}", swtpm_socket_path.display());
+
+        let mut swtpm_child = Command::new(&self.swtpm_binary_path)
+            .args([
+                "socket",
+                "--tpmstate",
+                &swtpm_state_arg,
+                "--ctrl",
+                &swtpm_ctrl_arg,
+                "--tpm2",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|io_error| ImageBuilderError::SwtpmError {
+                details: format!(
+                    "Failed to spawn swtpm binary '{}': {io_error}",
+                    self.swtpm_binary_path.display()
+                ),
+            })?;
+
+        let qemu_result = Command::new(&self.qemu_binary_path)
+            .args(qemu_arguments)
+            .output();
+
+        if let Err(kill_error) = swtpm_child.kill() {
+            tracing::debug!(
+                error = %kill_error,
+                "Failed to kill swtpm child process"
+            );
+        }
+        if let Err(wait_error) = swtpm_child.wait() {
+            tracing::debug!(
+                error = %wait_error,
+                "Failed to wait for swtpm child process"
+            );
+        }
+
+        let qemu_output = qemu_result.map_err(ImageBuilderError::IoError)?;
+
+        (qemu_output.status.success())
+            .then_some(())
+            .ok_or_else(|| ImageBuilderError::QemuExecutionFailed {
+                exit_code: qemu_output.status.code(),
+                stderr: String::from_utf8_lossy(&qemu_output.stderr).to_string(),
+            })
+    }
+
+    /// Converts scratch disk to temporary staged golden master and verifies image integrity.
+    fn stage_and_verify_temporary_master(
+        &self,
+        scratch_disk_path: &Path,
+        temporary_master_path: &Path,
+    ) -> Result<(), ImageBuilderError> {
+        self.storage
+            .convert_thin_backup(scratch_disk_path, temporary_master_path, None, true)?;
+
+        self.storage
+            .check_image(temporary_master_path)
+            .map_err(|corruption_error| ImageBuilderError::PromotionIntegrityCheckFailed {
+                path: temporary_master_path.to_path_buf(),
+                details: corruption_error.to_string(),
+            })
     }
 
     /// Builds a content-addressed golden master image according to the specified image tag and options.
@@ -272,34 +315,12 @@ impl<'a, P: ProcessRunner> ImageBuilder<'a, P> {
             let ovmf_vars_path = scratch_directory.join("ovmf-vars.fd");
             let monitor_socket_path = scratch_directory.join("monitor.sock");
 
-            // Arm the scratch cleanup guard to guarantee removal of scratch disks on failure or panic
-            let mut scratch_guard = BuildScratchGuard::new(self.storage, scratch_disk_path.clone());
+            std::fs::create_dir_all(&scratch_directory)?;
 
             // 6. Create 64GB ephemeral build disk in scratch directory
             self.storage
                 .create_empty_disk(&scratch_disk_path, 64 * 1024 * 1024 * 1024)?;
 
-            // 7. Initialize OVMF NVRAM vars in scratch directory
-            self.storage
-                .initialize_nvram(&manifest.storage.nvram_template, &ovmf_vars_path)?;
-
-            // 8. Spawn background swtpm TPM 2.0 emulator daemon
-            let swtpm_state_arg = format!("dir={}", swtpm_directory.display());
-            let swtpm_ctrl_arg = format!("type=unixio,path={}", swtpm_socket_path.display());
-
-            let mut swtpm_handle = self.runner.spawn_daemon(
-                "swtpm",
-                &[
-                    "socket",
-                    "--tpmstate",
-                    &swtpm_state_arg,
-                    "--ctrl",
-                    &swtpm_ctrl_arg,
-                    "--tpm2",
-                ],
-            )?;
-
-            // 9. Execute headless QEMU installation VM
             let smp_argument = format!(
                 "{},sockets=1,cores={},threads=1",
                 options.cpu_count, options.cpu_count
@@ -355,64 +376,78 @@ impl<'a, P: ProcessRunner> ImageBuilder<'a, P> {
                 "-nographic",
             ];
 
-            tracing::info!(
-                tag = %image_tag,
-                "Launching headless QEMU builder VM for automated Windows installation"
-            );
-
-            let qemu_output = self.runner.execute("qemu-system-x86_64", &qemu_arguments)?;
-
-            if let Err(kill_error) = swtpm_handle.kill() {
-                tracing::debug!(error = %kill_error, "Failed to kill swtpm handle after QEMU execution");
-            }
-
-            (qemu_output.exit_code == 0).then_some(()).ok_or(
-                ImageBuilderError::QemuExecutionFailed {
-                    exit_code: Some(qemu_output.exit_code),
-                    stderr: qemu_output.stderr,
-                },
-            )?;
-
-            // 10. Atomic Master Promotion Sequence
             let temporary_master_filename = format!("{golden_master_filename}.tmp");
             let temporary_master_path = manifest
                 .storage
                 .depot_store_dir
                 .join(temporary_master_filename);
 
-            scratch_guard.set_temporary_master(temporary_master_path.clone());
+            let build_steps_result = (|| -> Result<(), ImageBuilderError> {
+                // 7. Initialize OVMF NVRAM vars in scratch directory
+                self.storage
+                    .initialize_nvram(&manifest.storage.nvram_template, &ovmf_vars_path)?;
 
-            tracing::info!(
-                destination = %temporary_master_path.display(),
-                "Compressing and staging raw build disk to temporary golden master"
-            );
-
-            self.storage.convert_thin_backup(
-                &scratch_disk_path,
-                &temporary_master_path,
-                None,
-                true,
-            )?;
-
-            // Verify image integrity before promotion
-            self.storage
-                .check_image(&temporary_master_path)
-                .map_err(
-                    |corruption_error| ImageBuilderError::PromotionIntegrityCheckFailed {
-                        path: temporary_master_path.clone(),
-                        details: corruption_error.to_string(),
-                    },
+                // 8. Execute headless QEMU installation VM with TPM emulator
+                tracing::info!(
+                    tag = %image_tag,
+                    "Launching headless QEMU builder VM for automated Windows installation"
+                );
+                self.execute_qemu_with_swtpm(
+                    &swtpm_directory,
+                    &swtpm_socket_path,
+                    &qemu_arguments,
                 )?;
 
-            // Atomically rename temporary staged image to final immutable golden master
-            self.storage
-                .move_file_safely(&temporary_master_path, &destination_master_path)?;
+                // 9. Atomic Master Promotion Sequence
+                tracing::info!(
+                    destination = %temporary_master_path.display(),
+                    "Compressing and staging raw build disk to temporary golden master"
+                );
 
-            // Apply strict read-only permissions (0444)
-            self.storage.set_readonly(&destination_master_path)?;
+                self.stage_and_verify_temporary_master(
+                    &scratch_disk_path,
+                    &temporary_master_path,
+                )
+                .inspect_err(|staging_error| {
+                    tracing::debug!(
+                        path = %temporary_master_path.display(),
+                        error = %staging_error,
+                        "Temporary master staging or integrity check failed"
+                    );
+                    if let Err(cleanup_error) = self.storage.delete_image(&temporary_master_path) {
+                        tracing::debug!(
+                            path = %temporary_master_path.display(),
+                            error = %cleanup_error,
+                            "Failed to delete temporary master during cleanup"
+                        );
+                    }
+                })?;
 
-            // Disarm cleanup guard and unlink scratch build disk
-            scratch_guard.disarm();
+                // Atomically rename temporary staged image to final immutable golden master
+                self.storage
+                    .move_file_safely(&temporary_master_path, &destination_master_path)?;
+
+                // Apply strict read-only permissions (0444)
+                self.storage.set_readonly(&destination_master_path)?;
+
+                Ok(())
+            })();
+
+            build_steps_result.inspect_err(|build_error| {
+                tracing::debug!(
+                    path = %scratch_disk_path.display(),
+                    error = %build_error,
+                    "Build pipeline failed; unlinking scratch build disk"
+                );
+                if let Err(cleanup_error) = self.storage.delete_image(&scratch_disk_path) {
+                    tracing::debug!(
+                        path = %scratch_disk_path.display(),
+                        error = %cleanup_error,
+                        "Failed to delete scratch disk during cleanup"
+                    );
+                }
+            })?;
+
             self.storage.delete_image(&scratch_disk_path)?;
 
             let final_inspection = self.storage.inspect_image(&destination_master_path)?;
