@@ -375,14 +375,19 @@ fn test_end_to_end_disaster_recovery_round_trip_online() {
         BackupConsistencyLevel::VssQuiesced
     );
 
-    // Verify online backup state: domain remains running and block device is committed back to base disk
+    let snapshot = hypervisor.snapshot();
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Running)
     );
-    let devices = hypervisor
-        .domain_block_devices("win11-gollum")
-        .expect("block devices must exist");
+    let devices = &snapshot
+        .domains
+        .get("win11-gollum")
+        .expect("block devices must exist")
+        .block_devices;
     assert_eq!(
         devices[0].source_file,
         Some(workspace.default_pool_directory.join("win11-gollum.qcow2"))

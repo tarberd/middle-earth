@@ -214,7 +214,7 @@ fn test_end_to_end_fresh_provisioning_and_idempotent_noop() {
         .expect("initial apply must succeed");
 
     // 4. Verify hypervisor and storage state
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert!(hypervisor.snapshot().domains.contains_key("win11-gollum"));
     let domain_info = hypervisor
         .domain_info("win11-gollum")
         .expect("domain must be registered in hypervisor");
@@ -311,7 +311,7 @@ fn test_end_to_end_template_drift_reconciliation_pipeline() {
         .apply(&drift_plan)
         .expect("apply update");
 
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    assert!(hypervisor.snapshot().domains.contains_key("win11-gollum"));
     let updated_xml = hypervisor
         .dump_xml("win11-gollum", false)
         .expect("dump xml");
@@ -397,11 +397,15 @@ fn test_end_to_end_storage_pool_relocation_pipeline() {
     assert!(updated_domain_xml.contains(&expected_new_overlay.display().to_string()));
 
     // 7. Verify observable hypervisor and pool state
-    assert!(hypervisor.has_storage_pool("default"));
-    assert!(hypervisor.has_storage_pool("fast-nvme"));
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.storage_pools.contains_key("default"));
+    assert!(snapshot.storage_pools.contains_key("fast-nvme"));
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
 
@@ -465,9 +469,13 @@ fn test_end_to_end_recreate_pipeline() {
     let success_result = applier.apply(&recreate_plan);
     assert!(success_result.is_ok());
 
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
 
@@ -539,8 +547,7 @@ fn test_end_to_end_destroyer_lifecycle_pipeline() {
 
     // 2. Verify domain undefined and overlay unlinked
     assert!(hypervisor.domain_info("win11-gollum").is_err());
-    assert!(!hypervisor.is_domain_defined("win11-gollum"));
-    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
+    assert!(!hypervisor.snapshot().domains.contains_key("win11-gollum"));
     assert!(!overlay_path.exists(), "overlay disk must be unlinked after destroy");
     assert!(storage.inspect_image(&overlay_path).is_err());
     assert!(

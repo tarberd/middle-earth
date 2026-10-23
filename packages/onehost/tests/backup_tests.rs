@@ -175,13 +175,19 @@ fn test_offline_backup_success() {
         b"NVRAM_OFFLINE_DATA"
     );
 
+    let snapshot = hypervisor.snapshot();
     assert_eq!(
-        hypervisor.domain_state(instance_name),
+        snapshot
+            .domains
+            .get(instance_name)
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
-    let devices = hypervisor
-        .domain_block_devices(instance_name)
-        .expect("block devices");
+    let devices = &snapshot
+        .domains
+        .get(instance_name)
+        .expect("block devices")
+        .block_devices;
     assert_eq!(devices[0].source_file, Some(overlay_path));
     assert!(
         !pool_directory
@@ -254,13 +260,19 @@ fn test_online_backup_vss_quiesced_success() {
         BackupConsistencyLevel::VssQuiesced
     );
 
+    let snapshot = hypervisor.snapshot();
     assert_eq!(
-        hypervisor.domain_state(instance_name),
+        snapshot
+            .domains
+            .get(instance_name)
+            .map(|entry| entry.info.state),
         Some(DomainState::Running)
     );
-    let devices = hypervisor
-        .domain_block_devices(instance_name)
-        .expect("block devices");
+    let devices = &snapshot
+        .domains
+        .get(instance_name)
+        .expect("block devices")
+        .block_devices;
     assert_eq!(devices[0].source_file, Some(overlay_path.clone()));
     assert!(
         !pool_directory
@@ -350,13 +362,19 @@ fn test_online_backup_quiesce_fallback_to_crash_consistent() {
         BackupConsistencyLevel::CrashConsistent
     );
 
+    let snapshot = hypervisor.snapshot();
     assert_eq!(
-        hypervisor.domain_state(instance_name),
+        snapshot
+            .domains
+            .get(instance_name)
+            .map(|entry| entry.info.state),
         Some(DomainState::Running)
     );
-    let devices = hypervisor
-        .domain_block_devices(instance_name)
-        .expect("block devices");
+    let devices = &snapshot
+        .domains
+        .get(instance_name)
+        .expect("block devices")
+        .block_devices;
     assert_eq!(devices[0].source_file, Some(overlay_path.clone()));
 
     // Physical disk state verification
@@ -420,9 +438,12 @@ fn test_online_backup_raii_guard_triggers_blockcommit_on_failure() {
         "Backup must fail when storage conversion errors"
     );
 
-    let devices = hypervisor
-        .domain_block_devices(instance_name)
-        .expect("block devices");
+    let snapshot = hypervisor.snapshot();
+    let devices = &snapshot
+        .domains
+        .get(instance_name)
+        .expect("block devices")
+        .block_devices;
     assert_eq!(
         devices[0].source_file,
         Some(overlay_path),
@@ -492,9 +513,12 @@ fn test_multi_disk_atomic_snapshot_backup() {
 
     assert_eq!(backup_manifest.disks.len(), 2);
 
-    let devices = hypervisor
-        .domain_block_devices(instance_name)
-        .expect("block devices");
+    let snapshot = hypervisor.snapshot();
+    let devices = &snapshot
+        .domains
+        .get(instance_name)
+        .expect("block devices")
+        .block_devices;
     assert_eq!(devices.len(), 2);
     assert_eq!(devices[0].source_file, Some(disk1_path.clone()));
     assert_eq!(devices[1].source_file, Some(disk2_path.clone()));
@@ -673,20 +697,27 @@ fn test_restore_engine_success() {
         b"NVRAM_BINARY_DATA"
     );
 
+    let snapshot = hypervisor.snapshot();
     assert!(
-        hypervisor.is_domain_defined(instance_name),
+        snapshot.domains.contains_key(instance_name),
         "Domain should be registered with hypervisor"
     );
     assert_eq!(
-        hypervisor.domain_state(instance_name),
+        snapshot
+            .domains
+            .get(instance_name)
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
     assert!(
-        hypervisor.domain_xml(instance_name).is_some(),
+        snapshot
+            .domains
+            .get(instance_name)
+            .is_some_and(|entry| !entry.xml.is_empty()),
         "Domain XML should be defined in hypervisor"
     );
     assert!(
-        hypervisor.has_storage_pool(pool_name),
+        snapshot.storage_pools.contains_key(pool_name),
         "Target storage pool should exist in hypervisor"
     );
 }

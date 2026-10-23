@@ -117,16 +117,23 @@ fn test_apply_create_provisions_storage_and_registers_domain() {
     );
 
     // Verify observable hypervisor state
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
     assert_eq!(
-        hypervisor.domain_xml("win11-gollum"),
-        Some(CONCRETE_XML.to_string())
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.xml.as_str()),
+        Some(CONCRETE_XML)
     );
-    assert!(hypervisor.has_storage_pool("default"));
+    assert!(snapshot.storage_pools.contains_key("default"));
 }
 
 #[test]
@@ -163,10 +170,14 @@ fn test_apply_update_domain_xml_redefines_domain() {
         .apply(&plan)
         .expect("apply update should succeed");
 
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_xml("win11-gollum"),
-        Some(updated_xml.to_string())
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.xml.as_str()),
+        Some(updated_xml)
     );
 }
 
@@ -258,16 +269,23 @@ fn test_apply_recreate_succeeds_with_auto_approve() {
     );
 
     // Verify observable hypervisor state
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
     assert_eq!(
-        hypervisor.domain_xml("win11-gollum"),
-        Some(CONCRETE_XML.to_string())
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.xml.as_str()),
+        Some(CONCRETE_XML)
     );
-    assert!(hypervisor.has_storage_pool("default"));
+    assert!(snapshot.storage_pools.contains_key("default"));
 }
 
 #[test]
@@ -364,17 +382,24 @@ fn test_apply_relocate_storage_pool_moves_overlay_and_rebases() {
     assert!(storage.check_image(&target_base_cache_path).is_ok());
 
     // Verify observable hypervisor state
-    assert!(hypervisor.is_domain_defined("win11-gollum"));
+    let snapshot = hypervisor.snapshot();
+    assert!(snapshot.domains.contains_key("win11-gollum"));
     assert_eq!(
-        hypervisor.domain_state("win11-gollum"),
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
     assert_eq!(
-        hypervisor.domain_xml("win11-gollum"),
-        Some(concrete_xml)
+        snapshot
+            .domains
+            .get("win11-gollum")
+            .map(|entry| entry.xml.as_str()),
+        Some(concrete_xml.as_str())
     );
-    assert!(hypervisor.has_storage_pool("default"));
-    assert!(hypervisor.has_storage_pool("bulk-data"));
+    assert!(snapshot.storage_pools.contains_key("default"));
+    assert!(snapshot.storage_pools.contains_key("bulk-data"));
 }
 
 #[test]
@@ -409,9 +434,8 @@ fn test_apply_delete_action_deprovisions() {
         .apply(&delete_plan)
         .expect("delete action should succeed");
 
-    assert!(!hypervisor.is_domain_defined("win11-gollum"));
-    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
-    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
+    let snapshot = hypervisor.snapshot();
+    assert!(!snapshot.domains.contains_key("win11-gollum"));
 }
 
 #[test]
@@ -478,9 +502,8 @@ fn test_destroyer_graceful_shutdown_and_undefine() {
     assert_eq!(post_inspection.backing_file, Some(base_image_path));
     assert!(storage.check_image(&overlay_path).is_ok());
 
-    assert!(!hypervisor.is_domain_defined("win11-gollum"));
-    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
-    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
+    let snapshot = hypervisor.snapshot();
+    assert!(!snapshot.domains.contains_key("win11-gollum"));
 }
 
 #[test]
@@ -547,9 +570,8 @@ fn test_destroyer_force_cuts_power_when_force_flag_is_set() {
     assert_eq!(post_inspection.backing_file, Some(base_image_path));
     assert!(storage.check_image(&overlay_path).is_ok());
 
-    assert!(!hypervisor.is_domain_defined("win11-gollum"));
-    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
-    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
+    let snapshot = hypervisor.snapshot();
+    assert!(!snapshot.domains.contains_key("win11-gollum"));
 }
 
 #[test]
@@ -621,9 +643,8 @@ fn test_destroyer_deletes_cow_overlay_when_delete_disk_is_true() {
         "base image integrity must remain intact"
     );
 
-    assert!(!hypervisor.is_domain_defined("win11-gollum"));
-    assert_eq!(hypervisor.domain_state("win11-gollum"), None);
-    assert_eq!(hypervisor.domain_xml("win11-gollum"), None);
+    let snapshot = hypervisor.snapshot();
+    assert!(!snapshot.domains.contains_key("win11-gollum"));
 }
 
 #[test]
@@ -663,7 +684,7 @@ fn test_destroyer_idempotent_undefine_ignores_domain_not_found_but_propagates_hy
         result.is_ok(),
         "destroying when domain is not found in hypervisor must succeed idempotently"
     );
-    assert!(!hypervisor_without_domain.is_domain_defined("win11-gollum"));
+    assert!(!hypervisor_without_domain.snapshot().domains.contains_key("win11-gollum"));
 
     // Case 2: Hypervisor undefine fails with fatal error -> bubbles up error
     let hypervisor_with_error = FakeHypervisor::new()

@@ -48,52 +48,199 @@ fn test_fake_hypervisor_lifecycle_and_state_inspection() {
 
     let fake = FakeHypervisor::new().with_domain(initial_info, initial_xml);
 
-    // Verify initial inspection helpers
-    assert!(fake.is_domain_defined("test-vm"));
-    assert!(!fake.is_domain_defined("nonexistent-vm"));
-    assert_eq!(fake.defined_domain_names(), vec!["test-vm".to_string()]);
-    assert_eq!(fake.domain_state("test-vm"), Some(DomainState::Shutoff));
-    assert_eq!(fake.domain_state("nonexistent-vm"), None);
-    assert_eq!(fake.domain_xml("test-vm"), Some(initial_xml.to_string()));
-    assert_eq!(fake.domain_xml("nonexistent-vm"), None);
-    assert_eq!(fake.domain_autostart("test-vm"), Some(true));
-    assert_eq!(fake.domain_autostart("nonexistent-vm"), None);
+    // Verify initial snapshot state
+    let snapshot = fake.snapshot();
+    assert!(snapshot.domains.contains_key("test-vm"));
+    assert!(!snapshot.domains.contains_key("nonexistent-vm"));
+    let mut domain_names: Vec<String> = snapshot.domains.keys().cloned().collect();
+    domain_names.sort();
+    assert_eq!(domain_names, vec!["test-vm".to_string()]);
+    assert_eq!(
+        snapshot
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Shutoff)
+    );
+    assert_eq!(
+        snapshot
+            .domains
+            .get("nonexistent-vm")
+            .map(|entry| entry.info.state),
+        None
+    );
+    assert_eq!(
+        snapshot
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.xml.as_str()),
+        Some(initial_xml)
+    );
+    assert_eq!(
+        snapshot
+            .domains
+            .get("nonexistent-vm")
+            .map(|entry| entry.xml.as_str()),
+        None
+    );
+    assert_eq!(
+        snapshot
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.autostart),
+        Some(true)
+    );
+    assert_eq!(
+        snapshot
+            .domains
+            .get("nonexistent-vm")
+            .map(|entry| entry.info.autostart),
+        None
+    );
 
-    // Boot VM and observe state transition
+    // Boot VM and observe state transition in snapshot
     fake.start_domain("test-vm")
         .expect("start_domain should succeed");
-    assert_eq!(fake.domain_state("test-vm"), Some(DomainState::Running));
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Running)
+    );
 
     let queried_info = fake
         .domain_info("test-vm")
         .expect("domain_info should succeed");
     assert_eq!(queried_info.state, DomainState::Running);
 
-    // Shutdown VM and observe state transition
+    // Shutdown VM and observe state transition in snapshot
     fake.shutdown_domain("test-vm")
         .expect("shutdown_domain should succeed");
-    assert_eq!(fake.domain_state("test-vm"), Some(DomainState::Shutoff));
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Shutoff)
+    );
 
     // Destroy VM from running state
     fake.start_domain("test-vm")
         .expect("restart should succeed");
-    assert_eq!(fake.domain_state("test-vm"), Some(DomainState::Running));
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Running)
+    );
     fake.destroy_domain("test-vm")
         .expect("destroy_domain should succeed");
-    assert_eq!(fake.domain_state("test-vm"), Some(DomainState::Shutoff));
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Shutoff)
+    );
 
-    // Toggle autostart and observe state inspection
+    // Toggle autostart and observe snapshot
     fake.set_autostart("test-vm", false)
         .expect("set_autostart should succeed");
-    assert_eq!(fake.domain_autostart("test-vm"), Some(false));
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("test-vm")
+            .map(|entry| entry.info.autostart),
+        Some(false)
+    );
 
-    // Undefine domain and observe cleanup
+    // Undefine domain and observe cleanup in snapshot
     fake.undefine_domain("test-vm", true)
         .expect("undefine_domain should succeed");
-    assert!(!fake.is_domain_defined("test-vm"));
-    assert_eq!(fake.domain_state("test-vm"), None);
-    assert_eq!(fake.domain_xml("test-vm"), None);
-    assert!(fake.defined_domain_names().is_empty());
+    let after_undefine_snapshot = fake.snapshot();
+    assert!(!after_undefine_snapshot.domains.contains_key("test-vm"));
+    assert!(after_undefine_snapshot.domains.is_empty());
+}
+
+#[test]
+fn test_fake_hypervisor_redefine_preserves_running_state() {
+    let fake = FakeHypervisor::new();
+    let initial_xml = "<domain type='kvm'><name>running-vm</name></domain>";
+    fake.define_domain(initial_xml).expect("define new domain");
+
+    let initial_snapshot = fake.snapshot();
+    assert_eq!(
+        initial_snapshot
+            .domains
+            .get("running-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Shutoff)
+    );
+
+    fake.start_domain("running-vm").expect("start running-vm");
+    assert_eq!(
+        fake.snapshot()
+            .domains
+            .get("running-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Running)
+    );
+
+    let updated_xml = "<domain type='kvm'><name>running-vm</name><vcpu>4</vcpu></domain>";
+    fake.define_domain(updated_xml).expect("redefine domain");
+
+    let updated_snapshot = fake.snapshot();
+    assert_eq!(
+        updated_snapshot
+            .domains
+            .get("running-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Running)
+    );
+    assert_eq!(
+        updated_snapshot
+            .domains
+            .get("running-vm")
+            .map(|entry| entry.xml.as_str()),
+        Some(updated_xml)
+    );
+}
+
+#[test]
+fn test_fake_hypervisor_undefine_running_domain_returns_error() {
+    let fake = FakeHypervisor::new();
+    let domain_xml = "<domain type='kvm'><name>active-vm</name></domain>";
+    fake.define_domain(domain_xml).expect("define domain");
+    fake.start_domain("active-vm").expect("start domain");
+
+    // Attempting to undefine running domain must return HypervisorError
+    let error = fake
+        .undefine_domain("active-vm", false)
+        .expect_err("undefine running domain must fail");
+    assert!(matches!(
+        error,
+        HypervisorError::CommandExecutionFailed { ref stderr, .. }
+            if stderr.contains("Cannot undefine running domain")
+    ));
+
+    // Domain must still exist and remain running in snapshot
+    let snapshot = fake.snapshot();
+    assert!(snapshot.domains.contains_key("active-vm"));
+    assert_eq!(
+        snapshot
+            .domains
+            .get("active-vm")
+            .map(|entry| entry.info.state),
+        Some(DomainState::Running)
+    );
+
+    // After shutdown, undefine succeeds
+    fake.shutdown_domain("active-vm").expect("shutdown domain");
+    fake.undefine_domain("active-vm", false)
+        .expect("undefine shutoff domain");
+    assert!(!fake.snapshot().domains.contains_key("active-vm"));
 }
 
 #[test]
@@ -118,16 +265,28 @@ fn test_fake_hypervisor_define_domain_and_block_device_extraction() {
     fake.define_domain(domain_xml)
         .expect("define_domain should succeed");
 
-    assert!(fake.is_domain_defined("win-workstation"));
+    let snapshot = fake.snapshot();
+    assert!(snapshot.domains.contains_key("win-workstation"));
     assert_eq!(
-        fake.domain_state("win-workstation"),
+        snapshot
+            .domains
+            .get("win-workstation")
+            .map(|entry| entry.info.state),
         Some(DomainState::Shutoff)
     );
-    assert_eq!(fake.domain_autostart("win-workstation"), Some(false));
+    assert_eq!(
+        snapshot
+            .domains
+            .get("win-workstation")
+            .map(|entry| entry.info.autostart),
+        Some(false)
+    );
 
-    let devices = fake
-        .domain_block_devices("win-workstation")
-        .expect("block devices should exist");
+    let devices = &snapshot
+        .domains
+        .get("win-workstation")
+        .expect("block devices should exist")
+        .block_devices;
     assert_eq!(devices.len(), 2);
     assert_eq!(
         devices[0],
@@ -151,7 +310,7 @@ fn test_fake_hypervisor_define_domain_and_block_device_extraction() {
     let queried_devices = fake
         .list_block_devices("win-workstation")
         .expect("list_block_devices should succeed");
-    assert_eq!(queried_devices, devices);
+    assert_eq!(&queried_devices, devices);
 
     let dumped_xml = fake
         .dump_xml("win-workstation", true)
@@ -179,11 +338,21 @@ fn test_fake_hypervisor_explicit_block_devices_builder() {
         .with_domain(domain_info, "<domain><name>custom-vm</name></domain>")
         .with_block_devices("custom-vm", custom_devices.clone());
 
+    let snapshot = fake.snapshot();
     assert_eq!(
-        fake.domain_block_devices("custom-vm"),
-        Some(custom_devices)
+        snapshot
+            .domains
+            .get("custom-vm")
+            .map(|entry| &entry.block_devices),
+        Some(&custom_devices)
     );
-    assert_eq!(fake.domain_block_devices("nonexistent-vm"), None);
+    assert_eq!(
+        snapshot
+            .domains
+            .get("nonexistent-vm")
+            .map(|entry| &entry.block_devices),
+        None
+    );
 }
 
 #[test]
@@ -192,19 +361,22 @@ fn test_fake_hypervisor_storage_pool_inspection_and_resolution() {
         .with_pool_xml("default", SAMPLE_POOL_XML)
         .with_pool_xml("backup-pool", SECOND_POOL_XML);
 
-    assert!(fake.has_storage_pool("default"));
-    assert!(fake.has_storage_pool("backup-pool"));
-    assert!(!fake.has_storage_pool("unknown-pool"));
+    let snapshot = fake.snapshot();
+    assert!(snapshot.storage_pools.contains_key("default"));
+    assert!(snapshot.storage_pools.contains_key("backup-pool"));
+    assert!(!snapshot.storage_pools.contains_key("unknown-pool"));
 
+    let mut pools: Vec<String> = snapshot.storage_pools.keys().cloned().collect();
+    pools.sort();
     assert_eq!(
-        fake.defined_storage_pools(),
+        pools,
         vec!["backup-pool".to_string(), "default".to_string()]
     );
     assert_eq!(
-        fake.storage_pool_xml("default"),
-        Some(SAMPLE_POOL_XML.to_string())
+        snapshot.storage_pools.get("default").map(|s| s.as_str()),
+        Some(SAMPLE_POOL_XML)
     );
-    assert_eq!(fake.storage_pool_xml("unknown-pool"), None);
+    assert_eq!(snapshot.storage_pools.get("unknown-pool"), None);
 
     // Hypervisor trait pool operations
     let dumped_xml = fake
@@ -264,12 +436,15 @@ fn test_fake_hypervisor_snapshots_and_blockcommit() {
         .expect("create_snapshot should succeed");
 
     assert!(snapshot_file_path.exists());
-    let devices_after_snapshot = fake
-        .domain_block_devices("snap-vm")
-        .expect("block devices should exist");
+    let snapshot_after_create = fake.snapshot();
+    let devices_after_snapshot = &snapshot_after_create
+        .domains
+        .get("snap-vm")
+        .expect("domain entry should exist")
+        .block_devices;
     assert_eq!(
         devices_after_snapshot,
-        vec![BlockDeviceInfo {
+        &vec![BlockDeviceInfo {
             target_device: "sda".to_string(),
             device_type: "disk".to_string(),
             source_file: Some(snapshot_file_path.clone()),
@@ -286,12 +461,15 @@ fn test_fake_hypervisor_snapshots_and_blockcommit() {
     )
     .expect("blockcommit should succeed");
 
-    let devices_after_commit = fake
-        .domain_block_devices("snap-vm")
-        .expect("block devices should exist");
+    let snapshot_after_commit = fake.snapshot();
+    let devices_after_commit = &snapshot_after_commit
+        .domains
+        .get("snap-vm")
+        .expect("domain entry should exist")
+        .block_devices;
     assert_eq!(
         devices_after_commit,
-        vec![BlockDeviceInfo {
+        &vec![BlockDeviceInfo {
             target_device: "sda".to_string(),
             device_type: "disk".to_string(),
             source_file: Some(base_file_path),
@@ -314,11 +492,11 @@ fn test_fake_hypervisor_undefine_domain_cleans_nvram_file() {
     let fake = FakeHypervisor::new();
     fake.define_domain(&domain_xml)
         .expect("define_domain should succeed");
-    assert!(fake.is_domain_defined("nvram-vm"));
+    assert!(fake.snapshot().domains.contains_key("nvram-vm"));
 
     fake.undefine_domain("nvram-vm", true)
         .expect("undefine_domain with cleanup_nvram should succeed");
-    assert!(!fake.is_domain_defined("nvram-vm"));
+    assert!(!fake.snapshot().domains.contains_key("nvram-vm"));
     assert!(!nvram_path.exists());
 }
 
