@@ -1,0 +1,4 @@
+disallowed-methods = [
+  { path = "core::iter::Iterator::for_each", reason = "for_each is an imperative side-effecting loop; use pure functional combinators (map, filter, fold, try_fold, collect)" },
+  { path = "core::iter::Iterator::try_for_each", reason = "try_for_each is an imperative side-effecting loop; use try_fold or map(...).collect::<Result<_, _>>()" },
+]

@@ -1,0 +1,25 @@
+[package]
+name = "shifting"
+version = "0.1.0"
+edition = "2024"
+
+[lints.rust]
+unused = "deny"
+dead_code = "deny"
+unused_variables = "deny"
+unused_mut = "deny"
+unused_imports = "deny"
+unreachable_code = "deny"
+unused_qualifications = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+needless_for_each = "deny"
+match_same_arms = "deny"
+used_underscore_binding = "deny"
+pub_underscore_fields = "deny"
+no_effect_underscore_binding = "deny"
+unnecessary_wraps = "deny"
+disallowed_methods = "deny"
+allow_attributes = "deny"
