@@ -47,3 +47,38 @@ _Avoid_: Build version, OS tag, distro alias
 **Orphan Domain**:
 A libvirt domain previously provisioned and tagged by onehost whose definition has been removed from `onehost.json`.
 _Avoid_: Unmanaged VM, zombie instance
+
+**Shifting**:
+A generic, zero-dependency Type-State machine library and agentic orchestrator that enforces out-of-process execution, functional transitions, and deterministic verification gates.
+_Avoid_: Agent loop script, bash wrapper
+
+**Step**:
+An unconditional state transition morphism in shifting transforming an input state into an output state.
+_Avoid_: Action, task execution
+
+**Branch**:
+A conditional decision coproduct morphism in shifting mapping an input state to a sum type (`Either<L, R>`).
+_Avoid_: If-else hook, conditional check
+
+**Script Bridge**:
+A protocol adapter in shifting executing executable scripts via Unix STDIN/STDOUT stream piping without filesystem state pollution.
+_Avoid_: Shell runner, command runner
+
+**LoopFlow**:
+A control-flow algebraic data type (`Continue(State) | Break(Terminal)`) driving iterative execution in the Shift Executor.
+_Avoid_: While loop flag, exit signal
+
+**Step Identity**:
+The canonical pass-through step morphism in shifting mapping an input state $A \to A$ with `Infallible` error without mutation, instantiated via `step::Identity<T>` or `step::id()`.
+_Avoid_: Noop step, dummy transition
+
+**Coproduct Identity**:
+The universal identity morphism for coproducts $id_{L+R}: L+R \to L+R$, instantiated via `either::Identity<L, R>`, `either::id()`, or `Either::id()`, implementing both `Step` and `Branch`.
+_Avoid_: Manual either identity, noop either
+
+**Coproduct Injections**:
+Universal constructors ($\iota_L$ and $\iota_R$) in shifting lifting a plain state into the left (`either::IntoLeft`, `either::into_left()`, `Either::into_left()`) or right (`either::IntoRight`, `either::into_right()`, `Either::into_right()`) arm of a coproduct `Either<L, R>`, implementing both `Step` and `Branch`.
+_Avoid_: Manual Either wrapping, tag constructor
+
+
+
