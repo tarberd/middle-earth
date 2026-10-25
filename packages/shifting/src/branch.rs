@@ -9,6 +9,14 @@ pub trait Branch<In> {
 
     /// Evaluates the branch condition against the input state.
     fn evaluate(&self, input: In) -> Result<Either<Self::Left, Self::Right>, Self::Error>;
+
+    /// Returns the identity morphism for this branch.
+    fn id<L, R>() -> crate::adt::BranchIdentity<L, R>
+    where
+        Self: Sized,
+    {
+        crate::adt::BranchIdentity::new()
+    }
 }
 
 /// Blanket implementation of [`Branch`] for any closure matching `Fn(In) -> Result<Either<Left, Right>, Error>`.
@@ -28,8 +36,8 @@ where
 /// A composite morphism chaining a [`Step`] into a [`Branch`] ($b \circ f$).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StepBranch<S, B> {
-    pub step: S,
-    pub branch: B,
+    pub(crate) step: S,
+    pub(crate) branch: B,
 }
 
 impl<S, B> StepBranch<S, B> {
@@ -57,9 +65,9 @@ where
 /// Cascades branch decision morphisms along both arms of a coproduct without intermediate steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BranchBoth<B, LeftBranch, RightBranch> {
-    pub branch: B,
-    pub left_branch: LeftBranch,
-    pub right_branch: RightBranch,
+    pub(crate) branch: B,
+    pub(crate) left_branch: LeftBranch,
+    pub(crate) right_branch: RightBranch,
 }
 
 impl<B, LeftBranch, RightBranch> BranchBoth<B, LeftBranch, RightBranch> {
@@ -103,8 +111,8 @@ where
 /// Cascades a branch decision morphism along the left arm of a coproduct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BranchLeft<B, LeftBranch> {
-    pub branch: B,
-    pub left_branch: LeftBranch,
+    pub(crate) branch: B,
+    pub(crate) left_branch: LeftBranch,
 }
 
 impl<B, LeftBranch> BranchLeft<B, LeftBranch> {
@@ -142,8 +150,8 @@ where
 /// Cascades a branch decision morphism along the right arm of a coproduct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BranchRight<B, RightBranch> {
-    pub branch: B,
-    pub right_branch: RightBranch,
+    pub(crate) branch: B,
+    pub(crate) right_branch: RightBranch,
 }
 
 impl<B, RightBranch> BranchRight<B, RightBranch> {

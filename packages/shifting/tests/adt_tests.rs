@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use shifting::{Either, EitherIdentity, Identity, InjectLeft, InjectRight, LoopFlow, Step};
+use shifting::{
+    branch_id, either_id, into_left, into_right, step_id, Branch, BranchIdentity, Either,
+    EitherIdentity, IntoLeft, IntoRight, LoopFlow, Step, StepIdentity,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 struct TestErrA(&'static str);
@@ -136,17 +139,37 @@ fn test_loop_flow_projections_and_collapses() {
 
 #[test]
 fn test_canonical_injections_and_identities() {
-    let inject_l: InjectLeft<i32, String> = InjectLeft::new();
-    let left_res = Step::apply(&inject_l, 42);
-    assert_eq!(left_res, Ok(Either::Left(42)));
+    let inject_l: IntoLeft<i32, String> = IntoLeft::new();
+    let left_step_res = Step::apply(&inject_l, 42);
+    assert_eq!(left_step_res, Ok(Either::Left(42)));
+    let left_branch_res = Branch::evaluate(&into_left::<i32, String>(), 42);
+    assert_eq!(left_branch_res, Ok(Either::Left(42)));
+    let left_either_res = Branch::evaluate(&Either::<i32, String>::into_left(), 42);
+    assert_eq!(left_either_res, Ok(Either::Left(42)));
 
-    let inject_r: InjectRight<i32, String> = InjectRight::new();
-    let right_res = Step::apply(&inject_r, "hello".to_string());
-    assert_eq!(right_res, Ok(Either::Right("hello".to_string())));
+    let inject_r: IntoRight<i32, String> = IntoRight::new();
+    let right_step_res = Step::apply(&inject_r, "hello".to_string());
+    assert_eq!(right_step_res, Ok(Either::Right("hello".to_string())));
+    let right_branch_res = Branch::evaluate(&into_right::<i32, String>(), "hello".to_string());
+    assert_eq!(right_branch_res, Ok(Either::Right("hello".to_string())));
+    let right_either_res = Branch::evaluate(&Either::<i32, String>::into_right(), "hello".to_string());
+    assert_eq!(right_either_res, Ok(Either::Right("hello".to_string())));
 
-    let either_id: EitherIdentity<i32, String> = EitherIdentity::new();
-    let step_res = Step::apply(&either_id, Either::Left(99));
+    let either_identity: EitherIdentity<i32, String> = EitherIdentity::new();
+    let step_res = Step::apply(&either_identity, Either::Left(99));
     assert_eq!(step_res, Ok(Either::Left(99)));
+    let branch_res = Branch::evaluate(&either_identity, Either::Right("world".to_string()));
+    assert_eq!(branch_res, Ok(Either::Right("world".to_string())));
+
+    let either_id_sugar = Either::<i32, String>::id();
+    assert_eq!(Step::apply(&either_id_sugar, Either::Left(1)), Ok(Either::Left(1)));
+    assert_eq!(either_id::<i32, String>(), either_identity);
+
+    let branch_id_sugar: BranchIdentity<i32, String> = branch_id();
+    assert_eq!(
+        Branch::evaluate(&branch_id_sugar, Either::Right("sugar".to_string())),
+        Ok(Either::Right("sugar".to_string()))
+    );
 }
 
 #[test]
@@ -161,16 +184,19 @@ fn test_trait_derivations_and_hashing() {
     let flow_set = HashSet::from([f1, f2]);
     assert_eq!(flow_set.len(), 2);
 
-    let id = Identity::<i32>::new();
+    let id = StepIdentity::<i32>::new();
     let id_clone = id;
     assert_eq!(id, id_clone);
+    assert_eq!(id, step_id::<i32>());
+    assert_eq!(id, StepIdentity::<i32>::id());
 
-    let either_id = EitherIdentity::<i32, String>::new();
-    let either_id_clone = either_id;
-    assert_eq!(either_id, either_id_clone);
+    let either_id_val = EitherIdentity::<i32, String>::new();
+    let either_id_clone = either_id_val;
+    assert_eq!(either_id_val, either_id_clone);
+    assert_eq!(either_id_val, EitherIdentity::<i32, String>::id());
 
-    let inj_l = InjectLeft::<i32, String>::new();
-    let inj_r = InjectRight::<i32, String>::new();
+    let inj_l = IntoLeft::<i32, String>::new();
+    let inj_r = IntoRight::<i32, String>::new();
     assert_eq!(inj_l, inj_l);
     assert_eq!(inj_r, inj_r);
 }

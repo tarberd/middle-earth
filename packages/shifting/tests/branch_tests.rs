@@ -1,6 +1,8 @@
 use core::convert::Infallible;
 
-use shifting::{Branch, BranchExt, Either, LoopFlow, Step, StepExt};
+use shifting::{
+    branch_id, into_left, into_right, Branch, BranchExt, Either, LoopFlow, Step, StepExt,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 struct ParseError(&'static str);
@@ -135,6 +137,23 @@ fn test_direct_cascading_branch_composition() {
         right_cascaded.evaluate(7),
         Ok(Either::Right(Either::Right("other: 7".to_string())))
     );
+
+    // 4. branch_both with IntoLeft and IntoRight
+    let into_cascaded = outer_branch.branch_both(into_left::<i32, String>(), into_right::<String, i32>());
+    assert_eq!(into_cascaded.evaluate(4), Ok(Either::Left(Either::Left(4))));
+    assert_eq!(into_cascaded.evaluate(7), Ok(Either::Right(Either::Right(7))));
+
+    // 5. step.branch with BranchIdentity / branch_id()
+    let step_with_either = |n: i32| -> Result<Either<i32, String>, Infallible> {
+        if n >= 0 {
+            Ok(Either::Left(n))
+        } else {
+            Ok(Either::Right("neg".to_string()))
+        }
+    };
+    let lifted_branch = step_with_either.branch(branch_id::<i32, String>());
+    assert_eq!(lifted_branch.evaluate(10), Ok(Either::Left(10)));
+    assert_eq!(lifted_branch.evaluate(-1), Ok(Either::Right("neg".to_string())));
 }
 
 #[test]

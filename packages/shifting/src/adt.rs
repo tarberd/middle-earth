@@ -2,6 +2,7 @@ use core::convert::Infallible;
 use core::fmt;
 use core::ops::Deref;
 
+use crate::branch::Branch;
 use crate::step::Step;
 
 /// A zero-dependency coproduct type representing one of two possibilities.
@@ -84,6 +85,24 @@ impl<L, R> Either<L, R> {
             Self::Left(l) => on_left(l),
             Self::Right(r) => on_right(r),
         }
+    }
+
+    /// Returns the identity morphism for this coproduct.
+    #[must_use]
+    pub const fn id() -> EitherIdentity<L, R> {
+        EitherIdentity::new()
+    }
+
+    /// Returns the canonical left injection/value constructor morphism.
+    #[must_use]
+    pub const fn into_left() -> IntoLeft<L, R> {
+        IntoLeft::new()
+    }
+
+    /// Returns the canonical right injection/value constructor morphism.
+    #[must_use]
+    pub const fn into_right() -> IntoRight<L, R> {
+        IntoRight::new()
     }
 }
 
@@ -197,6 +216,8 @@ pub struct EitherIdentity<L, R> {
     marker: EitherIdentityMarker<L, R>,
 }
 
+pub type BranchIdentity<L, R> = EitherIdentity<L, R>;
+
 impl<L, R> Clone for EitherIdentity<L, R> {
     fn clone(&self) -> Self {
         *self
@@ -218,6 +239,11 @@ impl<L, R> EitherIdentity<L, R> {
             marker: core::marker::PhantomData,
         }
     }
+
+    #[must_use]
+    pub const fn id() -> Self {
+        Self::new()
+    }
 }
 
 impl<L, R> Step<Either<L, R>> for EitherIdentity<L, R> {
@@ -229,27 +255,54 @@ impl<L, R> Step<Either<L, R>> for EitherIdentity<L, R> {
     }
 }
 
-/// Canonical coproduct left injection morphism ($\iota_L: L \to L + R$).
+impl<L, R> Branch<Either<L, R>> for EitherIdentity<L, R> {
+    type Left = L;
+    type Right = R;
+    type Error = Infallible;
+
+    fn evaluate(
+        &self,
+        input: Either<L, R>,
+    ) -> Result<Either<Self::Left, Self::Right>, Self::Error> {
+        Ok(input)
+    }
+}
+
+/// Returns the coproduct identity morphism.
+#[must_use]
+pub const fn either_id<L, R>() -> EitherIdentity<L, R> {
+    EitherIdentity::new()
+}
+
+/// Returns the branch identity morphism.
+#[must_use]
+pub const fn branch_id<L, R>() -> BranchIdentity<L, R> {
+    BranchIdentity::new()
+}
+
+/// Canonical coproduct left injection/value constructor morphism ($\iota_L: L \to L + R$).
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct InjectLeft<L, R> {
+pub struct IntoLeft<L, R> {
     marker: core::marker::PhantomData<fn(L) -> Either<L, R>>,
 }
 
-impl<L, R> Clone for InjectLeft<L, R> {
+pub type InjectLeft<L, R> = IntoLeft<L, R>;
+
+impl<L, R> Clone for IntoLeft<L, R> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<L, R> Copy for InjectLeft<L, R> {}
+impl<L, R> Copy for IntoLeft<L, R> {}
 
-impl<L, R> Default for InjectLeft<L, R> {
+impl<L, R> Default for IntoLeft<L, R> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<L, R> InjectLeft<L, R> {
+impl<L, R> IntoLeft<L, R> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -258,7 +311,7 @@ impl<L, R> InjectLeft<L, R> {
     }
 }
 
-impl<L, R> Step<L> for InjectLeft<L, R> {
+impl<L, R> Step<L> for IntoLeft<L, R> {
     type Out = Either<L, R>;
     type Error = Infallible;
 
@@ -267,27 +320,45 @@ impl<L, R> Step<L> for InjectLeft<L, R> {
     }
 }
 
-/// Canonical coproduct right injection morphism ($\iota_R: R \to L + R$).
+impl<L, R> Branch<L> for IntoLeft<L, R> {
+    type Left = L;
+    type Right = R;
+    type Error = Infallible;
+
+    fn evaluate(&self, input: L) -> Result<Either<Self::Left, Self::Right>, Self::Error> {
+        Ok(Either::Left(input))
+    }
+}
+
+/// Returns the canonical left injection/value constructor morphism.
+#[must_use]
+pub const fn into_left<L, R>() -> IntoLeft<L, R> {
+    IntoLeft::new()
+}
+
+/// Canonical coproduct right injection/value constructor morphism ($\iota_R: R \to L + R$).
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct InjectRight<L, R> {
+pub struct IntoRight<L, R> {
     marker: core::marker::PhantomData<fn(R) -> Either<L, R>>,
 }
 
-impl<L, R> Clone for InjectRight<L, R> {
+pub type InjectRight<L, R> = IntoRight<L, R>;
+
+impl<L, R> Clone for IntoRight<L, R> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<L, R> Copy for InjectRight<L, R> {}
+impl<L, R> Copy for IntoRight<L, R> {}
 
-impl<L, R> Default for InjectRight<L, R> {
+impl<L, R> Default for IntoRight<L, R> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<L, R> InjectRight<L, R> {
+impl<L, R> IntoRight<L, R> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -296,11 +367,27 @@ impl<L, R> InjectRight<L, R> {
     }
 }
 
-impl<L, R> Step<R> for InjectRight<L, R> {
+impl<L, R> Step<R> for IntoRight<L, R> {
     type Out = Either<L, R>;
     type Error = Infallible;
 
     fn apply(&self, input: R) -> Result<Self::Out, Self::Error> {
         Ok(Either::Right(input))
     }
+}
+
+impl<L, R> Branch<R> for IntoRight<L, R> {
+    type Left = L;
+    type Right = R;
+    type Error = Infallible;
+
+    fn evaluate(&self, input: R) -> Result<Either<Self::Left, Self::Right>, Self::Error> {
+        Ok(Either::Right(input))
+    }
+}
+
+/// Returns the canonical right injection/value constructor morphism.
+#[must_use]
+pub const fn into_right<L, R>() -> IntoRight<L, R> {
+    IntoRight::new()
 }
