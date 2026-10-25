@@ -4,16 +4,7 @@ use shifting::{step, Either, Step, StepExt};
 struct StepError(&'static str);
 
 #[derive(Debug, PartialEq, Eq)]
-enum CompositeError {
-    Step(StepError),
-    Parsing(&'static str),
-}
-
-impl From<StepError> for CompositeError {
-    fn from(err: StepError) -> Self {
-        Self::Step(err)
-    }
-}
+struct ParseError(&'static str);
 
 #[test]
 fn test_step_basic_apply() {
@@ -89,16 +80,16 @@ fn test_step_heterogeneous_error_composition() {
         }
     };
 
-    let step_with_composite_error = |n: i32| -> Result<String, CompositeError> {
+    let step_with_parse_error = |n: i32| -> Result<String, ParseError> {
         if n < 100 {
             Ok(format!("result: {n}"))
         } else {
-            Err(CompositeError::Parsing("too large"))
+            Err(ParseError("too large"))
         }
     };
 
     // Composition preserves heterogeneous errors without requiring From or unifying enums
-    let pipeline = step_with_step_error.and_then(step_with_composite_error);
+    let pipeline = step_with_step_error.and_then(step_with_parse_error);
 
     assert_eq!(pipeline.apply(5), Ok("result: 50".to_string()));
     assert_eq!(
@@ -107,7 +98,7 @@ fn test_step_heterogeneous_error_composition() {
     );
     assert_eq!(
         pipeline.apply(20),
-        Err(Either::Right(CompositeError::Parsing("too large")))
+        Err(Either::Right(ParseError("too large")))
     );
 }
 

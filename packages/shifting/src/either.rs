@@ -237,11 +237,6 @@ impl<L, R> Identity<L, R> {
             marker: core::marker::PhantomData,
         }
     }
-
-    #[must_use]
-    pub const fn id() -> Self {
-        Self::new()
-    }
 }
 
 impl<L, R> Step<Either<L, R>> for Identity<L, R> {

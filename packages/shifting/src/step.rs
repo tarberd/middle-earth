@@ -53,10 +53,6 @@ impl<T> Identity<T> {
         }
     }
 
-    #[must_use]
-    pub const fn id() -> Self {
-        Self::new()
-    }
 }
 
 impl<T> Step<T> for Identity<T> {
