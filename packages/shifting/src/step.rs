@@ -52,7 +52,6 @@ impl<T> Identity<T> {
             marker: core::marker::PhantomData,
         }
     }
-
 }
 
 impl<T> Step<T> for Identity<T> {
@@ -116,6 +115,14 @@ pub trait StepExt<In>: Step<In> {
         B: Branch<Self::Out>,
     {
         crate::branch::StepBranch::new(self, branch)
+    }
+
+    /// Converts a step producing [`LoopFlow`](crate::either::LoopFlow) into an [`Executor`](crate::executor::Executor).
+    fn into_executor<Terminal>(self) -> crate::executor::Executor<Self>
+    where
+        Self: Sized + Step<In, Out = crate::either::LoopFlow<In, Terminal>>,
+    {
+        crate::executor::Executor::new(self)
     }
 }
 

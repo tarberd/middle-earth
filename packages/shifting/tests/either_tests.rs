@@ -149,9 +149,11 @@ fn test_canonical_injections_and_identities() {
     let inject_r: either::IntoRight<i32, String> = either::IntoRight::new();
     let right_step_res = Step::apply(&inject_r, "hello".to_string());
     assert_eq!(right_step_res, Ok(Either::Right("hello".to_string())));
-    let right_branch_res = Branch::evaluate(&either::into_right::<i32, String>(), "hello".to_string());
+    let right_branch_res =
+        Branch::evaluate(&either::into_right::<i32, String>(), "hello".to_string());
     assert_eq!(right_branch_res, Ok(Either::Right("hello".to_string())));
-    let right_either_res = Branch::evaluate(&Either::<i32, String>::into_right(), "hello".to_string());
+    let right_either_res =
+        Branch::evaluate(&Either::<i32, String>::into_right(), "hello".to_string());
     assert_eq!(right_either_res, Ok(Either::Right("hello".to_string())));
 
     let either_identity: either::Identity<i32, String> = either::Identity::new();
@@ -161,7 +163,10 @@ fn test_canonical_injections_and_identities() {
     assert_eq!(branch_res, Ok(Either::Right("world".to_string())));
 
     let either_id_sugar = Either::<i32, String>::id();
-    assert_eq!(Step::apply(&either_id_sugar, Either::Left(1)), Ok(Either::Left(1)));
+    assert_eq!(
+        Step::apply(&either_id_sugar, Either::Left(1)),
+        Ok(Either::Left(1))
+    );
     assert_eq!(either::id::<i32, String>(), either_identity);
 }
 

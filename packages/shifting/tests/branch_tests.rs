@@ -138,12 +138,21 @@ fn test_direct_cascading_branch_composition() {
     );
 
     // 4. branch_both with either::into_left and either::into_right
-    let into_cascaded = outer_branch.branch_both(either::into_left::<i32, String>(), either::into_right::<String, i32>());
+    let into_cascaded = outer_branch.branch_both(
+        either::into_left::<i32, String>(),
+        either::into_right::<String, i32>(),
+    );
     assert_eq!(into_cascaded.evaluate(4), Ok(Either::Left(Either::Left(4))));
-    assert_eq!(into_cascaded.evaluate(7), Ok(Either::Right(Either::Right(7))));
+    assert_eq!(
+        into_cascaded.evaluate(7),
+        Ok(Either::Right(Either::Right(7)))
+    );
 
     // Universal coproduct pass-through verification: [iota_L, iota_R] = id_{L+R}
-    let coproduct_id_passthrough = outer_branch.branch_both(either::into_left::<i32, i32>(), either::into_right::<i32, i32>());
+    let coproduct_id_passthrough = outer_branch.branch_both(
+        either::into_left::<i32, i32>(),
+        either::into_right::<i32, i32>(),
+    );
     let collapsed_4 = coproduct_id_passthrough
         .evaluate(4)
         .expect("eval 4 ok")
@@ -172,7 +181,10 @@ fn test_direct_cascading_branch_composition() {
     };
     let lifted_branch = step_with_either.branch(either::id::<i32, String>());
     assert_eq!(lifted_branch.evaluate(10), Ok(Either::Left(10)));
-    assert_eq!(lifted_branch.evaluate(-1), Ok(Either::Right("neg".to_string())));
+    assert_eq!(
+        lifted_branch.evaluate(-1),
+        Ok(Either::Right("neg".to_string()))
+    );
 }
 
 #[test]

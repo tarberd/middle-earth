@@ -1,4 +1,4 @@
-use shifting::{step, Either, Step, StepExt};
+use shifting::{Either, Step, StepExt, step};
 
 #[derive(Debug, PartialEq, Eq)]
 struct StepError(&'static str);
