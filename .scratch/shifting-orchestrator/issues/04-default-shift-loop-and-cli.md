@@ -1,6 +1,6 @@
 # Default Shift Loop Convention and CLI Binary
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03
 
 ## Description
@@ -29,9 +29,9 @@ Implement the default batteries-included loop convention and CLI binary:
 
 ## Acceptance Criteria
 
-- [ ] Works out of the box with any repository providing `.shifting/` scripts.
-- [ ] `rollback.sh` is a minimal non-destructive stub (`exit 0`).
-- [ ] Categorical branching routes `plan.sh` exit 2 directly to `LoopFlow::Break(())`.
-- [ ] Standalone binary `shift` uses `clap` (derive) supporting `--dir`, `--max-iterations`, and `--verbose`.
-- [ ] Integration test simulating full multi-cycle execution with mock scripts verifying planning, execution, verification, commit, rollback, and exit 2 clean break.
-- [ ] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
+- [x] Works out of the box with any repository providing `.shifting/` scripts.
+- [x] `rollback.sh` is a minimal non-destructive stub (`exit 0`).
+- [x] Categorical branching routes `plan.sh` exit 2 directly to `LoopFlow::Break(())`.
+- [x] Standalone binary `shift` uses `clap` (derive) supporting `--dir`, `--max-iterations`, and `--verbose`.
+- [x] Integration test simulating full multi-cycle execution with mock scripts verifying planning, execution, verification, commit, rollback, and exit 2 clean break.
+- [x] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
