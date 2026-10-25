@@ -1,4 +1,4 @@
-use shifting::{step_id, Either, Step, StepExt, StepIdentity};
+use shifting::{step, Either, Step, StepExt};
 
 #[derive(Debug, PartialEq, Eq)]
 struct StepError(&'static str);
@@ -121,8 +121,8 @@ fn test_category_theory_identity_laws() {
         }
     };
 
-    // Left identity: StepIdentity::id().and_then(step) == step
-    let left_id_pipeline = StepIdentity::id().and_then(step);
+    // Left identity: step::id().and_then(step) == step
+    let left_id_pipeline = step::id().and_then(step);
     let left_eval_ok = left_id_pipeline
         .apply(21)
         .map_err(|e| e.either(|infallible| match infallible {}, |err| err));
@@ -133,8 +133,8 @@ fn test_category_theory_identity_laws() {
         .map_err(|e| e.either(|infallible| match infallible {}, |err| err));
     assert_eq!(left_eval_err, step.apply(-5));
 
-    // Right identity: step.and_then(step_id()) == step
-    let right_id_pipeline = step.and_then(step_id::<i32>());
+    // Right identity: step.and_then(step::id()) == step
+    let right_id_pipeline = step.and_then(step::id::<i32>());
     let right_eval_ok = right_id_pipeline
         .apply(21)
         .map_err(|e| e.either(|err| err, |infallible| match infallible {}));
@@ -163,7 +163,7 @@ fn test_category_theory_associativity_law() {
     );
 
     // Error path associativity verification across heterogeneous error tree
-    let err_step = |_n: i32| -> Result<i32, StepError> { Err(StepError("fail_f")) };
+    let err_step = |_: i32| -> Result<i32, StepError> { Err(StepError("fail_f")) };
     let left_err_pipeline = err_step.and_then(g).and_then(h);
     let right_err_pipeline = err_step.and_then(g.and_then(h));
 

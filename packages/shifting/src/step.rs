@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
-use crate::adt::Either;
 use crate::branch::Branch;
+use crate::either::Either;
 
 /// An unconditional state transition morphism transforming an input state into an output state.
 pub trait Step<In> {
@@ -10,14 +10,6 @@ pub trait Step<In> {
 
     /// Applies the transition morphism to the given input state.
     fn apply(&self, input: In) -> Result<Self::Out, Self::Error>;
-
-    /// Returns the identity morphism for this step.
-    fn id() -> StepIdentity<In>
-    where
-        Self: Sized,
-    {
-        StepIdentity::new()
-    }
 }
 
 /// Blanket implementation of [`Step`] for any closure matching `Fn(In) -> Result<Out, Error>`.
@@ -35,11 +27,9 @@ where
 
 /// Canonical identity morphism ($id_A: A \to A$).
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct StepIdentity<T> {
+pub struct Identity<T> {
     marker: core::marker::PhantomData<fn(T) -> T>,
 }
-
-pub type Identity<T> = StepIdentity<T>;
 
 impl<T> Clone for Identity<T> {
     fn clone(&self) -> Self {
@@ -55,7 +45,7 @@ impl<T> Default for Identity<T> {
     }
 }
 
-impl<T> StepIdentity<T> {
+impl<T> Identity<T> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -80,15 +70,15 @@ impl<T> Step<T> for Identity<T> {
 
 /// Returns the step identity morphism.
 #[must_use]
-pub const fn step_id<T>() -> StepIdentity<T> {
-    StepIdentity::new()
+pub const fn id<T>() -> Identity<T> {
+    Identity::new()
 }
 
 /// Sequential composition of two steps ($g \circ f$).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AndThen<First, Second> {
-    pub(crate) first: First,
-    pub(crate) second: Second,
+    pub first: First,
+    pub second: Second,
 }
 
 impl<First, Second> AndThen<First, Second> {

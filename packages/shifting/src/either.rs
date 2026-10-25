@@ -89,8 +89,8 @@ impl<L, R> Either<L, R> {
 
     /// Returns the identity morphism for this coproduct.
     #[must_use]
-    pub const fn id() -> EitherIdentity<L, R> {
-        EitherIdentity::new()
+    pub const fn id() -> Identity<L, R> {
+        Identity::new()
     }
 
     /// Returns the canonical left injection/value constructor morphism.
@@ -212,27 +212,25 @@ type EitherIdentityMarker<L, R> = core::marker::PhantomData<(fn(L) -> L, fn(R) -
 
 /// Coproduct identity morphism ($id_{L+R}: L+R \to L+R$).
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct EitherIdentity<L, R> {
+pub struct Identity<L, R> {
     marker: EitherIdentityMarker<L, R>,
 }
 
-pub type BranchIdentity<L, R> = EitherIdentity<L, R>;
-
-impl<L, R> Clone for EitherIdentity<L, R> {
+impl<L, R> Clone for Identity<L, R> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<L, R> Copy for EitherIdentity<L, R> {}
+impl<L, R> Copy for Identity<L, R> {}
 
-impl<L, R> Default for EitherIdentity<L, R> {
+impl<L, R> Default for Identity<L, R> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<L, R> EitherIdentity<L, R> {
+impl<L, R> Identity<L, R> {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -246,7 +244,7 @@ impl<L, R> EitherIdentity<L, R> {
     }
 }
 
-impl<L, R> Step<Either<L, R>> for EitherIdentity<L, R> {
+impl<L, R> Step<Either<L, R>> for Identity<L, R> {
     type Out = Either<L, R>;
     type Error = Infallible;
 
@@ -255,7 +253,7 @@ impl<L, R> Step<Either<L, R>> for EitherIdentity<L, R> {
     }
 }
 
-impl<L, R> Branch<Either<L, R>> for EitherIdentity<L, R> {
+impl<L, R> Branch<Either<L, R>> for Identity<L, R> {
     type Left = L;
     type Right = R;
     type Error = Infallible;
@@ -270,14 +268,8 @@ impl<L, R> Branch<Either<L, R>> for EitherIdentity<L, R> {
 
 /// Returns the coproduct identity morphism.
 #[must_use]
-pub const fn either_id<L, R>() -> EitherIdentity<L, R> {
-    EitherIdentity::new()
-}
-
-/// Returns the branch identity morphism.
-#[must_use]
-pub const fn branch_id<L, R>() -> BranchIdentity<L, R> {
-    BranchIdentity::new()
+pub const fn id<L, R>() -> Identity<L, R> {
+    Identity::new()
 }
 
 /// Canonical coproduct left injection/value constructor morphism ($\iota_L: L \to L + R$).
@@ -285,8 +277,6 @@ pub const fn branch_id<L, R>() -> BranchIdentity<L, R> {
 pub struct IntoLeft<L, R> {
     marker: core::marker::PhantomData<fn(L) -> Either<L, R>>,
 }
-
-pub type InjectLeft<L, R> = IntoLeft<L, R>;
 
 impl<L, R> Clone for IntoLeft<L, R> {
     fn clone(&self) -> Self {
@@ -341,8 +331,6 @@ pub const fn into_left<L, R>() -> IntoLeft<L, R> {
 pub struct IntoRight<L, R> {
     marker: core::marker::PhantomData<fn(R) -> Either<L, R>>,
 }
-
-pub type InjectRight<L, R> = IntoRight<L, R>;
 
 impl<L, R> Clone for IntoRight<L, R> {
     fn clone(&self) -> Self {

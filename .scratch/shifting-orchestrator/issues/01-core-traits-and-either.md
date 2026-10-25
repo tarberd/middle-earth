@@ -1,6 +1,6 @@
 # Core Category-Theory Traits and Either Coproduct
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## Description
@@ -39,25 +39,25 @@ Public interfaces are strictly tested across three seams:
 
 ## Acceptance Criteria
 
-- [ ] Zero external dependencies outside `std`.
-- [ ] Strict functional Rust: zero `&mut`, consumption by value, ADTs.
-- [ ] Standard trait derivations: `Debug`, `Clone`, `Copy` (conditional), `PartialEq`, `Eq`, `Hash` for `Either` and `LoopFlow` (strictly NO `Default`). `Default` derived on zero-sized identity/injection structs (`step::Identity`, `either::Identity`, `either::IntoLeft`, `either::IntoRight`).
-- [ ] `Either<L, R>` collapses cleanly to `Option<L>` and `Option<R>` via `.left()` and `.right()`.
-- [ ] Non-consuming borrowing (`.as_ref()`, `.as_deref()`) on `Either` and `LoopFlow`.
-- [ ] `Either<T, T>::into_inner()` cleanly extracts the inner value when branches converge.
-- [ ] `Either<L, R>` implements `Display` and `std::error::Error` when `L` and `R` implement them.
-- [ ] Canonical injections (`either::IntoLeft`, `either::IntoRight`) and coproduct identity (`either::Identity`) route with zero runtime errors (`Error = Infallible`) and implement both `Step` and `Branch`.
-- [ ] Canonical `step::Identity<T>` pass-through morphism with `type Error = Infallible`.
-- [ ] Constructor convenience functions `step::id()`, `either::id()`, `Either::id()`, `either::into_left()`, `either::into_right()`, `Either::into_left()`, and `Either::into_right()`.
-- [ ] Blanket `Fn` implementations for `Step` and `Branch` work seamlessly with bare closures without wrapper structs or method ambiguity.
-- [ ] Sequential chaining (`.and_then()`) preserves heterogeneous errors via `Either<ErrA, ErrB>`.
-- [ ] Step-to-Branch chaining evaluates step output directly into a branch.
-- [ ] Direct cascading branch composition (`branch_both`, `branch_left`, `branch_right`) functions without intermediate steps.
-- [ ] Combinator structs (`AndThen`, `StepBranch`, `BranchBoth`, `BranchLeft`, `BranchRight`) expose public fields.
-- [ ] Unit tests explicitly verify Category Theory identity laws:
+- [x] Zero external dependencies outside `std`.
+- [x] Strict functional Rust: zero `&mut`, consumption by value, ADTs.
+- [x] Standard trait derivations: `Debug`, `Clone`, `Copy` (conditional), `PartialEq`, `Eq`, `Hash` for `Either` and `LoopFlow` (strictly NO `Default`). `Default` derived on zero-sized identity/injection structs (`step::Identity`, `either::Identity`, `either::IntoLeft`, `either::IntoRight`).
+- [x] `Either<L, R>` collapses cleanly to `Option<L>` and `Option<R>` via `.left()` and `.right()`.
+- [x] Non-consuming borrowing (`.as_ref()`, `.as_deref()`) on `Either` and `LoopFlow`.
+- [x] `Either<T, T>::into_inner()` cleanly extracts the inner value when branches converge.
+- [x] `Either<L, R>` implements `Display` and `std::error::Error` when `L` and `R` implement them.
+- [x] Canonical injections (`either::IntoLeft`, `either::IntoRight`) and coproduct identity (`either::Identity`) route with zero runtime errors (`Error = Infallible`) and implement both `Step` and `Branch`.
+- [x] Canonical `step::Identity<T>` pass-through morphism with `type Error = Infallible`.
+- [x] Constructor convenience functions `step::id()`, `either::id()`, `Either::id()`, `either::into_left()`, `either::into_right()`, `Either::into_left()`, and `Either::into_right()`.
+- [x] Blanket `Fn` implementations for `Step` and `Branch` work seamlessly with bare closures without wrapper structs or method ambiguity.
+- [x] Sequential chaining (`.and_then()`) preserves heterogeneous errors via `Either<ErrA, ErrB>`.
+- [x] Step-to-Branch chaining evaluates step output directly into a branch.
+- [x] Direct cascading branch composition (`branch_both`, `branch_left`, `branch_right`) functions without intermediate steps.
+- [x] Combinator structs (`AndThen`, `StepBranch`, `BranchBoth`, `BranchLeft`, `BranchRight`) expose public fields.
+- [x] Unit tests explicitly verify Category Theory identity laws:
   - `step::id().and_then(step) == step`
   - `step.and_then(step::id()) == step`
   - `step.branch(either::id())` preserves coproduct output
   - `branch.branch_both(either::into_left(), either::into_right())` universal coproduct pass-through verification.
-- [ ] Comprehensive unit tests verifying all three seams, error propagation, and Option/inner collapses.
-- [ ] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
+- [x] Comprehensive unit tests verifying all three seams, error propagation, and Option/inner collapses.
+- [x] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
