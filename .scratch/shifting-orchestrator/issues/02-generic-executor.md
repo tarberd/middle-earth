@@ -1,6 +1,6 @@
 # Generic State Machine Executor
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 
 ## Description
@@ -32,17 +32,17 @@ Implement the zero-dependency, pure categorical state machine execution engine i
 
 ## Acceptance Criteria
 
-- [ ] Zero external dependencies outside `core` and `std`.
-- [ ] Error type is strictly `P::Error` with zero trait bounds (no `std::error::Error` or `Display` bounds required on `P::Error`).
-- [ ] `Executor<P>` wraps `pipeline: P` with `const fn new(pipeline: P) -> Self` and derives standard traits.
-- [ ] `Executor::run(&self, initial_state: State) -> Result<Terminal, P::Error>` executes until `LoopFlow::Break(terminal)`.
-- [ ] `impl<State, Terminal, P> Step<State> for Executor<P>` implemented with `type Out = Terminal` and `type Error = P::Error`.
-- [ ] `StepExt::into_executor(self)` provides fluent constructor sugar.
-- [ ] Pure functional execution without imperative `for` or `while` loops.
-- [ ] Unit tests verifying:
+- [x] Zero external dependencies outside `core` and `std`.
+- [x] Error type is strictly `P::Error` with zero trait bounds (no `std::error::Error` or `Display` bounds required on `P::Error`).
+- [x] `Executor<P>` wraps `pipeline: P` with `const fn new(pipeline: P) -> Self` and derives standard traits.
+- [x] `Executor::run(&self, initial_state: State) -> Result<Terminal, P::Error>` executes until `LoopFlow::Break(terminal)`.
+- [x] `impl<State, Terminal, P> Step<State> for Executor<P>` implemented with `type Out = Terminal` and `type Error = P::Error`.
+- [x] `StepExt::into_executor(self)` provides fluent constructor sugar.
+- [x] Pure functional execution without imperative `for` or `while` loops.
+- [x] Unit tests verifying:
   - Single-pass immediate break (`LoopFlow::Break` on first step).
   - Multi-pass loop convergence progressing state across cycles.
   - State-encoded iteration bounding (e.g. `(state, remaining_iterations)`) terminating cleanly via `LoopFlow::Break`.
   - Error short-circuiting returning generic `Err(P::Error)` without wrapping.
   - Composition of `Executor` as a `Step` into a larger pipeline via `.and_then()`.
-- [ ] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
+- [x] Passes `cargo test` and `cargo clippy --all-targets -- -D warnings`.
