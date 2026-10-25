@@ -1,6 +1,6 @@
 # Default Shift Loop Convention and CLI Binary
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03
 
 ## Description
