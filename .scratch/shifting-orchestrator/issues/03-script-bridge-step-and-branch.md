@@ -1,6 +1,6 @@
 # Unix Script Bridge Step and Branch Adapters
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 
 ## Description
