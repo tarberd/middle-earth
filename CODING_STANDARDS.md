@@ -18,8 +18,8 @@ See [ADR-0010 (Functional Rust Idioms and Pure Core Architecture)](docs/adr/0010
 
 ### 3. Total Error Handling & Explicit Types
 - **No Unchecked Unwraps or Panics**: Neither `src/` nor `tests/` may call `.unwrap()` or `panic!()`. Use `?` in production code and `.expect("reason")` or `assert!(matches!(...))` in tests.
-- **Typed Error Enums**: Model domain and boundary failures using explicit `thiserror` enums. Never use stringly-typed errors or bare `anyhow` in domain code.
-- **Parse, Don't Validate**: Encode invariants directly into algebraic data types (ADTs) at boundaries.
+- **Typed Error Enums**: Model domain and boundary failures using explicit `thiserror` enums. Never use stringly-typed errors or bare `anyhow` in domain code. Every failure path gets a typed variant, including cases the platform or std rules out; such variants need no tests when only a fake could reach them. A value that must be present never falls back to a default.
+- **Parse, Don't Validate**: Encode invariants directly into algebraic data types (ADTs) at boundaries. A conversion gives every value of its input type a meaningful result. When only some inputs have one, either narrow the input to a type holding just those values (output → failed output → error) or widen the output to represent the missing results (output → `Option<error>`); both are fine. A caller's prior check never stands in for either.
 
 ### 4. Algebraic Data Types & Zero Dead Code
 - **Zero Mutation**: Objects must be born in a valid state. All ADT methods must consume `self` or `&self`. No `&mut self` is allowed anywhere.
