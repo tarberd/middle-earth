@@ -1,6 +1,6 @@
 # 01: Script Bridge: environment, working directory, signal exits and live stderr
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: None (can start immediately)
 
 ## What to build
