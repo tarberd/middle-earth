@@ -80,5 +80,81 @@ _Avoid_: Manual either identity, noop either
 Universal constructors ($\iota_L$ and $\iota_R$) in shifting lifting a plain state into the left (`either::IntoLeft`, `either::into_left()`, `Either::into_left()`) or right (`either::IntoRight`, `either::into_right()`, `Either::into_right()`) arm of a coproduct `Either<L, R>`, implementing both `Step` and `Branch`.
 _Avoid_: Manual Either wrapping, tag constructor
 
+**Job to Be Done**:
+A high-level user need or outcome, discussed with an agent before any spec exists, that yields one or more topics of concern.
+_Avoid_: Epic, feature
+
+**Topic of Concern**:
+A distinct aspect of a job to be done, describable in one sentence without "and", with exactly one topic spec.
+_Avoid_: Feature, module, component
+
+**Topic Spec**:
+The human-owned specification of one topic of concern, in whatever format its author chooses; agents never edit it outside review.
+_Avoid_: Requirements doc, PRD
+
+**Plan**:
+The disposable set of plan tasks for one topic, recording what the topic spec asks for that the code doesn't do yet, together with the content hash of the spec it was made from.
+_Avoid_: Backlog, roadmap, implementation plan file
+
+**Plan Task**:
+One numbered unit of build work in a plan, `open`, `done` or `declined`, whose acceptance criteria name the tests that prove it; its number is its build order.
+_Avoid_: Ticket, issue, todo
+
+**Assumption**:
+A durable record of the interpretation an agent chose where a topic spec is silent or contradicts itself; agents treat it as provisional spec until a human reviews it.
+_Avoid_: Spec issue, spec conflict, open question
+
+**Operations Notes**:
+Agent-maintained, operational-only notes on how to build, run and test a project, loaded by the plan and build prompts only.
+_Avoid_: AGENTS.md, findings, progress log
+
+**Shift Loop**:
+A shifting loop (the plan loop or the build loop) whose iterations run select, precheck, work, verify and judge, then commit or rollback.
+_Avoid_: Ralph script, agent loop
+
+**Shift Run**:
+The composition of review, the plan loop and the build loop that repeats until no work is left and the last review committed nothing.
+_Avoid_: Pipeline, session
+
+**Base Commit**:
+The HEAD commit when an iteration starts, which rollback returns the repository to.
+_Avoid_: Checkpoint, snapshot
+
+**Select**:
+The step that deterministically picks the next plan task (build loop) or topic (plan loop), or reports that none is left.
+_Avoid_: Planner, picker agent
+
+**Precheck**:
+The step that marks a plan task done without calling an agent when every test it names already passes at the base commit.
+_Avoid_: Dry run, cache hit
+
+**Decline**:
+The work outcome in which the agent reports that its plan task is wrong; the code is reset and the topic is replanned.
+_Avoid_: Skip, abort
+
+**Judge**:
+The LLM verification step after deterministic verify, which sees only the topic spec, its assumptions, the plan task and the diff; passive until configured as a gate.
+_Avoid_: Critic, reviewer agent
+
+**Spec Gate**:
+The LLM review of a topic spec, run before the topic is planned from scratch, that records contradictions and gaps as assumptions.
+_Avoid_: Spec lint
+
+**Review**:
+The interactive stage in which a human accepts, corrects or dismisses each pending assumption and edits topic specs.
+_Avoid_: Triage
+
+**Run Directory**:
+The per-run log directory inside the repository's git directory, holding every step's output for each iteration.
+_Avoid_: Log folder, artifacts
+
+**Fake Agent**:
+A test double for an agent command that applies scripted edits instead of calling a model.
+_Avoid_: Mock agent, stub model
+
+**Playground**:
+The sandboxed Nix images and launcher for running the default loop against sample repositories.
+_Avoid_: Demo, test VM
+
 
 

@@ -2,6 +2,8 @@
 
 Status: ready-for-agent
 
+> **Superseded in part (2026-10-30):** the five-script default loop convention, user stories 11 and 12, and the Architecture & State Topology diagram are replaced by [`shifting-loop-runtime`](../shifting-loop-runtime/spec.md) and [`shifting-default-loop`](../shifting-default-loop/spec.md) (ADR-0011 as amended). The category-theory core described here is unchanged.
+
 ## Problem Statement
 
 Autonomous agentic software engineering loops frequently suffer from two fatal failure modes: **context rot / token explosion** when orchestrating multi-agent loops in long-running single conversations, and **premature victory / false self-reporting** when trusting the agent's internal claim that code passes tests or adheres to invariants. Existing generic wrappers (like `ralph-loop` or `ralph-harness`) are either tightly coupled to specific language runtimes (Bun, TypeScript), hardcoded to single vendor CLIs (`claude -p`), unaware of hermetic devshells (Nix), or reliant on brittle waterfall YAML task representations that break on the first unexpected refactor.

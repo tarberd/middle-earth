@@ -8,7 +8,7 @@ Blocked by: 04
 Integrate `packages/shifting` into the repository's Nix flake:
 - Add `packages/shifting` to the Cargo workspace or package outputs in `flake.nix`.
 - Provide a `nix develop .#shifting` devshell exposing compilers and clippy.
-- Add mock `.shifting/` templates or integration tests verifying the full flow under Nix.
+- Run the crate's integration tests under Nix. Shifting's script templates live in the crate's `share/` subfolder (`packages/shifting/share/`); the repository root has no `.shifting/`.
 - Verify `cargo clippy --workspace --all-targets -- -D warnings` across the workspace.
 
 ## Acceptance Criteria
