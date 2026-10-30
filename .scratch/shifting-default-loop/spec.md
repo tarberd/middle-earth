@@ -121,7 +121,7 @@ An operator who wants to run Clayton Farr's Ralph loop on a codebase, whether fr
 46. As an operator, I want `work.sh` to save the agent's full transcript in the iteration directory, stream it live to stderr and print only a short summary on stdout, so that logs are complete without flooding the Script Bridge.
 
 ### Assumptions and review
-47. As an operator, I want each assumption to record who filed it, what the spec says (nothing, or the conflicting passages), what was assumed, what relies on it, and the proposed spec text, so that I can decide quickly.
+47. As an operator, I want each assumption to record who filed it, what the spec says (nothing, or the conflicting passages), what was assumed, and the proposed spec text, so that I can decide quickly.
 48. As an operator, I want gaps and conflicts recorded as the same kind of assumption, so that agents never have to classify them.
 49. As an operator, I want assumptions never to block selection, planning or building, so that no loop stalls waiting for my review.
 50. As an operator, I want assumptions to survive plan regeneration and rollbacks until I review them, so that no agent guess is ever lost.
@@ -175,7 +175,6 @@ An operator who wants to run Clayton Farr's Ralph loop on a codebase, whether fr
 - **Sections:**
   - `## Spec says`: "nothing", or one or two quoted passages;
   - `## Assumed`;
-  - `## Relied on by`;
   - `## Proposed spec text`.
 - Gaps and conflicts share this one format, with no type field.
 - Once written, an assumption is never edited by an agent. Only review removes it.

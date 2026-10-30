@@ -6,7 +6,7 @@
 
 **Assumptions instead of edits.**
 - When a topic spec is silent or contradicts itself, the builder, planner or spec gate chooses an interpretation, records it as an assumption under the topic, and carries on.
-- An assumption states what the spec says (nothing, or the conflicting passages), what was assumed, what relies on it, and the proposed spec text.
+- An assumption states what the spec says (nothing, or the conflicting passages), what was assumed, and the proposed spec text.
 - Gaps and conflicts are one kind of record. They differed only in whether they blocked work, and nothing blocks now.
 - Assumptions never block selection, planning or building.
 - Every agent treats them as provisional spec until reviewed, so consecutive fresh contexts stay consistent.
@@ -16,7 +16,8 @@
 **Replanning after spec changes.**
 - A spec change is detected by the git blob hash of the topic spec, recorded in the plan when it is made. Rebases, amends and squashes don't change that hash; edits do.
 - A changed hash regenerates the topic's plan, after a spec gate review.
-- The planner then compares the code with the corrected spec and plans any rework. No per-task bookkeeping such as `Assumes:` links is kept.
+- The planner then compares the code with the corrected spec and plans any rework.
+- No bookkeeping links tasks or code to assumptions in either direction: tasks carry no `Assumes:` lines, and an assumption doesn't list what relies on it. Such links go stale as soon as code moves, and a written assumption is never edited to fix them. Review finds what depends on an assumption in the current code.
 
 **Considered alternatives:**
 - **Farr's playbook:** agents edit specs when they find inconsistencies. Rejected: specs drift toward the code with no human checkpoint.
