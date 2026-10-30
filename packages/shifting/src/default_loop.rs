@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::branch::Branch;
 use crate::either::{Either, LoopFlow};
 use crate::executor::Executor;
-use crate::script::{ScriptBranch, ScriptError, ScriptOutput, ScriptStep};
+use crate::script::{ScriptBranch, ScriptError, ScriptExit, ScriptOutput, ScriptStep};
 use crate::step::{AndThen, Step, StepExt};
 
 const REQUIRED_SCRIPTS: [&str; 5] = [
@@ -65,7 +65,7 @@ pub enum DefaultShiftError {
 ///
 /// Maps exit code 0 to `Either::Left(stdout)` for downstream processing by `work.sh`,
 /// exit code 2 directly to `Either::Right(LoopFlow::Break(()))` signaling clean backlog exhaustion,
-/// and other non-zero exit codes to `Err(ScriptError::NonZeroExit)`.
+/// and any other failure to `Err(ScriptError::Failed)`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlanBranch {
     pub path: PathBuf,
@@ -88,9 +88,11 @@ impl Branch<String> for PlanBranch {
         let branch = ScriptBranch::new(&self.path);
         match branch.evaluate(input)? {
             Either::Left(stdout) => Ok(Either::Left(stdout)),
-            Either::Right(output) if output.code == 2 => Ok(Either::Right(LoopFlow::Break(()))),
-            Either::Right(output) => Err(ScriptError::NonZeroExit {
-                code: output.code,
+            Either::Right(output) if output.exit == ScriptExit::Code(2) => {
+                Ok(Either::Right(LoopFlow::Break(())))
+            }
+            Either::Right(output) => Err(ScriptError::Failed {
+                exit: output.exit,
                 stderr: output.stderr,
             }),
         }
@@ -129,14 +131,7 @@ impl Step<Either<String, ScriptOutput>> for VerifyResolution {
     fn apply(&self, input: Either<String, ScriptOutput>) -> Result<Self::Out, Self::Error> {
         input.either(
             |verified_stdout| self.commit.apply(verified_stdout),
-            |rejected_output| {
-                let rollback_input = if rejected_output.stderr.is_empty() {
-                    rejected_output.stdout
-                } else {
-                    rejected_output.stderr
-                };
-                self.rollback.apply(rollback_input)
-            },
+            |rejected_output| self.rollback.apply(rejected_output.failure_report()),
         )
     }
 }
@@ -245,9 +240,7 @@ impl Step<Idle> for DefaultShiftLoop {
             })),
             _ => self.plan.evaluate(input)?.either(
                 |work_input| {
-                    self.cycle
-                        .apply(work_input)
-                        .map_err(Either::into_inner)?;
+                    self.cycle.apply(work_input).map_err(Either::into_inner)?;
                     Ok(LoopFlow::Continue(Idle {
                         iteration: input.iteration + 1,
                     }))

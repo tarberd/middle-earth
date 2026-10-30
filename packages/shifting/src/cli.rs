@@ -64,8 +64,7 @@ where
 
 /// Executes the CLI dispatch flow with standard output stream injection.
 pub fn run(cli: Cli, stdout: &mut impl Write) -> Result<ShiftSummary, DefaultShiftError> {
-    let shift_loop = DefaultShiftLoop::discover(&cli.dir)?
-        .with_max_iterations(cli.max_iterations);
+    let shift_loop = DefaultShiftLoop::discover(&cli.dir)?.with_max_iterations(cli.max_iterations);
 
     let summary = if cli.verbose {
         Executor::new(VerboseLoop { inner: shift_loop }).run(Idle::default())?
@@ -73,7 +72,11 @@ pub fn run(cli: Cli, stdout: &mut impl Write) -> Result<ShiftSummary, DefaultShi
         Executor::new(shift_loop).run(Idle::default())?
     };
 
-    writeln!(stdout, "Shift completed successfully ({} iterations).", summary.iterations)?;
+    writeln!(
+        stdout,
+        "Shift completed successfully ({} iterations).",
+        summary.iterations
+    )?;
 
     Ok(summary)
 }

@@ -14,5 +14,5 @@ pub use default_loop::{
 };
 pub use either::{Either, LoopFlow};
 pub use executor::Executor;
-pub use script::{ScriptBranch, ScriptError, ScriptOutput, ScriptStep};
+pub use script::{Script, ScriptBranch, ScriptError, ScriptExit, ScriptOutput, ScriptStep};
 pub use step::{Step, StepExt};

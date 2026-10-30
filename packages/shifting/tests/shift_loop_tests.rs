@@ -9,7 +9,7 @@ use shifting::branch::Branch;
 use shifting::cli::{self, Cli};
 use shifting::default_loop::{DefaultShiftError, DefaultShiftLoop, Idle, PlanBranch, ShiftSummary};
 use shifting::either::{Either, LoopFlow};
-use shifting::script::ScriptError;
+use shifting::script::{ScriptError, ScriptExit};
 use shifting::step::Step;
 
 fn create_executable_script(dir: &Path, name: &str, content: &str) {
@@ -167,8 +167,8 @@ fn test_plan_exit_2_categorical_branching_routes_to_break() {
     let branch_exit_1 = PlanBranch::new(&plan_exit_1);
     let res_exit_1 = branch_exit_1.evaluate(Idle::default());
     assert!(
-        matches!(res_exit_1, Err(ScriptError::NonZeroExit { code: 1, ref stderr }) if stderr.contains("failed to plan")),
-        "exit 1 must return NonZeroExit typed error"
+        matches!(res_exit_1, Err(ScriptError::Failed { exit: ScriptExit::Code(1), ref stderr }) if stderr.contains("failed to plan")),
+        "exit 1 must return Failed typed error"
     );
 }
 
@@ -402,10 +402,7 @@ fn test_rollback_is_minimal_non_destructive_stub() {
     let perms = std::fs::metadata(&rollback_file)
         .expect("metadata")
         .permissions();
-    assert!(
-        perms.mode() & 0o111 != 0,
-        "rollback.sh must be executable"
-    );
+    assert!(perms.mode() & 0o111 != 0, "rollback.sh must be executable");
 }
 
 #[test]

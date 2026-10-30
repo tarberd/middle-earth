@@ -4,7 +4,17 @@ use std::path::{Path, PathBuf};
 use shifting::branch::Branch;
 use shifting::either::Either;
 use shifting::step::{Step, StepExt};
-use shifting::{ScriptBranch, ScriptOutput, ScriptStep};
+use shifting::{Script, ScriptBranch, ScriptExit, ScriptOutput, ScriptStep};
+
+/// Polls `condition` every 20ms for at most 10 seconds.
+fn eventually(condition: impl Fn() -> bool) -> bool {
+    (0..500).any(|_| {
+        condition() || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            false
+        }
+    })
+}
 
 fn create_executable_script(dir: &Path, name: &str, content: &str) -> PathBuf {
     let path = dir.join(name);
@@ -43,9 +53,9 @@ fn test_script_step_exit_zero_transforms_stdin_to_stdout() {
 
 #[test]
 fn test_script_output_trait_derivations() {
-    let out1 = ScriptOutput::new(0, "ok", "warn");
+    let out1 = ScriptOutput::new(ScriptExit::Code(0), "ok", "warn");
     let out2 = ScriptOutput {
-        code: 0,
+        exit: ScriptExit::Code(0),
         stdout: "ok".to_string(),
         stderr: "warn".to_string(),
     };
@@ -69,29 +79,37 @@ fn test_script_step_non_zero_exit_returns_typed_error() {
     assert!(
         matches!(
             result,
-            Err(shifting::ScriptError::NonZeroExit { code: 42, .. })
+            Err(shifting::ScriptError::Failed {
+                exit: ScriptExit::Code(42),
+                ref stderr,
+            }) if stderr == "compilation failed\n"
         ),
-        "expected NonZeroExit with code 42, got {result:?}"
+        "expected a failure with exit code 42, got {result:?}"
     );
-    if let Err(shifting::ScriptError::NonZeroExit { code, stderr }) = result {
-        assert_eq!(code, 42);
-        assert_eq!(stderr, "compilation failed\n");
-    }
 }
 
 #[test]
-fn test_script_step_terminated_by_signal_returns_signaled_error() {
+fn test_script_step_killed_by_signal_fails_naming_the_signal() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path =
         create_executable_script(temp_dir.path(), "kill_self.sh", "#!/bin/sh\nkill -9 $$\n");
 
     let step = ScriptStep::new(&script_path);
-    let result = step.apply("input".to_string());
+    let error = step
+        .apply("input".to_string())
+        .expect_err("a kill by signal must fail the step");
 
     assert!(
-        matches!(result, Err(shifting::ScriptError::Signaled)),
-        "expected Signaled error, got {result:?}"
+        matches!(
+            error,
+            shifting::ScriptError::Failed {
+                exit: ScriptExit::Signal(9),
+                ..
+            }
+        ),
+        "expected a failure by signal 9, got {error:?}"
     );
+    assert_eq!(error.to_string(), "script failed (signal: 9 (SIGKILL)): ");
 }
 
 #[test]
@@ -138,32 +156,35 @@ fn test_script_branch_non_zero_exit_returns_right_with_output() {
     let branch = ScriptBranch::new(&script_path);
     let result = branch.evaluate("run-tests".to_string());
 
-    assert!(
-        matches!(result, Ok(Either::Right(ref out)) if out.code == 1),
-        "expected Either::Right with code 1, got {result:?}"
+    assert_eq!(
+        result.expect("a non-zero exit is not a bridge error"),
+        Either::Right(ScriptOutput::new(
+            ScriptExit::Code(1),
+            "test summary\n",
+            "test failed details\n"
+        ))
     );
-    if let Ok(Either::Right(out)) = result {
-        assert_eq!(out.code, 1);
-        assert_eq!(out.stdout, "test summary\n");
-        assert_eq!(out.stderr, "test failed details\n");
-    }
 }
 
 #[test]
-fn test_script_branch_terminated_by_signal_returns_signaled_error() {
+fn test_script_branch_killed_by_signal_returns_right_naming_the_signal() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path = create_executable_script(
         temp_dir.path(),
         "kill_self_branch.sh",
-        "#!/bin/sh\nkill -9 $$\n",
+        "#!/bin/sh\necho 'agent crashed' >&2\nkill -TERM $$\n",
     );
 
     let branch = ScriptBranch::new(&script_path);
     let result = branch.evaluate("input".to_string());
 
-    assert!(
-        matches!(result, Err(shifting::ScriptError::Signaled)),
-        "expected Signaled error, got {result:?}"
+    assert_eq!(
+        result.expect("a kill by signal is not a bridge error"),
+        Either::Right(ScriptOutput::new(
+            ScriptExit::Signal(15),
+            "",
+            "agent crashed\n"
+        ))
     );
 }
 
@@ -214,13 +235,13 @@ fn test_script_step_and_branch_composition() {
     let pipeline_fail = step.branch(branch_fail);
     let fail_res = pipeline_fail.evaluate("ticket-03".to_string());
     assert!(
-        matches!(fail_res, Ok(Either::Right(ref out)) if out.code == 2 && out.stderr == "tests failed\n"),
+        matches!(fail_res, Ok(Either::Right(ref out)) if out.exit == ScriptExit::Code(2) && out.stderr == "tests failed\n"),
         "expected Right with code 2 and stderr, got {fail_res:?}"
     );
 }
 
 #[test]
-fn test_script_step_invalid_utf8_output_returns_utf8_error() {
+fn test_script_step_invalid_utf8_stdout_fails_the_script() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path = create_executable_script(
         temp_dir.path(),
@@ -232,29 +253,54 @@ fn test_script_step_invalid_utf8_output_returns_utf8_error() {
     let result = step.apply("input".to_string());
 
     assert!(
-        matches!(result, Err(shifting::ScriptError::Utf8(_))),
-        "expected ScriptError::Utf8, got {result:?}"
+        matches!(
+            result,
+            Err(shifting::ScriptError::Failed {
+                exit: ScriptExit::InvalidStdout,
+                ..
+            })
+        ),
+        "expected a failure for invalid stdout, got {result:?}"
     );
-    if let Err(shifting::ScriptError::Utf8(err)) = result {
-        assert_eq!(err.as_bytes(), &[0xff, 0xff]);
-    }
 }
 
 #[test]
-fn test_script_branch_invalid_utf8_output_returns_utf8_error() {
+fn test_script_branch_invalid_utf8_stdout_returns_right_with_lossy_stdout() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path = create_executable_script(
         temp_dir.path(),
         "invalid_utf8_branch.sh",
-        "#!/bin/sh\nprintf '\\xff\\xff'\n",
+        "#!/bin/sh\nprintf 'ok \\xff'\n",
+    );
+
+    let branch = ScriptBranch::new(&script_path);
+    let result = branch.evaluate("input".to_string());
+
+    assert_eq!(
+        result.expect("invalid stdout is not a bridge error"),
+        Either::Right(ScriptOutput::new(
+            ScriptExit::InvalidStdout,
+            "ok \u{fffd}",
+            ""
+        ))
+    );
+}
+
+#[test]
+fn test_script_branch_killed_by_signal_with_invalid_stdout_names_the_signal() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "invalid_utf8_killed.sh",
+        "#!/bin/sh\nprintf '\\xff'\nkill -9 $$\n",
     );
 
     let branch = ScriptBranch::new(&script_path);
     let result = branch.evaluate("input".to_string());
 
     assert!(
-        matches!(result, Err(shifting::ScriptError::Utf8(_))),
-        "expected ScriptError::Utf8, got {result:?}"
+        matches!(result, Ok(Either::Right(ref out)) if out.exit == ScriptExit::Signal(9)),
+        "expected Right naming signal 9, got {result:?}"
     );
 }
 
@@ -299,21 +345,12 @@ fn test_script_error_display_and_source() {
     assert_eq!(format!("{io_err}"), "I/O error: not found");
     assert!(io_err.source().is_some());
 
-    let non_zero = shifting::ScriptError::NonZeroExit {
-        code: 1,
+    let failed = shifting::ScriptError::Failed {
+        exit: ScriptExit::Code(1),
         stderr: "fail".to_string(),
     };
-    assert_eq!(format!("{non_zero}"), "process exited with status 1: fail");
-    assert!(non_zero.source().is_none());
-
-    let signaled = shifting::ScriptError::Signaled;
-    assert_eq!(format!("{signaled}"), "process terminated by signal");
-    assert!(signaled.source().is_none());
-
-    let utf8_raw_err = String::from_utf8(vec![0xff]).expect_err("expected utf8 error");
-    let utf8_err = shifting::ScriptError::Utf8(utf8_raw_err);
-    assert!(format!("{utf8_err}").starts_with("UTF-8 error:"));
-    assert!(utf8_err.source().is_some());
+    assert_eq!(format!("{failed}"), "script failed (exit status: 1): fail");
+    assert!(failed.source().is_none());
 }
 
 #[test]
@@ -349,4 +386,161 @@ fn test_script_branch_broken_pipe_early_exit_completes_ok() {
         .expect("branch execution failed on broken pipe");
 
     assert_eq!(result, Either::Left("early branch ok\n".to_string()));
+}
+
+#[test]
+fn test_script_forwards_stderr_to_sink_before_exiting() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let release = temp_dir.path().join("release");
+    let sink_path = temp_dir.path().join("sink.log");
+    let release_str = release.to_str().expect("valid utf-8 path");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "long_running.sh",
+        &format!(
+            "#!/bin/sh\n\
+             echo 'agent started' >&2\n\
+             i=0\n\
+             while [ ! -e \"{release_str}\" ] && [ \"$i\" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done\n\
+             echo 'agent finished' >&2\n\
+             echo 'summary'\n"
+        ),
+    );
+
+    let mut sink = std::fs::File::create(&sink_path).expect("failed to create sink");
+    let script = Script::new(&script_path);
+    let running = std::thread::spawn(move || script.run("", &mut sink));
+
+    let forwarded_while_running = eventually(|| {
+        std::fs::read_to_string(&sink_path).is_ok_and(|forwarded| forwarded == "agent started\n")
+    });
+    std::fs::File::create(&release).expect("failed to release script");
+    let output = running
+        .join()
+        .expect("script thread panicked")
+        .expect("script run failed");
+
+    assert!(
+        forwarded_while_running,
+        "stderr must reach the sink before the script exits"
+    );
+    assert_eq!(output.stdout, "summary\n");
+    assert_eq!(output.stderr, "agent started\nagent finished\n");
+    assert_eq!(
+        std::fs::read_to_string(&sink_path).expect("failed to read sink"),
+        "agent started\nagent finished\n"
+    );
+}
+
+#[test]
+fn test_script_receives_invocation_environment_on_top_of_inherited() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "print_env.sh",
+        "#!/bin/sh\nprintf '%s|%s|%s' \"$SHIFT_TASK\" \"$SHIFT_LOOP\" \"$PATH\"\n",
+    );
+
+    let output = Script::new(&script_path)
+        .with_env("SHIFT_TASK", "task-07")
+        .with_env("SHIFT_LOOP", "build")
+        .run("", &mut std::io::sink())
+        .expect("script run failed");
+
+    let inherited_path = std::env::var("PATH").expect("PATH must be set for tests");
+    assert_eq!(output.stdout, format!("task-07|build|{inherited_path}"));
+}
+
+#[test]
+fn test_script_runs_in_invocation_working_directory() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let repository = temp_dir.path().join("repository");
+    std::fs::create_dir(&repository).expect("failed to create working directory");
+    std::fs::write(repository.join("task.md"), "relative read\n").expect("failed to write file");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "read_relative.sh",
+        "#!/bin/sh\ncat task.md\n",
+    );
+
+    let output = Script::new(&script_path)
+        .with_current_dir(&repository)
+        .run("", &mut std::io::sink())
+        .expect("script run failed");
+
+    assert_eq!(output.stdout, "relative read\n");
+}
+
+#[test]
+fn test_script_invalid_utf8_stderr_is_decoded_lossily() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "invalid_stderr.sh",
+        "#!/bin/sh\nprintf 'bad \\377 byte\\n' >&2\necho 'ok'\n",
+    );
+
+    let mut forwarded = Vec::new();
+    let output = Script::new(&script_path)
+        .run("", &mut forwarded)
+        .expect("invalid stderr is not a bridge error");
+
+    assert_eq!(
+        output,
+        ScriptOutput::new(ScriptExit::Code(0), "ok\n", "bad \u{fffd} byte\n")
+    );
+    assert_eq!(forwarded, b"bad \xff byte\n");
+}
+
+#[test]
+fn test_script_large_stdout_and_stderr_at_once_complete_in_full() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    // 1MiB on each stream exceeds the 64KB OS pipe buffer many times over.
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "flood.sh",
+        "#!/bin/sh\n\
+         head -c 1048576 /dev/zero | tr '\\0' 'o' &\n\
+         head -c 1048576 /dev/zero | tr '\\0' 'e' >&2\n\
+         wait\n",
+    );
+
+    let script = Script::new(&script_path);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut forwarded = Vec::new();
+        let output = script.run("", &mut forwarded);
+        sender.send((output, forwarded))
+    });
+    let (output, forwarded) = receiver
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("script run deadlocked");
+
+    assert_eq!(
+        output.expect("script run failed"),
+        ScriptOutput::new(
+            ScriptExit::Code(0),
+            "o".repeat(1024 * 1024),
+            "e".repeat(1024 * 1024)
+        )
+    );
+    assert_eq!(forwarded, "e".repeat(1024 * 1024).into_bytes());
+}
+
+#[test]
+fn test_failure_report_is_the_stderr_of_the_failing_script() {
+    let output = ScriptOutput::new(
+        ScriptExit::Code(1),
+        "test summary\n",
+        "test failed details\n",
+    );
+
+    assert_eq!(output.failure_report(), "test failed details\n");
+}
+
+#[test]
+fn test_failure_report_falls_back_to_stdout_when_stderr_is_empty() {
+    let output = ScriptOutput::new(ScriptExit::Signal(9), "partial summary\n", "");
+
+    assert_eq!(output.failure_report(), "partial summary\n");
 }
