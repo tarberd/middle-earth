@@ -81,10 +81,39 @@ fn test_script_step_non_zero_exit_returns_typed_error() {
             result,
             Err(shifting::ScriptError::Failed {
                 exit: ScriptExit::Code(42),
-                ref stderr,
-            }) if stderr == "compilation failed\n"
+                ref report,
+            }) if report == "compilation failed\n"
         ),
         "expected a failure with exit code 42, got {result:?}"
+    );
+}
+
+#[test]
+fn test_script_step_failure_with_empty_stderr_reports_its_stdout() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "fail_quietly.sh",
+        "#!/bin/sh\necho 'partial summary'\nexit 1\n",
+    );
+
+    let error = ScriptStep::new(&script_path)
+        .apply("input".to_string())
+        .expect_err("a non-zero exit must fail the step");
+
+    assert!(
+        matches!(
+            error,
+            shifting::ScriptError::Failed {
+                exit: ScriptExit::Code(1),
+                ref report,
+            } if report == "partial summary\n"
+        ),
+        "expected a failure reporting stdout, got {error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "script failed (exit status: 1): partial summary\n"
     );
 }
 
@@ -256,11 +285,40 @@ fn test_script_step_invalid_utf8_stdout_fails_the_script() {
         matches!(
             result,
             Err(shifting::ScriptError::Failed {
-                exit: ScriptExit::InvalidStdout,
+                exit: ScriptExit::InvalidStdout { code: 0 },
                 ..
             })
         ),
         "expected a failure for invalid stdout, got {result:?}"
+    );
+}
+
+#[test]
+fn test_script_step_invalid_utf8_stdout_keeps_the_exit_code() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let script_path = create_executable_script(
+        temp_dir.path(),
+        "invalid_utf8_exit_3.sh",
+        "#!/bin/sh\nprintf 'bad \\xff'\necho 'agent wrote garbage' >&2\nexit 3\n",
+    );
+
+    let error = ScriptStep::new(&script_path)
+        .apply("input".to_string())
+        .expect_err("invalid stdout must fail the step");
+
+    assert!(
+        matches!(
+            error,
+            shifting::ScriptError::Failed {
+                exit: ScriptExit::InvalidStdout { code: 3 },
+                ..
+            }
+        ),
+        "expected a failure for invalid stdout keeping exit code 3, got {error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "script failed (invalid UTF-8 on stdout (exit status: 3)): agent wrote garbage\n"
     );
 }
 
@@ -279,7 +337,7 @@ fn test_script_branch_invalid_utf8_stdout_returns_right_with_lossy_stdout() {
     assert_eq!(
         result.expect("invalid stdout is not a bridge error"),
         Either::Right(ScriptOutput::new(
-            ScriptExit::InvalidStdout,
+            ScriptExit::InvalidStdout { code: 0 },
             "ok \u{fffd}",
             ""
         ))
@@ -347,7 +405,7 @@ fn test_script_error_display_and_source() {
 
     let failed = shifting::ScriptError::Failed {
         exit: ScriptExit::Code(1),
-        stderr: "fail".to_string(),
+        report: "fail".to_string(),
     };
     assert_eq!(format!("{failed}"), "script failed (exit status: 1): fail");
     assert!(failed.source().is_none());

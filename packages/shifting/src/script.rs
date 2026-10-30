@@ -17,29 +17,26 @@ pub enum ScriptExit {
     Code(i32),
     /// The script was killed by this signal.
     Signal(i32),
-    /// The script wrote stdout that is not valid UTF-8, which counts as the script failing.
-    InvalidStdout,
+    /// The script wrote stdout that is not valid UTF-8 and exited with this status `code`;
+    /// it counts as the script failing whatever the code.
+    InvalidStdout { code: i32 },
 }
 
 impl ScriptExit {
-    fn of(status: ExitStatus) -> io::Result<Self> {
+    fn from_status(status: ExitStatus) -> Result<Self, ScriptError> {
         status
             .code()
             .map(Self::Code)
             .or_else(|| status.signal().map(Self::Signal))
-            .ok_or_else(|| {
-                io::Error::other(format!(
-                    "script ended without an exit code or a signal: {status}"
-                ))
-            })
+            .ok_or(ScriptError::UnknownExit(status))
     }
 
-    /// The exit of a script whose stdout is not valid UTF-8: a kill by signal still names its
-    /// signal, any other exit becomes [`ScriptExit::InvalidStdout`].
+    /// The exit of a script whose stdout is not valid UTF-8: an exit code becomes
+    /// [`ScriptExit::InvalidStdout`] keeping that code, a kill by signal still names its signal.
     const fn with_invalid_stdout(self) -> Self {
         match self {
-            Self::Signal(_) => self,
-            Self::Code(_) | Self::InvalidStdout => Self::InvalidStdout,
+            Self::Code(code) => Self::InvalidStdout { code },
+            Self::Signal(_) | Self::InvalidStdout { .. } => self,
         }
     }
 }
@@ -51,7 +48,9 @@ impl fmt::Display for ScriptExit {
             // A raw wait status equal to a signal number encodes a kill by that signal,
             // which std displays with the signal's name, e.g. `signal: 9 (SIGKILL)`.
             Self::Signal(signal) => write!(f, "{}", ExitStatus::from_raw(*signal)),
-            Self::InvalidStdout => write!(f, "invalid UTF-8 on stdout"),
+            Self::InvalidStdout { code } => {
+                write!(f, "invalid UTF-8 on stdout ({})", Self::Code(*code))
+            }
         }
     }
 }
@@ -93,6 +92,16 @@ impl ScriptOutput {
         }
     }
 
+    /// Splits a run into its stdout when it succeeded, which only exit code `0` does, or the
+    /// whole output when it failed.
+    #[must_use]
+    pub fn into_success_or_failure(self) -> Either<String, Self> {
+        match self.exit {
+            ScriptExit::Code(0) => Either::Left(self.stdout),
+            _ => Either::Right(self),
+        }
+    }
+
     /// The report a failed script leaves behind: its stderr, or its stdout when stderr is empty.
     #[must_use]
     pub fn failure_report(self) -> String {
@@ -109,8 +118,22 @@ impl ScriptOutput {
 pub enum ScriptError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
-    #[error("script failed ({exit}): {stderr}")]
-    Failed { exit: ScriptExit, stderr: String },
+    #[error("script ended without an exit code or a signal: {0}")]
+    UnknownExit(ExitStatus),
+    #[error("script stream thread panicked")]
+    StreamThreadPanicked,
+    #[error("script failed ({exit}): {report}")]
+    Failed { exit: ScriptExit, report: String },
+}
+
+impl From<ScriptOutput> for ScriptError {
+    /// A failed run becomes [`ScriptError::Failed`] carrying its failure report.
+    fn from(output: ScriptOutput) -> Self {
+        Self::Failed {
+            exit: output.exit,
+            report: output.failure_report(),
+        }
+    }
 }
 
 /// An executable script invocation for the Script Bridge.
@@ -183,15 +206,19 @@ impl Script {
             let writer =
                 scope.spawn(move || stdin.map_or(Ok(()), |stdin| write_input(stdin, input)));
             let reader = scope.spawn(move || stdout.map_or_else(|| Ok(Vec::new()), read_all));
-            let forwarded =
+            let captured_stderr =
                 stderr.map_or_else(|| Ok(Vec::new()), |stderr| forward(stderr, stderr_sink));
             let status = child.wait();
-            let read = join(reader);
-            let written = join(writer);
+            let captured_stdout = join(reader);
+            let input_written = join(writer);
 
-            let exit = ScriptExit::of(status?)?;
-            written?;
-            Ok(ScriptOutput::decode(exit, read?, &forwarded?))
+            let exit = ScriptExit::from_status(status?)?;
+            input_written?;
+            Ok(ScriptOutput::decode(
+                exit,
+                captured_stdout?,
+                &captured_stderr?,
+            ))
         })
     }
 }
@@ -232,11 +259,12 @@ fn read_chunk(source: &mut impl Read) -> io::Result<Vec<u8>> {
         .map(|length| chunk[..length].to_vec())
 }
 
-/// Joins a stream thread; a panic in it becomes an I/O error.
-fn join<T>(handle: ScopedJoinHandle<'_, io::Result<T>>) -> io::Result<T> {
+/// Joins a stream thread; a panic in it becomes [`ScriptError::StreamThreadPanicked`].
+fn join<T>(handle: ScopedJoinHandle<'_, io::Result<T>>) -> Result<T, ScriptError> {
     handle
         .join()
-        .unwrap_or_else(|_| Err(io::Error::other("script stream thread panicked")))
+        .map_err(|_| ScriptError::StreamThreadPanicked)
+        .and_then(|streamed| streamed.map_err(ScriptError::from))
 }
 
 /// An unconditional state transition morphism backed by an external Unix script.
@@ -260,14 +288,10 @@ impl Step<String> for ScriptStep {
     type Error = ScriptError;
 
     fn apply(&self, input: String) -> Result<Self::Out, Self::Error> {
-        let output = self.script.run(&input, &mut io::stderr())?;
-        match output.exit {
-            ScriptExit::Code(0) => Ok(output.stdout),
-            exit => Err(ScriptError::Failed {
-                exit,
-                stderr: output.stderr,
-            }),
-        }
+        self.script
+            .run(&input, &mut io::stderr())?
+            .into_success_or_failure()
+            .either(Ok, |failed| Err(ScriptError::from(failed)))
     }
 }
 
@@ -293,10 +317,8 @@ impl Branch<String> for ScriptBranch {
     type Error = ScriptError;
 
     fn evaluate(&self, input: String) -> Result<Either<Self::Left, Self::Right>, Self::Error> {
-        let output = self.script.run(&input, &mut io::stderr())?;
-        Ok(match output.exit {
-            ScriptExit::Code(0) => Either::Left(output.stdout),
-            _ => Either::Right(output),
-        })
+        self.script
+            .run(&input, &mut io::stderr())
+            .map(ScriptOutput::into_success_or_failure)
     }
 }

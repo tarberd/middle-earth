@@ -91,10 +91,7 @@ impl Branch<String> for PlanBranch {
             Either::Right(output) if output.exit == ScriptExit::Code(2) => {
                 Ok(Either::Right(LoopFlow::Break(())))
             }
-            Either::Right(output) => Err(ScriptError::Failed {
-                exit: output.exit,
-                stderr: output.stderr,
-            }),
+            Either::Right(output) => Err(ScriptError::from(output)),
         }
     }
 }

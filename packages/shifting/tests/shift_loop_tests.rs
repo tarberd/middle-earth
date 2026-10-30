@@ -167,7 +167,7 @@ fn test_plan_exit_2_categorical_branching_routes_to_break() {
     let branch_exit_1 = PlanBranch::new(&plan_exit_1);
     let res_exit_1 = branch_exit_1.evaluate(Idle::default());
     assert!(
-        matches!(res_exit_1, Err(ScriptError::Failed { exit: ScriptExit::Code(1), ref stderr }) if stderr.contains("failed to plan")),
+        matches!(res_exit_1, Err(ScriptError::Failed { exit: ScriptExit::Code(1), ref report }) if report.contains("failed to plan")),
         "exit 1 must return Failed typed error"
     );
 }
