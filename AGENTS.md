@@ -11,6 +11,10 @@ This is a nix flake project that handles computers, my network infra and my linu
 
 Issues live as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
 
+### Assumptions
+
+Record every interpretation you choose where a spec, standard or doc is silent, ambiguous or contradictory, and follow the pending ones. See the Assumptions section of `docs/agents/issue-tracker.md`.
+
 ### Triage labels
 
 Default canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
