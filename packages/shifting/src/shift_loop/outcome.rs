@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use crate::either::Either;
 use crate::script::{ScriptExit, ScriptOutput};
 use crate::shift_loop::state::{AlreadyDone, Approved, Attempt, Declined, Rejected, Task};
 
@@ -75,15 +76,16 @@ impl Settlement {
     /// Routes the exit of the commit or rollback that ran for this settlement: only exit `0`
     /// settles the iteration, and anything else is a failure for its task.
     pub fn settle(self, output: ScriptOutput) -> Result<Settled, SettleFailure> {
-        match output.exit {
-            ScriptExit::Code(0) => Ok(Settled {
-                task: self.attempt.task,
+        let task = self.attempt.task;
+        match output.into_success_or_failure() {
+            Either::Left(_) => Ok(Settled {
+                task,
                 outcome: self.outcome,
             }),
-            exit => Err(SettleFailure {
-                task: self.attempt.task,
-                exit,
-                report: output.failure_report(),
+            Either::Right(failed) => Err(SettleFailure {
+                task,
+                exit: failed.exit,
+                report: failed.failure_report(),
             }),
         }
     }
@@ -116,7 +118,7 @@ impl From<Rejected> for Settlement {
     fn from(rejected: Rejected) -> Self {
         Self {
             attempt: rejected.attempt,
-            outcome: Outcome::Rejected(rejected.outcome),
+            outcome: Outcome::Rejected(rejected.rejection),
             input: rejected.report,
         }
     }

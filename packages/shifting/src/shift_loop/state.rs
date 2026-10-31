@@ -159,7 +159,7 @@ impl Selected {
             WorkExit::Declined(reason) => Either::Right(Either::Left(Declined { attempt, reason })),
             WorkExit::Failed(report) => Either::Right(Either::Right(Rejected {
                 attempt,
-                outcome: Rejection::WorkFailed,
+                rejection: Rejection::WorkFailed,
                 report,
             })),
         }
@@ -183,7 +183,7 @@ impl WorkDone {
             CheckExit::Passed(_) => Either::Left(Verified { attempt, summary }),
             CheckExit::Failed(report) => Either::Right(Rejected {
                 attempt,
-                outcome: Rejection::VerifyFailed,
+                rejection: Rejection::VerifyFailed,
                 report,
             }),
         }
@@ -207,7 +207,7 @@ impl Verified {
             CheckExit::Passed(verdict) => Either::Left(Approved { attempt, verdict }),
             CheckExit::Failed(report) => Either::Right(Rejected {
                 attempt,
-                outcome: Rejection::JudgeFailed,
+                rejection: Rejection::JudgeFailed,
                 report,
             }),
         }
@@ -232,7 +232,7 @@ pub struct AlreadyDone {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Rejected {
     pub attempt: Attempt,
-    pub outcome: Rejection,
+    pub rejection: Rejection,
     pub report: String,
 }
 

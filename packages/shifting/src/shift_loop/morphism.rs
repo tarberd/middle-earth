@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::branch::Branch;
 use crate::either::Either;
-use crate::repository::{Commit, Repository};
+use crate::repository::{Commit, GitError, Repository};
 use crate::script::{Script, ScriptOutput};
 use crate::shift_loop::contract::{CheckExit, PrecheckExit, SelectExit, WorkExit};
 use crate::shift_loop::outcome::{SettleFailure, Settled, Settlement};
@@ -42,6 +42,11 @@ pub struct LoopScript {
 }
 
 impl LoopScript {
+    /// The commit HEAD points at in the repository this script runs in.
+    fn repository_head(&self) -> Result<Commit, GitError> {
+        self.context.repository.head()
+    }
+
     /// An invocation of this script in `iteration`, whose base commit is `base`, before select
     /// chose a task: it runs in the repository root, and the task and outcome are unset.
     fn invocation(&self, iteration: u64, base: &Commit) -> Script {
@@ -62,24 +67,18 @@ impl LoopScript {
 
     /// Runs `invocation`, one of this script's, with `input` on its stdin. A Script Bridge
     /// error names this script.
-    fn run_invocation(
-        &self,
-        invocation: &Script,
-        input: &str,
-    ) -> Result<ScriptOutput, ShiftLoopError> {
+    fn run(&self, invocation: &Script, input: &str) -> Result<ScriptOutput, ShiftLoopError> {
         invocation
             .run(input, &mut io::stderr())
-            .map_err(|error| self.error(error))
-    }
-
-    /// Runs this script for `attempt` with `input` on its stdin.
-    fn run(&self, attempt: &Attempt, input: &str) -> Result<ScriptOutput, ShiftLoopError> {
-        self.run_invocation(&self.attempt_invocation(attempt), input)
+            .map_err(|error| self.error_naming_script(error))
     }
 
     /// Runs this script for `attempt` with its task reference as one line on stdin.
     fn run_on_task(&self, attempt: &Attempt) -> Result<ScriptOutput, ShiftLoopError> {
-        self.run(attempt, &format!("{}\n", attempt.task))
+        self.run(
+            &self.attempt_invocation(attempt),
+            &format!("{}\n", attempt.task),
+        )
     }
 
     /// Runs this commit or rollback for the settlement's attempt with its outcome and its
@@ -92,14 +91,14 @@ impl LoopScript {
         let invocation = self
             .attempt_invocation(&settlement.attempt)
             .with_env(SHIFT_OUTCOME, settlement.outcome.name());
-        let output = self.run_invocation(&invocation, &settlement.input)?;
+        let output = self.run(&invocation, &settlement.input)?;
         settlement
             .settle(output)
-            .map_err(|failure| self.error(failed(failure)))
+            .map_err(|failure| self.error_naming_script(failed(failure)))
     }
 
     /// The error that stops the run while this script runs, naming the script.
-    fn error(&self, source: impl Into<LoopScriptError>) -> ShiftLoopError {
+    fn error_naming_script(&self, source: impl Into<LoopScriptError>) -> ShiftLoopError {
         ShiftLoopError::Script {
             script: self.path.clone(),
             source: source.into(),
@@ -119,12 +118,11 @@ impl Branch<Idle> for Select {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, idle: Idle) -> Result<Either<Selected, Exhausted>, ShiftLoopError> {
-        let base = self.script.context.repository.head()?;
-        let output = self
-            .script
-            .run_invocation(&self.script.invocation(idle.iteration, &base), "")?;
+        let base = self.script.repository_head()?;
+        let invocation = self.script.invocation(idle.iteration, &base);
+        let output = self.script.run(&invocation, "")?;
         idle.after_select(base, SelectExit::from(output))
-            .map_err(|error| self.script.error(error))
+            .map_err(|error| self.script.error_naming_script(error))
     }
 }
 
@@ -180,7 +178,8 @@ impl Branch<WorkDone> for Verify {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, done: WorkDone) -> Result<Either<Verified, Rejected>, ShiftLoopError> {
-        let output = self.script.run(&done.attempt, &done.summary)?;
+        let invocation = self.script.attempt_invocation(&done.attempt);
+        let output = self.script.run(&invocation, &done.summary)?;
         Ok(done.after_verify(CheckExit::from(output)))
     }
 }
@@ -197,7 +196,8 @@ impl Branch<Verified> for Judge {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, verified: Verified) -> Result<Either<Approved, Rejected>, ShiftLoopError> {
-        let output = self.script.run(&verified.attempt, &verified.summary)?;
+        let invocation = self.script.attempt_invocation(&verified.attempt);
+        let output = self.script.run(&invocation, &verified.summary)?;
         Ok(verified.after_judge(CheckExit::from(output)))
     }
 }
@@ -210,24 +210,12 @@ pub struct Settle {
     pub rollback: LoopScript,
 }
 
-impl Settle {
-    /// Runs commit for `settlement`; a failure stops the run.
-    fn commit(&self, settlement: Settlement) -> Result<Settled, ShiftLoopError> {
-        self.commit.settle(settlement, LoopScriptError::Commit)
-    }
-
-    /// Runs rollback for `settlement`; a failure stops the run.
-    fn rollback(&self, settlement: Settlement) -> Result<Settled, ShiftLoopError> {
-        self.rollback.settle(settlement, LoopScriptError::Rollback)
-    }
-}
-
 impl Step<Approved> for Settle {
     type Out = Settled;
     type Error = ShiftLoopError;
 
     fn apply(&self, approved: Approved) -> Result<Settled, ShiftLoopError> {
-        self.commit(approved.into())
+        self.commit.settle(approved.into(), LoopScriptError::Commit)
     }
 }
 
@@ -236,7 +224,7 @@ impl Step<AlreadyDone> for Settle {
     type Error = ShiftLoopError;
 
     fn apply(&self, done: AlreadyDone) -> Result<Settled, ShiftLoopError> {
-        self.commit(done.into())
+        self.commit.settle(done.into(), LoopScriptError::Commit)
     }
 }
 
@@ -245,7 +233,8 @@ impl Step<Rejected> for Settle {
     type Error = ShiftLoopError;
 
     fn apply(&self, rejected: Rejected) -> Result<Settled, ShiftLoopError> {
-        self.rollback(rejected.into())
+        self.rollback
+            .settle(rejected.into(), LoopScriptError::Rollback)
     }
 }
 
@@ -254,7 +243,8 @@ impl Step<Declined> for Settle {
     type Error = ShiftLoopError;
 
     fn apply(&self, declined: Declined) -> Result<Settled, ShiftLoopError> {
-        self.rollback(declined.into())
+        self.rollback
+            .settle(declined.into(), LoopScriptError::Rollback)
     }
 }
 

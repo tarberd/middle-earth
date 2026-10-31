@@ -194,14 +194,28 @@ fn test_loop_summary_counts_each_outcome() {
     assert_eq!(summary.map(|summary| summary.iterations()), Ok(8));
 }
 
+/// An array of the outcomes it names. The same names form a match without a wildcard that
+/// every listed outcome passes through, so an outcome added to the type fails to compile
+/// here until it is listed.
+macro_rules! every_outcome {
+    ($($variant:ident $(($rejection:ident))?),+ $(,)?) => {{
+        const fn listed(outcome: Outcome) -> Outcome {
+            match outcome {
+                $(Outcome::$variant $((Rejection::$rejection))?)|+ => outcome,
+            }
+        }
+        [$(listed(Outcome::$variant $((Rejection::$rejection))?)),+]
+    }};
+}
+
 /// Every outcome, each counted by its own count.
-const OUTCOMES: [Outcome; 6] = [
-    Outcome::Verified,
-    Outcome::AlreadyDone,
-    Outcome::Rejected(Rejection::WorkFailed),
-    Outcome::Rejected(Rejection::VerifyFailed),
-    Outcome::Rejected(Rejection::JudgeFailed),
-    Outcome::Declined,
+const OUTCOMES: [Outcome; 6] = every_outcome![
+    Verified,
+    AlreadyDone,
+    Rejected(WorkFailed),
+    Rejected(VerifyFailed),
+    Rejected(JudgeFailed),
+    Declined,
 ];
 
 /// A summary whose every count is at its maximum.
@@ -515,7 +529,7 @@ fn test_failed_work_goes_to_rollback_as_work_failed() {
         Selected { attempt: attempt() }.after_work(WorkExit::Failed("agent crashed\n".to_string())),
         Either::Right(Either::Right(Rejected {
             attempt: attempt(),
-            outcome: Rejection::WorkFailed,
+            rejection: Rejection::WorkFailed,
             report: "agent crashed\n".to_string(),
         }))
     );
@@ -551,7 +565,7 @@ fn test_failing_verify_goes_to_rollback_as_verify_failed() {
         work_done().after_verify(CheckExit::Failed("tests failed\n".to_string())),
         Either::Right(Rejected {
             attempt: attempt(),
-            outcome: Rejection::VerifyFailed,
+            rejection: Rejection::VerifyFailed,
             report: "tests failed\n".to_string(),
         })
     );
@@ -574,7 +588,7 @@ fn test_failing_judge_goes_to_rollback_as_judge_failed() {
         verified().after_judge(CheckExit::Failed("judge rejects\n".to_string())),
         Either::Right(Rejected {
             attempt: attempt(),
-            outcome: Rejection::JudgeFailed,
+            rejection: Rejection::JudgeFailed,
             report: "judge rejects\n".to_string(),
         })
     );
@@ -593,7 +607,7 @@ fn test_each_settled_state_gives_commit_or_rollback_its_outcome_and_stdin() {
         }),
         Settlement::from(Rejected {
             attempt: attempt(),
-            outcome: Rejection::VerifyFailed,
+            rejection: Rejection::VerifyFailed,
             report: "tests failed\n".to_string(),
         }),
         Settlement::from(Declined {

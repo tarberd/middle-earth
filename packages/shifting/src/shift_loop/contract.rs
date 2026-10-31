@@ -56,10 +56,9 @@ pub enum PrecheckExit {
 
 impl From<ScriptOutput> for PrecheckExit {
     fn from(output: ScriptOutput) -> Self {
-        match output.exit {
-            ScriptExit::Code(0) => Self::AlreadyDone(output.stdout),
-            _ => Self::NeedsWork,
-        }
+        output
+            .into_success_or_failure()
+            .either(Self::AlreadyDone, |_| Self::NeedsWork)
     }
 }
 
@@ -95,9 +94,8 @@ pub enum CheckExit {
 
 impl From<ScriptOutput> for CheckExit {
     fn from(output: ScriptOutput) -> Self {
-        match output.exit {
-            ScriptExit::Code(0) => Self::Passed(output.stdout),
-            _ => Self::Failed(output.failure_report()),
-        }
+        output
+            .into_success_or_failure()
+            .either(Self::Passed, |failed| Self::Failed(failed.failure_report()))
     }
 }
