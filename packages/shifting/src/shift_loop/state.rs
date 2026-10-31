@@ -70,10 +70,12 @@ impl Idle {
     }
 
     /// Counts how an iteration ended, then continues to the next iteration or ends the loop.
-    /// A count or the iteration number that is already at its maximum is an overflow.
+    /// A full count is an overflow, and so is numbering an iteration past the last one, which
+    /// only an unbounded loop reaches.
     pub fn advance(
         self,
         ended: Either<Settled, Exhausted>,
+        max_iterations: Option<u64>,
     ) -> Result<LoopFlow<Self, LoopReport>, CountOverflow> {
         match ended {
             Either::Left(Settled {
@@ -86,18 +88,30 @@ impl Idle {
                 })
             }),
             Either::Left(Settled { outcome, .. }) => self
-                .iteration
-                .checked_add(1)
-                .ok_or(CountOverflow::Iteration)
-                .and_then(|iteration| {
-                    self.summary
-                        .record(outcome)
-                        .map(|summary| LoopFlow::Continue(Self { iteration, summary }))
-                }),
+                .summary
+                .record(outcome)
+                .and_then(|summary| Self { summary, ..self }.next(max_iterations)),
             Either::Right(Exhausted) => Ok(LoopFlow::Break(LoopReport {
                 end: LoopEnd::Exhausted,
                 summary: self.summary,
             })),
+        }
+    }
+
+    /// The loop after this iteration: idle before the next one, which the bound then checks.
+    /// No bound is past the last iteration number, so a bounded loop that ran that iteration
+    /// has reached its bound, and an unbounded one can't number another iteration.
+    fn next(
+        self,
+        max_iterations: Option<u64>,
+    ) -> Result<LoopFlow<Self, LoopReport>, CountOverflow> {
+        match (self.iteration.checked_add(1), max_iterations) {
+            (Some(iteration), _) => Ok(LoopFlow::Continue(Self { iteration, ..self })),
+            (None, Some(_)) => Ok(LoopFlow::Break(LoopReport {
+                end: LoopEnd::MaxIterations,
+                summary: self.summary,
+            })),
+            (None, None) => Err(CountOverflow::Iteration),
         }
     }
 }

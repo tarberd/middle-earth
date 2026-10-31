@@ -5,19 +5,19 @@
 //! read through the script contract, to that state's pure transition.
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::branch::Branch;
 use crate::either::Either;
 use crate::repository::{Commit, Repository};
-use crate::script::{Script, ScriptError, ScriptOutput};
+use crate::script::{Script, ScriptOutput};
 use crate::shift_loop::contract::{CheckExit, PrecheckExit, SelectExit, WorkExit};
 use crate::shift_loop::outcome::{SettleFailure, Settled, Settlement};
 use crate::shift_loop::state::{
     AlreadyDone, Approved, Attempt, Declined, Exhausted, Idle, Rejected, Selected, Verified,
     WorkDone,
 };
-use crate::shift_loop::{LoopKind, ShiftLoopError};
+use crate::shift_loop::{LoopKind, LoopScriptError, ShiftLoopError};
 use crate::step::Step;
 
 const SHIFT_LOOP: &str = "SHIFT_LOOP";
@@ -26,54 +26,91 @@ const SHIFT_TASK: &str = "SHIFT_TASK";
 const SHIFT_BASE: &str = "SHIFT_BASE";
 const SHIFT_OUTCOME: &str = "SHIFT_OUTCOME";
 
-/// What every script invocation of one loop shares.
+/// The script context every script of one shift loop shares: which loop it is, and the
+/// repository it runs in.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Context {
+pub struct LoopScriptContext {
     pub kind: LoopKind,
     pub repository: Repository,
 }
 
-impl Context {
-    /// An invocation of `script` in `iteration`, whose base commit is `base`, before select
+/// One script of a shift loop: its path, and the loop's script context it runs under.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LoopScript {
+    pub path: PathBuf,
+    pub context: LoopScriptContext,
+}
+
+impl LoopScript {
+    /// An invocation of this script in `iteration`, whose base commit is `base`, before select
     /// chose a task: it runs in the repository root, and the task and outcome are unset.
-    fn invocation(&self, script: &Path, iteration: u64, base: &Commit) -> Script {
-        Script::new(script)
-            .with_current_dir(&self.repository.root)
+    fn invocation(&self, iteration: u64, base: &Commit) -> Script {
+        Script::new(&self.path)
+            .with_current_dir(&self.context.repository.root)
             .with_dropped_env(SHIFT_TASK)
             .with_dropped_env(SHIFT_OUTCOME)
-            .with_env(SHIFT_LOOP, self.kind.name())
+            .with_env(SHIFT_LOOP, self.context.kind.name())
             .with_env(SHIFT_ITERATION, iteration.to_string())
             .with_env(SHIFT_BASE, &base.0)
     }
 
-    /// An invocation of `script` for `attempt`, working on its task.
-    fn attempt_invocation(&self, script: &Path, attempt: &Attempt) -> Script {
-        self.invocation(script, attempt.iteration, &attempt.base)
+    /// An invocation of this script for `attempt`, working on its task.
+    fn attempt_invocation(&self, attempt: &Attempt) -> Script {
+        self.invocation(attempt.iteration, &attempt.base)
             .with_env(SHIFT_TASK, &attempt.task.0)
     }
 
-    /// Runs `script` for `attempt` with `input` on its stdin.
-    fn run(
+    /// Runs `invocation`, one of this script's, with `input` on its stdin. A Script Bridge
+    /// error names this script.
+    fn run_invocation(
         &self,
-        script: &Path,
-        attempt: &Attempt,
+        invocation: &Script,
         input: &str,
-    ) -> Result<ScriptOutput, ScriptError> {
-        self.attempt_invocation(script, attempt)
+    ) -> Result<ScriptOutput, ShiftLoopError> {
+        invocation
             .run(input, &mut io::stderr())
+            .map_err(|error| self.error(error))
     }
 
-    /// Runs `script` for `attempt` with its task reference as one line on stdin.
-    fn run_on_task(&self, script: &Path, attempt: &Attempt) -> Result<ScriptOutput, ScriptError> {
-        self.run(script, attempt, &format!("{}\n", attempt.task))
+    /// Runs this script for `attempt` with `input` on its stdin.
+    fn run(&self, attempt: &Attempt, input: &str) -> Result<ScriptOutput, ShiftLoopError> {
+        self.run_invocation(&self.attempt_invocation(attempt), input)
+    }
+
+    /// Runs this script for `attempt` with its task reference as one line on stdin.
+    fn run_on_task(&self, attempt: &Attempt) -> Result<ScriptOutput, ShiftLoopError> {
+        self.run(attempt, &format!("{}\n", attempt.task))
+    }
+
+    /// Runs this commit or rollback for the settlement's attempt with its outcome and its
+    /// input on stdin. A failure stops the run with the error `failed` names it by.
+    fn settle(
+        &self,
+        settlement: Settlement,
+        failed: fn(SettleFailure) -> LoopScriptError,
+    ) -> Result<Settled, ShiftLoopError> {
+        let invocation = self
+            .attempt_invocation(&settlement.attempt)
+            .with_env(SHIFT_OUTCOME, settlement.outcome.name());
+        let output = self.run_invocation(&invocation, &settlement.input)?;
+        settlement
+            .settle(output)
+            .map_err(|failure| self.error(failed(failure)))
+    }
+
+    /// The error that stops the run while this script runs, naming the script.
+    fn error(&self, source: impl Into<LoopScriptError>) -> ShiftLoopError {
+        ShiftLoopError::Script {
+            script: self.path.clone(),
+            source: source.into(),
+        }
     }
 }
 
 /// Select: reads the base commit, then picks the iteration's task, or ends the loop.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Select {
-    pub script: PathBuf,
-    pub context: Context,
+    pub script: LoopScript,
 }
 
 impl Branch<Idle> for Select {
@@ -82,21 +119,19 @@ impl Branch<Idle> for Select {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, idle: Idle) -> Result<Either<Selected, Exhausted>, ShiftLoopError> {
-        let base = self.context.repository.head()?;
+        let base = self.script.context.repository.head()?;
         let output = self
-            .context
-            .invocation(&self.script, idle.iteration, &base)
-            .run("", &mut io::stderr())?;
+            .script
+            .run_invocation(&self.script.invocation(idle.iteration, &base), "")?;
         idle.after_select(base, SelectExit::from(output))
-            .map_err(ShiftLoopError::from)
+            .map_err(|error| self.script.error(error))
     }
 }
 
 /// Precheck: the task is already done, or it still needs work.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Precheck {
-    pub script: PathBuf,
-    pub context: Context,
+    pub script: LoopScript,
 }
 
 impl Branch<Selected> for Precheck {
@@ -108,7 +143,7 @@ impl Branch<Selected> for Precheck {
         &self,
         selected: Selected,
     ) -> Result<Either<AlreadyDone, Selected>, ShiftLoopError> {
-        let output = self.context.run_on_task(&self.script, &selected.attempt)?;
+        let output = self.script.run_on_task(&selected.attempt)?;
         Ok(selected.after_precheck(PrecheckExit::from(output)))
     }
 }
@@ -116,8 +151,7 @@ impl Branch<Selected> for Precheck {
 /// Work: done with a summary, or, on the right arm, declined or failed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Work {
-    pub script: PathBuf,
-    pub context: Context,
+    pub script: LoopScript,
 }
 
 impl Branch<Selected> for Work {
@@ -129,7 +163,7 @@ impl Branch<Selected> for Work {
         &self,
         selected: Selected,
     ) -> Result<Either<WorkDone, Either<Declined, Rejected>>, ShiftLoopError> {
-        let output = self.context.run_on_task(&self.script, &selected.attempt)?;
+        let output = self.script.run_on_task(&selected.attempt)?;
         Ok(selected.after_work(WorkExit::from(output)))
     }
 }
@@ -137,8 +171,7 @@ impl Branch<Selected> for Work {
 /// Verify: checks the work summary deterministically.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Verify {
-    pub script: PathBuf,
-    pub context: Context,
+    pub script: LoopScript,
 }
 
 impl Branch<WorkDone> for Verify {
@@ -147,9 +180,7 @@ impl Branch<WorkDone> for Verify {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, done: WorkDone) -> Result<Either<Verified, Rejected>, ShiftLoopError> {
-        let output = self
-            .context
-            .run(&self.script, &done.attempt, &done.summary)?;
+        let output = self.script.run(&done.attempt, &done.summary)?;
         Ok(done.after_verify(CheckExit::from(output)))
     }
 }
@@ -157,8 +188,7 @@ impl Branch<WorkDone> for Verify {
 /// Judge: checks the work summary after verify passed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Judge {
-    pub script: PathBuf,
-    pub context: Context,
+    pub script: LoopScript,
 }
 
 impl Branch<Verified> for Judge {
@@ -167,9 +197,7 @@ impl Branch<Verified> for Judge {
     type Error = ShiftLoopError;
 
     fn evaluate(&self, verified: Verified) -> Result<Either<Approved, Rejected>, ShiftLoopError> {
-        let output = self
-            .context
-            .run(&self.script, &verified.attempt, &verified.summary)?;
+        let output = self.script.run(&verified.attempt, &verified.summary)?;
         Ok(verified.after_judge(CheckExit::from(output)))
     }
 }
@@ -178,36 +206,19 @@ impl Branch<Verified> for Judge {
 /// arm of any coproduct of those.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Settle {
-    pub commit: PathBuf,
-    pub rollback: PathBuf,
-    pub context: Context,
+    pub commit: LoopScript,
+    pub rollback: LoopScript,
 }
 
 impl Settle {
     /// Runs commit for `settlement`; a failure stops the run.
     fn commit(&self, settlement: Settlement) -> Result<Settled, ShiftLoopError> {
-        self.run(&self.commit, settlement, ShiftLoopError::Commit)
+        self.commit.settle(settlement, LoopScriptError::Commit)
     }
 
     /// Runs rollback for `settlement`; a failure stops the run.
     fn rollback(&self, settlement: Settlement) -> Result<Settled, ShiftLoopError> {
-        self.run(&self.rollback, settlement, ShiftLoopError::Rollback)
-    }
-
-    /// Runs `script` for the settlement's attempt with its outcome and its input on stdin. A
-    /// failure stops the run with the error `failed` names it by.
-    fn run(
-        &self,
-        script: &Path,
-        settlement: Settlement,
-        failed: fn(SettleFailure) -> ShiftLoopError,
-    ) -> Result<Settled, ShiftLoopError> {
-        let output = self
-            .context
-            .attempt_invocation(script, &settlement.attempt)
-            .with_env(SHIFT_OUTCOME, settlement.outcome.name())
-            .run(&settlement.input, &mut io::stderr())?;
-        settlement.settle(output).map_err(failed)
+        self.rollback.settle(settlement, LoopScriptError::Rollback)
     }
 }
 

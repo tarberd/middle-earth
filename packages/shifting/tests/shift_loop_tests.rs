@@ -1,4 +1,6 @@
+use std::fs::Permissions;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -140,6 +142,11 @@ impl Repository {
         )
     }
 
+    /// The path of the stub `script` in `.shifting/<name>/`.
+    fn script(&self, name: &str, script: &str) -> PathBuf {
+        self.root.join(".shifting").join(name).join(script)
+    }
+
     /// Commits everything as the commit `start`.
     fn committed(self) -> Self {
         git(&self.root, &["add", "-A"]);
@@ -197,14 +204,23 @@ struct Counts {
 
 /// The report shift prints on a clean end: one `name: count` line per count, then `end`.
 fn report(counts: Counts, end: &str) -> String {
+    let Counts {
+        iterations,
+        commits,
+        already_done,
+        work_failed,
+        verify_failed,
+        judge_failed,
+        declines,
+    } = counts;
     lines(&[
-        &format!("iterations: {}", counts.iterations),
-        &format!("commits: {}", counts.commits),
-        &format!("already-done: {}", counts.already_done),
-        &format!("work-failed: {}", counts.work_failed),
-        &format!("verify-failed: {}", counts.verify_failed),
-        &format!("judge-failed: {}", counts.judge_failed),
-        &format!("declines: {}", counts.declines),
+        &format!("iterations: {iterations}"),
+        &format!("commits: {commits}"),
+        &format!("already-done: {already_done}"),
+        &format!("work-failed: {work_failed}"),
+        &format!("verify-failed: {verify_failed}"),
+        &format!("judge-failed: {judge_failed}"),
+        &format!("declines: {declines}"),
         end,
     ])
 }
@@ -469,7 +485,10 @@ fn test_failing_select_stops_the_run_with_its_stderr() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output).contains("Error: select failed (exit status: 1): selector broke\n"),
+        stderr(&output).contains(&format!(
+            "Error: {}: select failed (exit status: 1): selector broke\n",
+            repository.script("build", "select.sh").display()
+        )),
         "stderr must show the select error: {}",
         stderr(&output)
     );
@@ -498,10 +517,11 @@ fn test_select_choosing_a_task_over_several_lines_stops_the_run_before_precheck(
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output).contains(
-            "Error: select chose a task reference that spans several lines: \
-             \"line one\\nline two\"\n"
-        ),
+        stderr(&output).contains(&format!(
+            "Error: {}: select chose a task reference that spans several lines: \
+             \"line one\\nline two\"\n",
+            repository.script("build", "select.sh").display()
+        )),
         "stderr must show select's stdout: {}",
         stderr(&output)
     );
@@ -529,8 +549,10 @@ fn test_failing_commit_stops_the_run() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output)
-            .contains("Error: commit failed for task t1 (exit status: 1): index.lock exists\n"),
+        stderr(&output).contains(&format!(
+            "Error: {}: commit failed for task t1 (exit status: 1): index.lock exists\n",
+            repository.script("build", "commit.sh").display()
+        )),
         "stderr must show the commit error: {}",
         stderr(&output)
     );
@@ -566,7 +588,10 @@ fn test_killed_rollback_stops_the_run() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output).contains("Error: rollback failed for task t1 (signal: 9 (SIGKILL)): \n"),
+        stderr(&output).contains(&format!(
+            "Error: {}: rollback failed for task t1 (signal: 9 (SIGKILL)): \n",
+            repository.script("build", "rollback.sh").display()
+        )),
         "stderr must show the rollback error: {}",
         stderr(&output)
     );
@@ -579,6 +604,37 @@ fn test_killed_rollback_stops_the_run() {
             "work build#1 task=t1 base=<start> outcome=<unset> cwd=<root> stdin=t1|",
             "verify build#1 task=t1 base=<start> outcome=<unset> cwd=<root> stdin=summary of t1|",
             "rollback build#1 task=t1 base=<start> outcome=verify-failed cwd=<root> stdin=tests failed|",
+        ])
+    );
+}
+
+#[test]
+fn test_script_that_cannot_run_stops_the_run_naming_its_path() {
+    let select = select_tasks(&["t1", "t2"]);
+    let repository = Repository::new().with_loop("build", &[("select.sh", &select)]);
+    let judge = repository.script("build", "judge.sh");
+    std::fs::set_permissions(&judge, Permissions::from_mode(0o644))
+        .expect("failed to make judge.sh non-executable");
+    let repository = repository.committed();
+
+    let output = repository.shift(&["build"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!(
+            "Error: {}: I/O error: Permission denied (os error 13)\n",
+            judge.display()
+        )
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        repository.log(),
+        lines(&[
+            "select build#1 task=<unset> base=<start> outcome=<unset> cwd=<root> stdin=",
+            "precheck build#1 task=t1 base=<start> outcome=<unset> cwd=<root> stdin=t1|",
+            "work build#1 task=t1 base=<start> outcome=<unset> cwd=<root> stdin=t1|",
+            "verify build#1 task=t1 base=<start> outcome=<unset> cwd=<root> stdin=summary of t1|",
         ])
     );
 }

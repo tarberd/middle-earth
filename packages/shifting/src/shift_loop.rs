@@ -18,7 +18,7 @@ use crate::script::ScriptError;
 use crate::step::Step;
 
 pub use contract::{CheckExit, PrecheckExit, SelectError, SelectExit, WorkExit};
-pub use morphism::{Context, Judge, Precheck, Select, Settle, Verify, Work};
+pub use morphism::{Judge, LoopScript, LoopScriptContext, Precheck, Select, Settle, Verify, Work};
 pub use outcome::{Outcome, Rejection, SettleFailure, Settled, Settlement};
 pub use report::{CountOverflow, LoopEnd, LoopReport, LoopSummary};
 pub use state::{
@@ -44,7 +44,7 @@ impl LoopKind {
     }
 }
 
-/// A loop directory's seven scripts.
+/// The paths of a loop directory's seven scripts.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LoopScripts {
     pub select: PathBuf,
@@ -113,12 +113,24 @@ fn inspect(path: &Path) -> Result<Option<FileType>, LoopDirectoryError> {
 /// Errors that stop a shift loop.
 #[derive(thiserror::Error, Debug)]
 pub enum ShiftLoopError {
-    #[error(transparent)]
-    Script(#[from] ScriptError),
+    /// An error raised while running the loop script at `script`, which it names.
+    #[error("{}: {source}", .script.display())]
+    Script {
+        script: PathBuf,
+        #[source]
+        source: LoopScriptError,
+    },
     #[error(transparent)]
     Git(#[from] GitError),
     #[error(transparent)]
     Overflow(#[from] CountOverflow),
+}
+
+/// What stops a shift loop while one of its scripts runs.
+#[derive(thiserror::Error, Debug)]
+pub enum LoopScriptError {
+    #[error(transparent)]
+    Bridge(#[from] ScriptError),
     #[error(transparent)]
     Select(#[from] SelectError),
     #[error("commit failed {0}")]
@@ -152,9 +164,13 @@ pub struct ShiftLoop {
 }
 
 impl ShiftLoop {
-    /// Composes the loop from `scripts`.
+    /// Composes the loop from `scripts`, each running under `context`.
     #[must_use]
-    pub fn new(context: Context, scripts: LoopScripts, max_iterations: Option<u64>) -> Self {
+    pub fn new(
+        context: &LoopScriptContext,
+        scripts: LoopScripts,
+        max_iterations: Option<u64>,
+    ) -> Self {
         let LoopScripts {
             select,
             precheck,
@@ -164,28 +180,27 @@ impl ShiftLoop {
             commit,
             rollback,
         } = scripts;
-        let decide = Select {
-            script: select,
+        let script = |path| LoopScript {
+            path,
             context: context.clone(),
+        };
+        let decide = Select {
+            script: script(select),
         }
         .branch_left(
             Precheck {
-                script: precheck,
-                context: context.clone(),
+                script: script(precheck),
             }
             .branch_right(
                 Work {
-                    script: work,
-                    context: context.clone(),
+                    script: script(work),
                 }
                 .branch_left(
                     Verify {
-                        script: verify,
-                        context: context.clone(),
+                        script: script(verify),
                     }
                     .branch_left(Judge {
-                        script: judge,
-                        context: context.clone(),
+                        script: script(judge),
                     }),
                 ),
             ),
@@ -193,9 +208,8 @@ impl ShiftLoop {
         Self {
             decide,
             settle: Settle {
-                commit,
-                rollback,
-                context,
+                commit: script(commit),
+                rollback: script(rollback),
             },
             max_iterations,
         }
@@ -207,8 +221,13 @@ impl ShiftLoop {
         repository: Repository,
         max_iterations: Option<u64>,
     ) -> Result<Self, LoopDirectoryError> {
-        LoopScripts::discover(&repository.root.join(".shifting").join(kind.name()))
-            .map(|scripts| Self::new(Context { kind, repository }, scripts, max_iterations))
+        LoopScripts::discover(&repository.root.join(".shifting").join(kind.name())).map(|scripts| {
+            Self::new(
+                &LoopScriptContext { kind, repository },
+                scripts,
+                max_iterations,
+            )
+        })
     }
 
     /// Decides the iteration from select to judge, then settles it with commit or rollback.
@@ -227,8 +246,10 @@ impl Step<Idle> for ShiftLoop {
     fn apply(&self, idle: Idle) -> Result<LoopFlow<Idle, LoopReport>, ShiftLoopError> {
         idle.within(self.max_iterations).either(
             |idle| {
-                self.iterate(idle)
-                    .and_then(|ended| idle.advance(ended).map_err(ShiftLoopError::from))
+                self.iterate(idle).and_then(|ended| {
+                    idle.advance(ended, self.max_iterations)
+                        .map_err(ShiftLoopError::from)
+                })
             },
             |report| Ok(LoopFlow::Break(report)),
         )

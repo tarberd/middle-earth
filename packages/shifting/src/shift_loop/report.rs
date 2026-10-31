@@ -28,32 +28,37 @@ pub enum CountOverflow {
 impl LoopSummary {
     /// Counts one more iteration that ended with `outcome`, or reports that its count is full.
     pub fn record(self, outcome: Outcome) -> Result<Self, CountOverflow> {
-        let more = |count: u64| count.checked_add(1).ok_or(CountOverflow::Outcome(outcome));
+        let count_one_more =
+            |count: u64| count.checked_add(1).ok_or(CountOverflow::Outcome(outcome));
         match outcome {
-            Outcome::Verified => more(self.commits).map(|commits| Self { commits, ..self }),
-            Outcome::AlreadyDone => more(self.already_done).map(|already_done| Self {
+            Outcome::Verified => {
+                count_one_more(self.commits).map(|commits| Self { commits, ..self })
+            }
+            Outcome::AlreadyDone => count_one_more(self.already_done).map(|already_done| Self {
                 already_done,
                 ..self
             }),
             Outcome::Rejected(Rejection::WorkFailed) => {
-                more(self.work_failed).map(|work_failed| Self {
+                count_one_more(self.work_failed).map(|work_failed| Self {
                     work_failed,
                     ..self
                 })
             }
             Outcome::Rejected(Rejection::VerifyFailed) => {
-                more(self.verify_failed).map(|verify_failed| Self {
+                count_one_more(self.verify_failed).map(|verify_failed| Self {
                     verify_failed,
                     ..self
                 })
             }
             Outcome::Rejected(Rejection::JudgeFailed) => {
-                more(self.judge_failed).map(|judge_failed| Self {
+                count_one_more(self.judge_failed).map(|judge_failed| Self {
                     judge_failed,
                     ..self
                 })
             }
-            Outcome::Declined => more(self.declines).map(|declines| Self { declines, ..self }),
+            Outcome::Declined => {
+                count_one_more(self.declines).map(|declines| Self { declines, ..self })
+            }
         }
     }
 
@@ -61,13 +66,21 @@ impl LoopSummary {
     /// `u64::MAX` always add up within `u128`.
     #[must_use]
     pub fn iterations(&self) -> u128 {
+        let Self {
+            commits,
+            already_done,
+            work_failed,
+            verify_failed,
+            judge_failed,
+            declines,
+        } = *self;
         [
-            self.commits,
-            self.already_done,
-            self.work_failed,
-            self.verify_failed,
-            self.judge_failed,
-            self.declines,
+            commits,
+            already_done,
+            work_failed,
+            verify_failed,
+            judge_failed,
+            declines,
         ]
         .into_iter()
         .map(u128::from)
@@ -101,13 +114,21 @@ impl fmt::Display for LoopSummary {
     /// One `name: count` line per count: the iterations, the commits, each outcome other than
     /// a commit or a decline by its `SHIFT_OUTCOME` name, then the declines.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            commits,
+            already_done,
+            work_failed,
+            verify_failed,
+            judge_failed,
+            declines,
+        } = self;
         writeln!(f, "iterations: {}", self.iterations())?;
-        writeln!(f, "commits: {}", self.commits)?;
-        writeln!(f, "{}: {}", Outcome::AlreadyDone.name(), self.already_done)?;
-        writeln!(f, "{}: {}", WORK_FAILED.name(), self.work_failed)?;
-        writeln!(f, "{}: {}", VERIFY_FAILED.name(), self.verify_failed)?;
-        writeln!(f, "{}: {}", JUDGE_FAILED.name(), self.judge_failed)?;
-        writeln!(f, "declines: {}", self.declines)
+        writeln!(f, "commits: {commits}")?;
+        writeln!(f, "{}: {already_done}", Outcome::AlreadyDone.name())?;
+        writeln!(f, "{}: {work_failed}", WORK_FAILED.name())?;
+        writeln!(f, "{}: {verify_failed}", VERIFY_FAILED.name())?;
+        writeln!(f, "{}: {judge_failed}", JUDGE_FAILED.name())?;
+        writeln!(f, "declines: {declines}")
     }
 }
 

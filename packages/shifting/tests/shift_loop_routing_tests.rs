@@ -253,10 +253,13 @@ fn test_a_committed_or_rejected_iteration_continues_to_the_next_one() {
         Outcome::Rejected(Rejection::JudgeFailed),
     ]
     .map(|outcome| {
-        BEFORE_FOURTH.advance(Either::Left(Settled {
-            task: Task("task-07".to_string()),
-            outcome,
-        }))
+        BEFORE_FOURTH.advance(
+            Either::Left(Settled {
+                task: Task("task-07".to_string()),
+                outcome,
+            }),
+            None,
+        )
     });
 
     assert_eq!(
@@ -289,10 +292,13 @@ fn test_a_committed_or_rejected_iteration_continues_to_the_next_one() {
 
 #[test]
 fn test_a_declined_iteration_ends_the_loop_declined_with_its_task() {
-    let flow = BEFORE_FOURTH.advance(Either::Left(Settled {
-        task: Task("task-07".to_string()),
-        outcome: Outcome::Declined,
-    }));
+    let flow = BEFORE_FOURTH.advance(
+        Either::Left(Settled {
+            task: Task("task-07".to_string()),
+            outcome: Outcome::Declined,
+        }),
+        None,
+    );
 
     assert_eq!(
         flow,
@@ -308,18 +314,42 @@ fn test_a_declined_iteration_ends_the_loop_declined_with_its_task() {
     );
 }
 
-#[test]
-fn test_continuing_past_the_last_iteration_number_is_an_overflow() {
-    let last = Idle {
-        iteration: u64::MAX,
-        summary: LoopSummary::default(),
-    };
+/// An idle loop before the last iteration it can number, after two commits and a work failure.
+const BEFORE_LAST: Idle = Idle {
+    iteration: u64::MAX,
+    summary: BEFORE_FOURTH.summary,
+};
 
+#[test]
+fn test_the_last_numbered_iteration_ends_a_loop_bounded_there_at_max_iterations() {
     assert_eq!(
-        last.advance(Either::Left(Settled {
-            task: Task("task-07".to_string()),
-            outcome: Outcome::Verified,
-        })),
+        BEFORE_LAST.advance(
+            Either::Left(Settled {
+                task: Task("task-07".to_string()),
+                outcome: Outcome::Verified,
+            }),
+            Some(u64::MAX),
+        ),
+        Ok(LoopFlow::Break(LoopReport {
+            end: LoopEnd::MaxIterations,
+            summary: LoopSummary {
+                commits: 3,
+                ..BEFORE_FOURTH.summary
+            },
+        }))
+    );
+}
+
+#[test]
+fn test_an_unbounded_loop_continuing_past_the_last_iteration_number_is_an_overflow() {
+    assert_eq!(
+        BEFORE_LAST.advance(
+            Either::Left(Settled {
+                task: Task("task-07".to_string()),
+                outcome: Outcome::Verified,
+            }),
+            None,
+        ),
         Err(CountOverflow::Iteration)
     );
 }
@@ -333,10 +363,13 @@ fn test_ending_an_iteration_whose_count_is_full_is_an_overflow() {
 
     assert_eq!(
         OUTCOMES.map(|outcome| {
-            full.advance(Either::Left(Settled {
-                task: Task("task-07".to_string()),
-                outcome,
-            }))
+            full.advance(
+                Either::Left(Settled {
+                    task: Task("task-07".to_string()),
+                    outcome,
+                }),
+                None,
+            )
         }),
         OUTCOMES.map(|outcome| Err(CountOverflow::Outcome(outcome)))
     );
@@ -345,7 +378,7 @@ fn test_ending_an_iteration_whose_count_is_full_is_an_overflow() {
 #[test]
 fn test_select_reporting_no_work_left_ends_the_loop_exhausted() {
     assert_eq!(
-        BEFORE_FOURTH.advance(Either::Right(Exhausted)),
+        BEFORE_FOURTH.advance(Either::Right(Exhausted), None),
         Ok(LoopFlow::Break(LoopReport {
             end: LoopEnd::Exhausted,
             summary: BEFORE_FOURTH.summary,
