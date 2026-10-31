@@ -1,6 +1,6 @@
 # 02: `shift plan` and `shift build` run the shift loop, replacing the prototype
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 
 ## What to build
