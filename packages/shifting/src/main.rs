@@ -4,12 +4,10 @@ use clap::Parser;
 use shifting::cli::{self, Cli};
 
 fn main() -> ExitCode {
-    let args = Cli::parse();
-    let mut stdout = std::io::stdout();
-    match cli::run(args, &mut stdout) {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(err) => {
-            eprintln!("Error: {err}");
+    match cli::run(Cli::parse(), &mut std::io::stdout()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error}");
             ExitCode::FAILURE
         }
     }

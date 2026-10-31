@@ -1,82 +1,66 @@
-use std::io::Write;
+//! The `shift` command line.
+
+use std::io::{self, Write};
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
-use crate::default_loop::{DefaultShiftError, DefaultShiftLoop, Idle, ShiftSummary};
-use crate::either::LoopFlow;
-use crate::executor::Executor;
-use crate::step::Step;
+use crate::repository::{GitError, Repository};
+use crate::shift_loop::{Idle, LoopDirectoryError, LoopKind, ShiftLoop, ShiftLoopError};
+use crate::step::StepExt;
 
 /// Command-line arguments for the `shift` binary.
 #[derive(Parser, Debug, Clone, PartialEq, Eq)]
 #[command(
     name = "shift",
-    about = "Category-Theory Type-State Machine Agentic Orchestrator",
+    about = "Runs shifting's plan and build loops in a git repository",
     version
 )]
 pub struct Cli {
-    /// Directory containing shifting scripts (plan.sh, work.sh, verify.sh, commit.sh, rollback.sh)
-    #[arg(short, long, default_value = ".shifting")]
-    pub dir: PathBuf,
+    /// Repository root, resolved through git
+    #[arg(long, global = true, default_value = ".")]
+    pub root: PathBuf,
 
-    /// Maximum number of iterations to execute
-    #[arg(short, long)]
-    pub max_iterations: Option<usize>,
+    /// Maximum number of iterations; unbounded when absent
+    #[arg(long, global = true)]
+    pub max_iterations: Option<u64>,
 
-    /// Enable verbose logging
-    #[arg(short, long)]
-    pub verbose: bool,
+    #[command(subcommand)]
+    pub command: Command,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct VerboseLoop<S> {
-    inner: S,
+/// The `shift` subcommands.
+#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    /// Run the plan loop from `.shifting/plan/`
+    Plan,
+    /// Run the build loop from `.shifting/build/`
+    Build,
 }
 
-impl<S> Step<Idle> for VerboseLoop<S>
-where
-    S: Step<Idle, Out = LoopFlow<Idle, ShiftSummary>>,
-{
-    type Out = LoopFlow<Idle, ShiftSummary>;
-    type Error = S::Error;
-
-    fn apply(&self, input: Idle) -> Result<Self::Out, Self::Error> {
-        eprintln!("[shift] iteration {}: planning...", input.iteration);
-        match self.inner.apply(input)? {
-            LoopFlow::Continue(next) => {
-                eprintln!(
-                    "[shift] iteration {}: completed cycle, continuing to iteration {}.",
-                    input.iteration, next.iteration
-                );
-                Ok(LoopFlow::Continue(next))
-            }
-            LoopFlow::Break(summary) => {
-                eprintln!(
-                    "[shift] iteration {}: loop terminated cleanly ({} total iterations).",
-                    input.iteration, summary.iterations
-                );
-                Ok(LoopFlow::Break(summary))
-            }
-        }
-    }
+/// Errors that stop `shift`.
+#[derive(thiserror::Error, Debug)]
+pub enum ShiftError {
+    #[error(transparent)]
+    Repository(#[from] GitError),
+    #[error(transparent)]
+    LoopDirectory(#[from] LoopDirectoryError),
+    #[error(transparent)]
+    Loop(#[from] ShiftLoopError),
+    #[error("failed to print the loop report: {0}")]
+    Output(#[from] io::Error),
 }
 
-/// Executes the CLI dispatch flow with standard output stream injection.
-pub fn run(cli: Cli, stdout: &mut impl Write) -> Result<ShiftSummary, DefaultShiftError> {
-    let shift_loop = DefaultShiftLoop::discover(&cli.dir)?.with_max_iterations(cli.max_iterations);
-
-    let summary = if cli.verbose {
-        Executor::new(VerboseLoop { inner: shift_loop }).run(Idle::default())?
-    } else {
-        Executor::new(shift_loop).run(Idle::default())?
+/// Runs the command's loop and prints its summary, then its end state as the last line.
+pub fn run(cli: Cli, stdout: &mut impl Write) -> Result<(), ShiftError> {
+    let repository = Repository::containing(&cli.root)?;
+    let kind = match cli.command {
+        Command::Plan => LoopKind::Plan,
+        Command::Build => LoopKind::Build,
     };
-
-    writeln!(
-        stdout,
-        "Shift completed successfully ({} iterations).",
-        summary.iterations
-    )?;
-
-    Ok(summary)
+    let report = ShiftLoop::discover(kind, repository, cli.max_iterations)?
+        .into_executor()
+        .run(Idle::first())?;
+    writeln!(stdout, "{report}")?;
+    Ok(())
 }

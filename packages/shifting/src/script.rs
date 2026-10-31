@@ -138,12 +138,14 @@ impl From<ScriptOutput> for ScriptError {
 
 /// An executable script invocation for the Script Bridge.
 ///
-/// The script inherits shift's environment, plus the variables in `env`, and runs in
-/// `current_dir`, or in shift's working directory when it is `None`.
+/// The script inherits shift's environment except the variables in `removed_env`, plus the
+/// variables in `env`, and runs in `current_dir`, or in shift's working directory when it is
+/// `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Script {
     pub path: PathBuf,
     pub env: Vec<(OsString, OsString)>,
+    pub removed_env: Vec<OsString>,
     pub current_dir: Option<PathBuf>,
 }
 
@@ -154,6 +156,7 @@ impl Script {
         Self {
             path: path.into(),
             env: Vec::new(),
+            removed_env: Vec::new(),
             current_dir: None,
         }
     }
@@ -166,6 +169,20 @@ impl Script {
                 .env
                 .into_iter()
                 .chain(std::iter::once((key.into(), value.into())))
+                .collect(),
+            ..self
+        }
+    }
+
+    /// Stops this invocation inheriting `key` from shift's environment. A variable added with
+    /// [`Script::with_env`] is still set.
+    #[must_use]
+    pub fn without_inherited_env(self, key: impl Into<OsString>) -> Self {
+        Self {
+            removed_env: self
+                .removed_env
+                .into_iter()
+                .chain(std::iter::once(key.into()))
                 .collect(),
             ..self
         }
@@ -190,6 +207,8 @@ impl Script {
     ) -> Result<ScriptOutput, ScriptError> {
         let mut command = Command::new(&self.path);
         command
+            .env_clear()
+            .envs(std::env::vars_os().filter(|(key, _)| !self.removed_env.contains(key)))
             .envs(self.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
