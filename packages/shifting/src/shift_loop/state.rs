@@ -36,8 +36,9 @@ impl Idle {
         }
     }
 
-    /// Runs the next iteration when it is within `max_iterations`, or ends the loop at the
-    /// bound.
+    /// Checks this state's iteration against `max_iterations`: hands the state on when the
+    /// iteration is within the bound, or ends the loop `MaxIterations` with the summary so far
+    /// when it is past it.
     #[must_use]
     pub const fn within(self, max_iterations: Option<u64>) -> Either<Self, LoopReport> {
         match max_iterations {
