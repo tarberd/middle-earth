@@ -604,7 +604,7 @@ fn test_failure_report_falls_back_to_stdout_when_stderr_is_empty() {
 }
 
 #[test]
-fn test_script_does_not_inherit_variables_it_removes() {
+fn test_script_does_not_inherit_variables_it_drops() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path = create_executable_script(
         temp_dir.path(),
@@ -614,7 +614,7 @@ fn test_script_does_not_inherit_variables_it_removes() {
     let inherited = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
 
     let output = Script::new(&script_path)
-        .without_inherited_env("CARGO_PKG_NAME")
+        .with_dropped_env("CARGO_PKG_NAME")
         .run("", &mut std::io::sink())
         .expect("script run failed");
 
@@ -622,7 +622,7 @@ fn test_script_does_not_inherit_variables_it_removes() {
 }
 
 #[test]
-fn test_script_added_variable_overrides_a_removed_inherited_one() {
+fn test_script_added_variable_overrides_a_dropped_inherited_one() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let script_path = create_executable_script(
         temp_dir.path(),
@@ -631,7 +631,7 @@ fn test_script_added_variable_overrides_a_removed_inherited_one() {
     );
 
     let output = Script::new(&script_path)
-        .without_inherited_env("CARGO_PKG_NAME")
+        .with_dropped_env("CARGO_PKG_NAME")
         .with_env("CARGO_PKG_NAME", "added")
         .run("", &mut std::io::sink())
         .expect("script run failed");

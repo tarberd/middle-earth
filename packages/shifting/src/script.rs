@@ -138,14 +138,14 @@ impl From<ScriptOutput> for ScriptError {
 
 /// An executable script invocation for the Script Bridge.
 ///
-/// The script inherits shift's environment except the variables in `removed_env`, plus the
+/// The script inherits shift's environment except the variables in `dropped_env`, plus the
 /// variables in `env`, and runs in `current_dir`, or in shift's working directory when it is
 /// `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Script {
     pub path: PathBuf,
     pub env: Vec<(OsString, OsString)>,
-    pub removed_env: Vec<OsString>,
+    pub dropped_env: Vec<OsString>,
     pub current_dir: Option<PathBuf>,
 }
 
@@ -156,7 +156,7 @@ impl Script {
         Self {
             path: path.into(),
             env: Vec::new(),
-            removed_env: Vec::new(),
+            dropped_env: Vec::new(),
             current_dir: None,
         }
     }
@@ -174,13 +174,13 @@ impl Script {
         }
     }
 
-    /// Stops this invocation inheriting `key` from shift's environment. A variable added with
-    /// [`Script::with_env`] is still set.
+    /// Drops `key` from the environment this invocation inherits from shift. A variable added
+    /// with [`Script::with_env`] is still set.
     #[must_use]
-    pub fn without_inherited_env(self, key: impl Into<OsString>) -> Self {
+    pub fn with_dropped_env(self, key: impl Into<OsString>) -> Self {
         Self {
-            removed_env: self
-                .removed_env
+            dropped_env: self
+                .dropped_env
                 .into_iter()
                 .chain(std::iter::once(key.into()))
                 .collect(),
@@ -208,7 +208,7 @@ impl Script {
         let mut command = Command::new(&self.path);
         command
             .env_clear()
-            .envs(std::env::vars_os().filter(|(key, _)| !self.removed_env.contains(key)))
+            .envs(std::env::vars_os().filter(|(key, _)| !self.dropped_env.contains(key)))
             .envs(self.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

@@ -137,6 +137,22 @@ fn test_executor_composition_as_step_via_and_then() {
 }
 
 #[test]
+fn test_a_million_iterations_run_in_constant_stack() {
+    let count_up = |n: u64| -> Result<LoopFlow<u64, String>, CustomError> {
+        if n == 1_000_000 {
+            Ok(LoopFlow::Break(format!("counted to {n}")))
+        } else {
+            Ok(LoopFlow::Continue(n + 1))
+        }
+    };
+
+    assert_eq!(
+        Executor::new(count_up).run(0),
+        Ok("counted to 1000000".to_string())
+    );
+}
+
+#[test]
 fn test_step_ext_into_executor() {
     let loop_step = |n: i32| -> Result<LoopFlow<i32, i32>, CustomError> {
         if n >= 3 {

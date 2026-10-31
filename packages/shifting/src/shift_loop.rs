@@ -7,20 +7,23 @@ pub mod outcome;
 pub mod report;
 pub mod state;
 
+use std::fs::{self, FileType};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::branch::{Branch, BranchExt, BranchLeft, BranchRight};
 use crate::either::{Either, LoopFlow};
 use crate::repository::{GitError, Repository};
-use crate::script::{ScriptError, ScriptExit};
+use crate::script::ScriptError;
 use crate::step::Step;
 
-pub use contract::{CheckExit, PrecheckExit, SelectExit, WorkExit};
+pub use contract::{CheckExit, PrecheckExit, SelectError, SelectExit, WorkExit};
 pub use morphism::{Context, Judge, Precheck, Select, Settle, Verify, Work};
-pub use outcome::{Outcome, Rejection, Settled};
-pub use report::{LoopEnd, LoopReport, LoopSummary};
+pub use outcome::{Outcome, Rejection, SettleFailure, Settled, Settlement};
+pub use report::{CountOverflow, LoopEnd, LoopReport, LoopSummary};
 pub use state::{
-    AlreadyDone, Approved, Declined, Exhausted, Idle, Rejected, Selected, Task, Verified, WorkDone,
+    AlreadyDone, Approved, Attempt, Declined, Exhausted, Idle, Rejected, Selected, Task, Verified,
+    WorkDone,
 };
 
 /// Which shift loop runs.
@@ -60,22 +63,27 @@ pub enum LoopDirectoryError {
     MissingDirectory(PathBuf),
     #[error("required script not found: {}", .0.display())]
     MissingScript(PathBuf),
+    #[error("cannot inspect {}: {source}", .path.display())]
+    Uninspectable {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl LoopScripts {
     /// Finds every required script in `dir`, reporting the directory or the first missing
-    /// script by its path.
+    /// script by its path. A path the file system can't inspect is reported with its cause.
     pub fn discover(dir: &Path) -> Result<Self, LoopDirectoryError> {
         let script = |name: &str| {
             let path = dir.join(name);
-            if path.is_file() {
-                Ok(path)
-            } else {
-                Err(LoopDirectoryError::MissingScript(path))
+            match inspect(&path)? {
+                Some(file_type) if file_type.is_file() => Ok(path),
+                _ => Err(LoopDirectoryError::MissingScript(path)),
             }
         };
-        if dir.is_dir() {
-            Ok(Self {
+        match inspect(dir)? {
+            Some(file_type) if file_type.is_dir() => Ok(Self {
                 select: script("select.sh")?,
                 precheck: script("precheck.sh")?,
                 work: script("work.sh")?,
@@ -83,10 +91,22 @@ impl LoopScripts {
                 judge: script("judge.sh")?,
                 commit: script("commit.sh")?,
                 rollback: script("rollback.sh")?,
-            })
-        } else {
-            Err(LoopDirectoryError::MissingDirectory(dir.to_path_buf()))
+            }),
+            _ => Err(LoopDirectoryError::MissingDirectory(dir.to_path_buf())),
         }
+    }
+}
+
+/// What `path` is, following symbolic links, or `None` when the file system reports that it
+/// doesn't exist.
+fn inspect(path: &Path) -> Result<Option<FileType>, LoopDirectoryError> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata.file_type())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(LoopDirectoryError::Uninspectable {
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 
@@ -97,20 +117,14 @@ pub enum ShiftLoopError {
     Script(#[from] ScriptError),
     #[error(transparent)]
     Git(#[from] GitError),
-    #[error("select failed ({exit}): {report}")]
-    Select { exit: ScriptExit, report: String },
-    #[error("commit failed for task {task} ({exit}): {report}")]
-    Commit {
-        task: Task,
-        exit: ScriptExit,
-        report: String,
-    },
-    #[error("rollback failed for task {task} ({exit}): {report}")]
-    Rollback {
-        task: Task,
-        exit: ScriptExit,
-        report: String,
-    },
+    #[error(transparent)]
+    Overflow(#[from] CountOverflow),
+    #[error(transparent)]
+    Select(#[from] SelectError),
+    #[error("commit failed {0}")]
+    Commit(SettleFailure),
+    #[error("rollback failed {0}")]
+    Rollback(SettleFailure),
 }
 
 /// The errors of composed morphisms nest in [`Either`]; each arm is a [`ShiftLoopError`].
@@ -212,7 +226,10 @@ impl Step<Idle> for ShiftLoop {
 
     fn apply(&self, idle: Idle) -> Result<LoopFlow<Idle, LoopReport>, ShiftLoopError> {
         idle.within(self.max_iterations).either(
-            |idle| self.iterate(idle).map(|ended| idle.advance(ended)),
+            |idle| {
+                self.iterate(idle)
+                    .and_then(|ended| idle.advance(ended).map_err(ShiftLoopError::from))
+            },
             |report| Ok(LoopFlow::Break(report)),
         )
     }

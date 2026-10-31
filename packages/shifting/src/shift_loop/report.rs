@@ -16,47 +16,62 @@ pub struct LoopSummary {
     pub declines: u64,
 }
 
+/// A count of the loop that is already at its maximum and can't count one more.
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CountOverflow {
+    #[error("the loop can't count another {} iteration", .0.name())]
+    Outcome(Outcome),
+    #[error("the iteration number can't go past {}", u64::MAX)]
+    Iteration,
+}
+
 impl LoopSummary {
-    /// Counts one more iteration that ended with `outcome`.
-    #[must_use]
-    pub const fn record(self, outcome: Outcome) -> Self {
+    /// Counts one more iteration that ended with `outcome`, or reports that its count is full.
+    pub fn record(self, outcome: Outcome) -> Result<Self, CountOverflow> {
+        let more = |count: u64| count.checked_add(1).ok_or(CountOverflow::Outcome(outcome));
         match outcome {
-            Outcome::Verified => Self {
-                commits: self.commits + 1,
+            Outcome::Verified => more(self.commits).map(|commits| Self { commits, ..self }),
+            Outcome::AlreadyDone => more(self.already_done).map(|already_done| Self {
+                already_done,
                 ..self
-            },
-            Outcome::AlreadyDone => Self {
-                already_done: self.already_done + 1,
-                ..self
-            },
-            Outcome::Rejected(Rejection::WorkFailed) => Self {
-                work_failed: self.work_failed + 1,
-                ..self
-            },
-            Outcome::Rejected(Rejection::VerifyFailed) => Self {
-                verify_failed: self.verify_failed + 1,
-                ..self
-            },
-            Outcome::Rejected(Rejection::JudgeFailed) => Self {
-                judge_failed: self.judge_failed + 1,
-                ..self
-            },
-            Outcome::Declined => Self {
-                declines: self.declines + 1,
-                ..self
-            },
+            }),
+            Outcome::Rejected(Rejection::WorkFailed) => {
+                more(self.work_failed).map(|work_failed| Self {
+                    work_failed,
+                    ..self
+                })
+            }
+            Outcome::Rejected(Rejection::VerifyFailed) => {
+                more(self.verify_failed).map(|verify_failed| Self {
+                    verify_failed,
+                    ..self
+                })
+            }
+            Outcome::Rejected(Rejection::JudgeFailed) => {
+                more(self.judge_failed).map(|judge_failed| Self {
+                    judge_failed,
+                    ..self
+                })
+            }
+            Outcome::Declined => more(self.declines).map(|declines| Self { declines, ..self }),
         }
     }
 
-    /// The iterations counted: each ended with exactly one outcome.
+    /// The iterations counted: each ended with exactly one outcome. Six counts of at most
+    /// `u64::MAX` always add up within `u128`.
     #[must_use]
-    pub const fn iterations(&self) -> u64 {
-        self.commits
-            + self.already_done
-            + self.work_failed
-            + self.verify_failed
-            + self.judge_failed
-            + self.declines
+    pub fn iterations(&self) -> u128 {
+        [
+            self.commits,
+            self.already_done,
+            self.work_failed,
+            self.verify_failed,
+            self.judge_failed,
+            self.declines,
+        ]
+        .into_iter()
+        .map(u128::from)
+        .sum()
     }
 }
 
@@ -78,15 +93,20 @@ pub struct LoopReport {
     pub summary: LoopSummary,
 }
 
+const WORK_FAILED: Outcome = Outcome::Rejected(Rejection::WorkFailed);
+const VERIFY_FAILED: Outcome = Outcome::Rejected(Rejection::VerifyFailed);
+const JUDGE_FAILED: Outcome = Outcome::Rejected(Rejection::JudgeFailed);
+
 impl fmt::Display for LoopSummary {
-    /// One `name: count` line per count, outcomes named as `SHIFT_OUTCOME` names them.
+    /// One `name: count` line per count: the iterations, the commits, each outcome other than
+    /// a commit or a decline by its `SHIFT_OUTCOME` name, then the declines.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "iterations: {}", self.iterations())?;
         writeln!(f, "commits: {}", self.commits)?;
-        writeln!(f, "already-done: {}", self.already_done)?;
-        writeln!(f, "work-failed: {}", self.work_failed)?;
-        writeln!(f, "verify-failed: {}", self.verify_failed)?;
-        writeln!(f, "judge-failed: {}", self.judge_failed)?;
+        writeln!(f, "{}: {}", Outcome::AlreadyDone.name(), self.already_done)?;
+        writeln!(f, "{}: {}", WORK_FAILED.name(), self.work_failed)?;
+        writeln!(f, "{}: {}", VERIFY_FAILED.name(), self.verify_failed)?;
+        writeln!(f, "{}: {}", JUDGE_FAILED.name(), self.judge_failed)?;
         writeln!(f, "declines: {}", self.declines)
     }
 }

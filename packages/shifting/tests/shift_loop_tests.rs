@@ -183,6 +183,32 @@ impl Repository {
     }
 }
 
+/// The counts of a loop summary, in the order shift reports them.
+#[derive(Default)]
+struct Counts {
+    iterations: u64,
+    commits: u64,
+    already_done: u64,
+    work_failed: u64,
+    verify_failed: u64,
+    judge_failed: u64,
+    declines: u64,
+}
+
+/// The report shift prints on a clean end: one `name: count` line per count, then `end`.
+fn report(counts: Counts, end: &str) -> String {
+    lines(&[
+        &format!("iterations: {}", counts.iterations),
+        &format!("commits: {}", counts.commits),
+        &format!("already-done: {}", counts.already_done),
+        &format!("work-failed: {}", counts.work_failed),
+        &format!("verify-failed: {}", counts.verify_failed),
+        &format!("judge-failed: {}", counts.judge_failed),
+        &format!("declines: {}", counts.declines),
+        end,
+    ])
+}
+
 /// `lines`, each ending in a newline.
 fn lines(lines: &[&str]) -> String {
     lines.iter().map(|line| format!("{line}\n")).collect()
@@ -212,17 +238,7 @@ fn test_build_loop_ends_exhausted_when_select_reports_no_work_left() {
     let output = repository.shift(&["build"]);
 
     assert_success(&output);
-    assert_eq!(
-        stdout(&output),
-        "iterations: 0\n\
-         commits: 0\n\
-         already-done: 0\n\
-         work-failed: 0\n\
-         verify-failed: 0\n\
-         judge-failed: 0\n\
-         declines: 0\n\
-         Exhausted\n"
-    );
+    assert_eq!(stdout(&output), report(Counts::default(), "Exhausted"));
     assert_eq!(
         repository.log(),
         "select build#1 task=<unset> base=<start> outcome=<unset> cwd=<root> stdin=\n"
@@ -279,16 +295,16 @@ fn test_build_loop_commits_verified_work_and_rolls_back_failed_checks() {
     );
     assert_eq!(
         stdout(&output),
-        lines(&[
-            "iterations: 3",
-            "commits: 1",
-            "already-done: 0",
-            "work-failed: 0",
-            "verify-failed: 1",
-            "judge-failed: 1",
-            "declines: 0",
-            "Exhausted",
-        ])
+        report(
+            Counts {
+                iterations: 3,
+                commits: 1,
+                verify_failed: 1,
+                judge_failed: 1,
+                ..Counts::default()
+            },
+            "Exhausted"
+        )
     );
     assert_eq!(repository.commits(), ["verified t1", "start"]);
 }
@@ -330,16 +346,15 @@ fn test_precheck_passing_commits_as_already_done_without_work() {
     );
     assert_eq!(
         stdout(&output),
-        lines(&[
-            "iterations: 2",
-            "commits: 1",
-            "already-done: 1",
-            "work-failed: 0",
-            "verify-failed: 0",
-            "judge-failed: 0",
-            "declines: 0",
-            "Exhausted",
-        ])
+        report(
+            Counts {
+                iterations: 2,
+                commits: 1,
+                already_done: 1,
+                ..Counts::default()
+            },
+            "Exhausted"
+        )
     );
 }
 
@@ -388,16 +403,15 @@ fn test_failed_or_killed_work_rolls_back_and_the_loop_continues() {
     );
     assert_eq!(
         stdout(&output),
-        lines(&[
-            "iterations: 3",
-            "commits: 1",
-            "already-done: 0",
-            "work-failed: 2",
-            "verify-failed: 0",
-            "judge-failed: 0",
-            "declines: 0",
-            "Exhausted",
-        ])
+        report(
+            Counts {
+                iterations: 3,
+                commits: 1,
+                work_failed: 2,
+                ..Counts::default()
+            },
+            "Exhausted"
+        )
     );
 }
 
@@ -431,16 +445,14 @@ fn test_declined_work_rolls_back_with_its_reason_and_ends_the_loop() {
     );
     assert_eq!(
         stdout(&output),
-        lines(&[
-            "iterations: 1",
-            "commits: 0",
-            "already-done: 0",
-            "work-failed: 0",
-            "verify-failed: 0",
-            "judge-failed: 0",
-            "declines: 1",
-            "Declined t1",
-        ])
+        report(
+            Counts {
+                iterations: 1,
+                declines: 1,
+                ..Counts::default()
+            },
+            "Declined t1"
+        )
     );
 }
 
@@ -459,6 +471,38 @@ fn test_failing_select_stops_the_run_with_its_stderr() {
     assert!(
         stderr(&output).contains("Error: select failed (exit status: 1): selector broke\n"),
         "stderr must show the select error: {}",
+        stderr(&output)
+    );
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        repository.log(),
+        "select build#1 task=<unset> base=<start> outcome=<unset> cwd=<root> stdin=\n"
+    );
+}
+
+#[test]
+fn test_select_choosing_a_task_over_several_lines_stops_the_run_before_precheck() {
+    let repository = Repository::new()
+        .with_loop(
+            "build",
+            &[(
+                "select.sh",
+                "[ ! -e \"$state/selected\" ] || { echo 'select ran again' >&2; exit 1; }\n\
+                 touch \"$state/selected\"\n\
+                 printf 'line one\\nline two\\n'",
+            )],
+        )
+        .committed();
+
+    let output = repository.shift(&["build"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains(
+            "Error: select chose a task reference that spans several lines: \
+             \"line one\\nline two\"\n"
+        ),
+        "stderr must show select's stdout: {}",
         stderr(&output)
     );
     assert_eq!(stdout(&output), "");
@@ -560,16 +604,15 @@ fn test_max_iterations_ends_the_loop_with_exact_counts() {
     assert_success(&output);
     assert_eq!(
         stdout(&output),
-        lines(&[
-            "iterations: 2",
-            "commits: 1",
-            "already-done: 0",
-            "work-failed: 0",
-            "verify-failed: 0",
-            "judge-failed: 1",
-            "declines: 0",
-            "MaxIterations",
-        ])
+        report(
+            Counts {
+                iterations: 2,
+                commits: 1,
+                judge_failed: 1,
+                ..Counts::default()
+            },
+            "MaxIterations"
+        )
     );
     assert_eq!(
         repository
@@ -594,19 +637,7 @@ fn test_max_iterations_zero_runs_no_script() {
     let output = repository.shift(&["--max-iterations", "0", "build"]);
 
     assert_success(&output);
-    assert_eq!(
-        stdout(&output),
-        lines(&[
-            "iterations: 0",
-            "commits: 0",
-            "already-done: 0",
-            "work-failed: 0",
-            "verify-failed: 0",
-            "judge-failed: 0",
-            "declines: 0",
-            "MaxIterations",
-        ])
-    );
+    assert_eq!(stdout(&output), report(Counts::default(), "MaxIterations"));
     assert_eq!(repository.log(), "");
 }
 
@@ -686,6 +717,83 @@ fn test_missing_script_is_reported_by_its_path_before_any_script_runs() {
             "Error: required script not found: {}\n",
             repository.root.join(".shifting/build/judge.sh").display()
         )
+    );
+    assert_eq!(repository.log(), "");
+}
+
+#[test]
+fn test_loop_directory_that_cannot_be_inspected_is_reported_with_its_cause() {
+    let repository = Repository::new();
+    let dir = repository.root.join(".shifting/build");
+    std::fs::create_dir(repository.root.join(".shifting")).expect("failed to create .shifting");
+    std::os::unix::fs::symlink("build", &dir).expect("failed to create symbolic link loop");
+    let repository = repository.committed();
+
+    let output = repository.shift(&["build"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with(&format!("Error: cannot inspect {}: ", dir.display())),
+        "stderr must name the path and its cause: {}",
+        stderr(&output)
+    );
+    assert_eq!(repository.log(), "");
+}
+
+#[test]
+fn test_script_that_cannot_be_inspected_is_reported_with_its_cause() {
+    let repository = Repository::new().with_loop_scripts(
+        "build",
+        &[],
+        &[
+            "select.sh",
+            "precheck.sh",
+            "work.sh",
+            "verify.sh",
+            "commit.sh",
+            "rollback.sh",
+        ],
+    );
+    let judge = repository.root.join(".shifting/build/judge.sh");
+    std::os::unix::fs::symlink("judge.sh", &judge).expect("failed to create symbolic link loop");
+    let repository = repository.committed();
+
+    let output = repository.shift(&["build"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).starts_with(&format!("Error: cannot inspect {}: ", judge.display())),
+        "stderr must name the path and its cause: {}",
+        stderr(&output)
+    );
+    assert_eq!(repository.log(), "");
+}
+
+#[test]
+fn test_dangling_symbolic_link_is_a_missing_script() {
+    let repository = Repository::new().with_loop_scripts(
+        "build",
+        &[],
+        &[
+            "select.sh",
+            "precheck.sh",
+            "work.sh",
+            "verify.sh",
+            "commit.sh",
+            "rollback.sh",
+        ],
+    );
+    let judge = repository.root.join(".shifting/build/judge.sh");
+    std::os::unix::fs::symlink("no-such-judge.sh", &judge)
+        .expect("failed to create dangling symbolic link");
+    let repository = repository.committed();
+
+    let output = repository.shift(&["build"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!("Error: required script not found: {}\n", judge.display())
     );
     assert_eq!(repository.log(), "");
 }
