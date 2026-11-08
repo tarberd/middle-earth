@@ -156,6 +156,16 @@ mkFlakeModule.withNixosModule { } (
             "mdns"
             "ssh"
           ];
+          ports = [
+            {
+              port = 3001;
+              protocol = "tcp";
+            }
+            {
+              port = 8787;
+              protocol = "tcp";
+            }
+          ];
           protocols = [
             "icmp"
             "ipv6-icmp"

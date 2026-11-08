@@ -2,6 +2,7 @@
   mkFlakeModule,
   super,
   antigravity-nix,
+  logseq-db,
   ...
 }@inputs:
 mkFlakeModule.withNixosModule { } (
@@ -19,6 +20,7 @@ mkFlakeModule.withNixosModule { } (
       super.virtualization.kvm
       super.virtualization.container
       super.backup
+      logseq-db.nixosModules.default
     ];
 
     boot.loader.systemd-boot.enable = true;
@@ -73,12 +75,14 @@ mkFlakeModule.withNixosModule { } (
     services.avahi = {
       enable = true;
       nssmdns4 = true;
-      reflector = true;
-      allowInterfaces = [
-        "eth0"
-        "eth1"
-        "virbr0"
-      ];
+      settings = {
+        reflector.enable-reflector = true;
+        server.allow-interfaces = [
+          "eth0"
+          "eth1"
+          "virbr0"
+        ];
+      };
     };
 
     hardware.sane = {
@@ -137,6 +141,17 @@ mkFlakeModule.withNixosModule { } (
       alsa.enable = true;
       alsa.support32Bit = true;
       pulse.enable = true;
+    };
+
+    services.logseq-db = {
+      syncServer = {
+        enable = true;
+        openFirewall = true;
+      };
+      webApp = {
+        enable = true;
+        openFirewall = true;
+      };
     };
 
     programs.firefox.enable = true;

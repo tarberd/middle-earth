@@ -36,6 +36,10 @@
       url = "github:jacopone/antigravity-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    logseq-db = {
+      url = "github:prithvihv/logseq-db-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs@{ flake-modules, ... }: flake-modules.lib.evalFlake ./. inputs;
