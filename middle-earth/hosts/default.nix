@@ -6,5 +6,6 @@ mkFlakeModule {
   public = [
     ./gandalf
     ./sauron
+    ./smeagol
   ];
 } { }
